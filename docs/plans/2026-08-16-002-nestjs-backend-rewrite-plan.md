@@ -90,7 +90,7 @@ U19's `clerk_user_mapping` consumption: request identity = Clerk `sub` mapped to
 mirroring the migration DDL (FK cascade, shape/role checks). Provisioning script
 stays in family-events-backend until cutover.
 
-### U23 — Data access layer 🟡 (write repositories landed)
+### U23 — Data access layer ✅ (done: read + write repositories) 🟡 (write repositories landed)
 Repositories over the existing schema for events, sources, queues, users, notifications.
 Integration-tested against real Postgres (CI service container; locally the Supabase
 stack on 127.0.0.1:55322). Port `packages/contracts` generated types or regenerate.
@@ -107,7 +107,7 @@ Parity endpoints for `search_events` (keyset cursor `(start_datetime, id)`, page
 cities, `public_events` preview. Contract fidelity matters more than SQL reuse: the
 RPCs' SQL can be called directly initially, then inlined.
 
-### U25 — Consumer write API
+### U25 — Consumer write API ✅ (done)
 Favorites, calendar, ratings, comments, profile + preferred cities (U6b demote-first
 semantics), notification prefs/inbox (`mark_*_read`), `submit_community_event`,
 invites (`redeem/request/claim`). All behind the Clerk guard.
