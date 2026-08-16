@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto"
 
-import { ConfigService } from "@nestjs/config"
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest"
 
-import { DbService } from "../../src/db/db.service.js"
+import type { DbService } from "../../src/db/db.service.js"
+import { createIntegrationDb } from "./db.js"
 import { IdentityService } from "../../src/auth/identity.service.js"
 
 /**
@@ -11,15 +11,12 @@ import { IdentityService } from "../../src/auth/identity.service.js"
  * including the auth.users FK and the shape/role check constraints,
  * against a real Postgres.
  */
-const DATABASE_URL =
-  process.env.DATABASE_URL ?? "postgresql://postgres:postgres@127.0.0.1:5432/postgres"
-
 describe("IdentityService (integration)", () => {
   let db: DbService
   let identity: IdentityService
 
   beforeAll(async () => {
-    db = new DbService(new ConfigService({ DATABASE_URL }) as unknown as ConfigService<never, true>)
+    db = createIntegrationDb()
     await db.query("CREATE SCHEMA IF NOT EXISTS auth")
     await db.query("CREATE TABLE IF NOT EXISTS auth.users (id uuid PRIMARY KEY)")
     await db.query(`CREATE TABLE IF NOT EXISTS public.clerk_user_mapping (
