@@ -1,0 +1,7 @@
+{
+  "name": "family-events-api",
+  "repositoryDependencies": [
+    "github.com/Cypress-Ink-Labs/family-events-backend",
+    "github.com/HexSleeves/hm-dotfiles"
+  ]
+}
