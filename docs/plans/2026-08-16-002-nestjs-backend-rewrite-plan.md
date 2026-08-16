@@ -1,7 +1,8 @@
 # NestJS backend rewrite plan (reconstructed) — units U20–U33
 
-**Status:** U20, U22, and U24 done; U23 write repositories landed; U27 foundation landed
-(topology + gate); U28/U30 pure-logic ports landed; everything else pending.
+**Status:** U20 and U22 done; U21 client half landed; U23 write repositories landed;
+U27 foundation landed (topology + gate); U28/U30 pure-logic ports landed; everything
+else pending.
 **Supersedes:** old U13–U18 of `2026-08-14-001` (production-readiness plan), per the mid-session
 redirect: *everything server-side moves to NestJS*.
 
@@ -71,11 +72,16 @@ cursors, recursive `Json` type), pg-boss lifecycle module, Clerk bearer guard (f
 closed), `/healthz` + `/readyz`, OpenAPI emission with CI drift check, vitest/oxlint/
 oxfmt house tooling, GitHub Actions (unit + Postgres-service integration jobs).
 
-### U21 — Contract foundation + generated client
+### U21 — Contract foundation + generated client 🟡 (client half landed)
 Freeze the consumer-facing DTOs (enriched event, plan scores, profile, city) as
 `@nestjs/swagger` classes; wire client generation (openapi-typescript or equivalent)
 into `family-events-app`; CI on the app side regenerates and typechecks against
-`openapi.json`. **Blocked on app repo access** for the client half; API half can proceed.
+`openapi.json`. **Client half landed:** `family-events-app` vendors the contract at
+`contracts/openapi.json` and generates TypeScript client types at
+`src/lib/api-client/schema.gen.ts` via `openapi-typescript@7.13.0`. CI guard
+(`tests/guards/api-client-drift.test.mjs`) ensures the generated types stay in sync
+with the vendored contract. Nothing imports the generated types yet; runtime cutover
+is U33. API half can proceed in parallel.
 
 ### U22 — Identity: Clerk + mapping seam ✅ (done, this session)
 U19's `clerk_user_mapping` consumption: request identity = Clerk `sub` mapped to
@@ -96,17 +102,11 @@ field-for-field from `family-events-app` server modules with idempotent `ON CONF
 semantics and integration test coverage. Remaining: read-side repositories for events,
 sources, queues, notifications.
 
-### U24 — Consumer read API ✅ (done)
+### U24 — Consumer read API
 Parity endpoints for `search_events` (keyset cursor `(start_datetime, id)`, page 24),
 `events_enriched` batch hydration, event detail + `find_similar_events_by_id`, tags,
 cities, `public_events` preview. Contract fidelity matters more than SQL reuse: the
 RPCs' SQL can be called directly initially, then inlined.
-
-Implemented with OpenAPI DTOs (`EnrichedEventDto`, `CityDto`, `TagDto`, `EventsPageDto`,
-`EventsQueryDto`), optional Clerk auth via `OptionalClerkGuard` for personalized fields
-(`is_favorited`, `is_in_calendar`), and base64 keyset cursor. Endpoints: `GET /v1/cities`,
-`GET /v1/events` (page 24/max 100), `GET /v1/events/:id` (404 on missing/unpublished),
-`GET /v1/tags`.
 
 ### U25 — Consumer write API
 Favorites, calendar, ratings, comments, profile + preferred cities (U6b demote-first
@@ -182,14 +182,12 @@ for favorites, calendar, ratings, comments, submissions, and preferred cities.
 
 ## Standing blockers (user action)
 
-1. **`family-events-app` is invisible to agent credentials** — blocks U21 client half
-   and contract reconciliation for U24–U26.
-2. **No write access to Cypress-Ink-Labs** — work lands on the hm-dotfiles transfer
+1. **No write access to Cypress-Ink-Labs** — work lands on the hm-dotfiles transfer
    branch until `family-events-api` exists as a repo (extraction steps in
    `family-events/README.md`).
-3. **Original plan docs machine-local** — commit `docs/plans/` from the Mac into a repo,
+2. **Original plan docs machine-local** — commit `docs/plans/` from the Mac into a repo,
    then reconcile this reconstruction against `2026-08-16-001`.
-4. Operator-gated as before: Clerk production keys, U19 production provisioning run,
+3. Operator-gated as before: Clerk production keys, U19 production provisioning run,
    U7/U11/U18, Railway provisioning.
 
 ## Quality gates (every unit)
