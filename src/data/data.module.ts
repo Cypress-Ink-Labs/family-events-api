@@ -9,26 +9,19 @@ import { RatingsRepository } from "./ratings.repository.js"
 import { ReferenceRepository } from "./reference.repository.js"
 import { SubmissionsRepository } from "./submissions.repository.js"
 
+const REPOSITORIES = [
+  EventsRepository,
+  ReferenceRepository,
+  FavoritesRepository,
+  CalendarRepository,
+  RatingsRepository,
+  CommentsRepository,
+  SubmissionsRepository,
+  PreferredCitiesRepository,
+]
+
 @Module({
-  providers: [
-    EventsRepository,
-    ReferenceRepository,
-    FavoritesRepository,
-    CalendarRepository,
-    RatingsRepository,
-    CommentsRepository,
-    SubmissionsRepository,
-    PreferredCitiesRepository,
-  ],
-  exports: [
-    EventsRepository,
-    ReferenceRepository,
-    FavoritesRepository,
-    CalendarRepository,
-    RatingsRepository,
-    CommentsRepository,
-    SubmissionsRepository,
-    PreferredCitiesRepository,
-  ],
+  providers: REPOSITORIES,
+  exports: REPOSITORIES,
 })
 export class DataModule {}
