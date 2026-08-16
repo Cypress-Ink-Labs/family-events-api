@@ -1,7 +1,7 @@
 # NestJS backend rewrite plan (reconstructed) — units U20–U33
 
-**Status:** U20, U22, and U26 done; U23 write repositories landed; U27 foundation landed
-(topology + gate); U28/U30 pure-logic ports landed; everything else pending.
+**Status:** U20, U22, U24, and U26 done; U23 write repositories landed; U27 foundation
+landed (topology + gate); U28/U30 pure-logic ports landed; everything else pending.
 **Supersedes:** old U13–U18 of `2026-08-14-001` (production-readiness plan), per the mid-session
 redirect: *everything server-side moves to NestJS*.
 
@@ -96,19 +96,32 @@ field-for-field from `family-events-app` server modules with idempotent `ON CONF
 semantics and integration test coverage. Remaining: read-side repositories for events,
 sources, queues, notifications.
 
-### U24 — Consumer read API
+### U24 — Consumer read API ✅ (done)
 Parity endpoints for `search_events` (keyset cursor `(start_datetime, id)`, page 24),
 `events_enriched` batch hydration, event detail + `find_similar_events_by_id`, tags,
 cities, `public_events` preview. Contract fidelity matters more than SQL reuse: the
 RPCs' SQL can be called directly initially, then inlined.
+
+Implemented with OpenAPI DTOs (`EnrichedEventDto`, `CityDto`, `TagDto`, `EventsPageDto`,
+`EventsQueryDto`), optional Clerk auth via `OptionalClerkGuard` for personalized fields
+(`is_favorited`, `is_in_calendar`), and base64 keyset cursor. Endpoints: `GET /v1/cities`,
+`GET /v1/events` (page 24/max 100), `GET /v1/events/:id` (404 on missing/unpublished),
+`GET /v1/tags`.
 
 ### U25 — Consumer write API
 Favorites, calendar, ratings, comments, profile + preferred cities (U6b demote-first
 semantics), notification prefs/inbox (`mark_*_read`), `submit_community_event`,
 invites (`redeem/request/claim`). All behind the Clerk guard.
 
-### U26 — Plan feature ✅ (done, PR #9)
-`GET /v1/plan` endpoint (authenticated, 24-hour window from now) calling `plan_events_for_user_range` with the app's named parameters and defaults (weatherFit neutral, limit 5); `PlanRepository` wraps the RPC call; `PlannedEvent` DTO joins the wire types. `WeatherService` ports the weather edge function (OpenWeatherMap, 5s timeout) with outdoor/indoor/any mapping; unconfigured or failed upstream degrades to neutral and never throws into the request path. The RPC's 8-factor scoring (distance, weather, age, history_affinity, family_fit, timing, novelty, budget) is unchanged.
+### U26 — Plan feature ✅ (done)
+`GET /v1/plan`: 24-hour window (now to now+24h), optional `city_id`/`kid_age`, calls
+`PlanRepository.planForRange` → `plan_events_for_user_range` RPC with named parameters
+(weatherFit neutral, limit 5). `WeatherService` ported from the weather edge function:
+OpenWeatherMap integration (5s timeout), outdoor/indoor/any mapping from conditions +
+temperature, graceful degradation to neutral when unconfigured or failed (never throws
+into request path). Integration fixture: verbatim `plan_events_for_user_range` RPC
+definition (byte-identical from `20260724020000`, grants stripped), 8-factor scoring
+(distance, weather, age, history_affinity, family_fit, timing, novelty, budget).
 
 ### U27 — Pipeline foundation 🟡 (topology + gate + failure pings landed)
 pg-boss queue topology mirroring the 8 cron services — **landed with parity tests**;
@@ -155,7 +168,8 @@ replacement here (poll vs SSE); the old SPA's four Supabase channels are referen
 Sentry, structured logs, `@pg-boss/dashboard` as separate basic-auth Railway service
 (documented U12 deviation), Railway service for the API in project `family-events-ui`,
 deploy-cli/IaC updates, secret management parity (`.env.example` is the authoritative
-var list; U27 introduced `TELEGRAM_BOT_TOKEN` + `TELEGRAM_FAILURE_CHAT_ID`).
+var list; U27 introduced `TELEGRAM_BOT_TOKEN` + `TELEGRAM_FAILURE_CHAT_ID`; U26
+introduced `OPENWEATHER_API_KEY` as optional configuration).
 
 ### U33 — Staged cutover + decommission (operator-gated)
 Per-stage: enable pg-boss queue → disable matching Railway cron via `private.cron_enabled`
