@@ -1,6 +1,6 @@
 # NestJS backend rewrite plan (reconstructed) — units U20–U33
 
-**Status:** U20, U22, and U24 done; U23 write repositories landed; U27 foundation landed
+**Status:** U20, U22, and U26 done; U23 write repositories landed; U27 foundation landed
 (topology + gate); U28/U30 pure-logic ports landed; everything else pending.
 **Supersedes:** old U13–U18 of `2026-08-14-001` (production-readiness plan), per the mid-session
 redirect: *everything server-side moves to NestJS*.
@@ -96,27 +96,19 @@ field-for-field from `family-events-app` server modules with idempotent `ON CONF
 semantics and integration test coverage. Remaining: read-side repositories for events,
 sources, queues, notifications.
 
-### U24 — Consumer read API ✅ (done)
+### U24 — Consumer read API
 Parity endpoints for `search_events` (keyset cursor `(start_datetime, id)`, page 24),
 `events_enriched` batch hydration, event detail + `find_similar_events_by_id`, tags,
 cities, `public_events` preview. Contract fidelity matters more than SQL reuse: the
 RPCs' SQL can be called directly initially, then inlined.
-
-Implemented with OpenAPI DTOs (`EnrichedEventDto`, `CityDto`, `TagDto`, `EventsPageDto`,
-`EventsQueryDto`), optional Clerk auth via `OptionalClerkGuard` for personalized fields
-(`is_favorited`, `is_in_calendar`), and base64 keyset cursor. Endpoints: `GET /v1/cities`,
-`GET /v1/events` (page 24/max 100), `GET /v1/events/:id` (404 on missing/unpublished),
-`GET /v1/tags`.
 
 ### U25 — Consumer write API
 Favorites, calendar, ratings, comments, profile + preferred cities (U6b demote-first
 semantics), notification prefs/inbox (`mark_*_read`), `submit_community_event`,
 invites (`redeem/request/claim`). All behind the Clerk guard.
 
-### U26 — Plan feature
-`plan_events_first_nonempty_window` (D+0..7, limit 3) + weather proxy (OpenWeatherMap)
-+ `plan_events_for_user_range` 8-factor scoring parity (distance, weather, age,
-history_affinity, family_fit, timing, novelty, budget).
+### U26 — Plan feature ✅ (done, PR #9)
+`GET /v1/plan` endpoint (authenticated, 24-hour window from now) calling `plan_events_for_user_range` with the app's named parameters and defaults (weatherFit neutral, limit 5); `PlanRepository` wraps the RPC call; `PlannedEvent` DTO joins the wire types. `WeatherService` ports the weather edge function (OpenWeatherMap, 5s timeout) with outdoor/indoor/any mapping; unconfigured or failed upstream degrades to neutral and never throws into the request path. The RPC's 8-factor scoring (distance, weather, age, history_affinity, family_fit, timing, novelty, budget) is unchanged.
 
 ### U27 — Pipeline foundation 🟡 (topology + gate + failure pings landed)
 pg-boss queue topology mirroring the 8 cron services — **landed with parity tests**;
