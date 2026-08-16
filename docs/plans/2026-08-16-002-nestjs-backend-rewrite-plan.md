@@ -1,7 +1,7 @@
 # NestJS backend rewrite plan (reconstructed) — units U20–U33
 
-**Status:** U20, U22, and U24 done; U23 write repositories landed; U27 foundation landed
-(topology + gate); U28/U30 pure-logic ports landed; everything else pending.
+**Status:** U20, U22, U24, and U26 done; U23 write repositories landed; U27 foundation
+landed (topology + gate); U28/U30 pure-logic ports landed; everything else pending.
 **Supersedes:** old U13–U18 of `2026-08-14-001` (production-readiness plan), per the mid-session
 redirect: *everything server-side moves to NestJS*.
 
@@ -113,10 +113,15 @@ Favorites, calendar, ratings, comments, profile + preferred cities (U6b demote-f
 semantics), notification prefs/inbox (`mark_*_read`), `submit_community_event`,
 invites (`redeem/request/claim`). All behind the Clerk guard.
 
-### U26 — Plan feature
-`plan_events_first_nonempty_window` (D+0..7, limit 3) + weather proxy (OpenWeatherMap)
-+ `plan_events_for_user_range` 8-factor scoring parity (distance, weather, age,
-history_affinity, family_fit, timing, novelty, budget).
+### U26 — Plan feature ✅ (done)
+`GET /v1/plan`: 24-hour window (now to now+24h), optional `city_id`/`kid_age`, calls
+`PlanRepository.planForRange` → `plan_events_for_user_range` RPC with named parameters
+(weatherFit neutral, limit 5). `WeatherService` ported from the weather edge function:
+OpenWeatherMap integration (5s timeout), outdoor/indoor/any mapping from conditions +
+temperature, graceful degradation to neutral when unconfigured or failed (never throws
+into request path). Integration fixture: verbatim `plan_events_for_user_range` RPC
+definition (byte-identical from `20260724020000`, grants stripped), 8-factor scoring
+(distance, weather, age, history_affinity, family_fit, timing, novelty, budget).
 
 ### U27 — Pipeline foundation 🟡 (topology + gate + failure pings landed)
 pg-boss queue topology mirroring the 8 cron services — **landed with parity tests**;
@@ -163,7 +168,8 @@ replacement here (poll vs SSE); the old SPA's four Supabase channels are referen
 Sentry, structured logs, `@pg-boss/dashboard` as separate basic-auth Railway service
 (documented U12 deviation), Railway service for the API in project `family-events-ui`,
 deploy-cli/IaC updates, secret management parity (`.env.example` is the authoritative
-var list; U27 introduced `TELEGRAM_BOT_TOKEN` + `TELEGRAM_FAILURE_CHAT_ID`).
+var list; U27 introduced `TELEGRAM_BOT_TOKEN` + `TELEGRAM_FAILURE_CHAT_ID`; U26
+introduced `OPENWEATHER_API_KEY` as optional configuration).
 
 ### U33 — Staged cutover + decommission (operator-gated)
 Per-stage: enable pg-boss queue → disable matching Railway cron via `private.cron_enabled`
