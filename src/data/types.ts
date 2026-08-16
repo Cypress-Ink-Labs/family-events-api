@@ -40,12 +40,17 @@ export interface EnrichedEvent {
   is_in_calendar: boolean
 }
 
+export interface EventCursor {
+  startDatetime: string
+  id: string
+}
+
 export interface ListEventsInput {
   cityId?: string | null
   status?: string
   limit?: number
   /** Keyset cursor: the (start_datetime, id) of the last row of the previous page. */
-  after?: { startDatetime: string; id: string } | null
+  after?: EventCursor | null
   /** Storage user key (supabase uuid via the U22 identity seam): personalizes is_favorited / is_in_calendar. */
   userKey?: string | null
   eventIds?: string[] | null
@@ -69,7 +74,7 @@ export interface SearchEventsInput {
   radiusKm?: number | null
   limit?: number
   /** Keyset cursor from the last row of the previous page. */
-  after?: { startDatetime: string; id: string } | null
+  after?: EventCursor | null
 }
 
 /** search_events returns base event rows (SETOF public.events, no enrichment). */
@@ -101,4 +106,11 @@ export interface City {
   timezone: string
   latitude: string | null
   longitude: string | null
+}
+
+export interface Tag {
+  id: string
+  name: string
+  slug: string
+  color: string
 }

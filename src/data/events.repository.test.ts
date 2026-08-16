@@ -150,3 +150,13 @@ describe("ReferenceRepository.listCities", () => {
     expect(sql).toContain("ORDER BY name ASC")
   })
 })
+
+describe("ReferenceRepository.listTags", () => {
+  it("selects the public tag contract in slug order", async () => {
+    const { db, query } = makeDb()
+    await new ReferenceRepository(db).listTags()
+    const [sql] = query.mock.calls[0]!
+    expect(sql).toContain("SELECT id::text, name, slug, color")
+    expect(sql).toContain("ORDER BY slug ASC")
+  })
+})
