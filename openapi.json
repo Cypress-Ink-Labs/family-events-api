@@ -1,6 +1,228 @@
 {
   "openapi": "3.0.0",
   "paths": {
+    "/v1/cities": {
+      "get": {
+        "operationId": "ConsumerController_listCities",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CityDto"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The supplied bearer token is invalid"
+          }
+        },
+        "security": [
+          {},
+          {
+            "clerk": []
+          }
+        ],
+        "summary": "List active cities",
+        "tags": [
+          "consumer"
+        ]
+      }
+    },
+    "/v1/events": {
+      "get": {
+        "operationId": "ConsumerController_listEvents",
+        "parameters": [
+          {
+            "required": false,
+            "name": "city_id",
+            "in": "query",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "required": false,
+            "name": "keyword",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "required": false,
+            "name": "date_from",
+            "in": "query",
+            "schema": {
+              "format": "date-time",
+              "type": "string"
+            }
+          },
+          {
+            "required": false,
+            "name": "date_to",
+            "in": "query",
+            "schema": {
+              "format": "date-time",
+              "type": "string"
+            }
+          },
+          {
+            "required": false,
+            "name": "is_free",
+            "in": "query",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "required": false,
+            "name": "kid_age",
+            "in": "query",
+            "schema": {
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Base64 keyset cursor returned by the previous page",
+            "required": false,
+            "name": "cursor",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "required": false,
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 24,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventsPageDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query parameters or cursor"
+          },
+          "401": {
+            "description": "The supplied bearer token is invalid"
+          }
+        },
+        "security": [
+          {},
+          {
+            "clerk": []
+          }
+        ],
+        "summary": "List and search events",
+        "tags": [
+          "consumer"
+        ]
+      }
+    },
+    "/v1/events/{id}": {
+      "get": {
+        "operationId": "ConsumerController_getEvent",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnrichedEventDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid event id"
+          },
+          "401": {
+            "description": "The supplied bearer token is invalid"
+          },
+          "404": {
+            "description": "Event not found"
+          }
+        },
+        "security": [
+          {},
+          {
+            "clerk": []
+          }
+        ],
+        "summary": "Get an event",
+        "tags": [
+          "consumer"
+        ]
+      }
+    },
+    "/v1/tags": {
+      "get": {
+        "operationId": "ConsumerController_listTags",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TagDto"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The supplied bearer token is invalid"
+          }
+        },
+        "security": [
+          {},
+          {
+            "clerk": []
+          }
+        ],
+        "summary": "List event tags",
+        "tags": [
+          "consumer"
+        ]
+      }
+    },
     "/healthz": {
       "get": {
         "operationId": "HealthController_healthz",
@@ -63,6 +285,288 @@
       }
     },
     "schemas": {
+      "CityDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string",
+            "nullable": true
+          },
+          "slug": {
+            "type": "string"
+          },
+          "timezone": {
+            "type": "string"
+          },
+          "latitude": {
+            "type": "string",
+            "nullable": true
+          },
+          "longitude": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "state",
+          "slug",
+          "timezone",
+          "latitude",
+          "longitude"
+        ]
+      },
+      "EnrichedEventDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "start_datetime": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "end_datetime": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "timezone": {
+            "type": "string",
+            "nullable": true
+          },
+          "venue_name": {
+            "type": "string",
+            "nullable": true
+          },
+          "address": {
+            "type": "string",
+            "nullable": true
+          },
+          "city_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "latitude": {
+            "type": "string",
+            "nullable": true
+          },
+          "longitude": {
+            "type": "string",
+            "nullable": true
+          },
+          "age_min": {
+            "type": "integer",
+            "nullable": true
+          },
+          "age_max": {
+            "type": "integer",
+            "nullable": true
+          },
+          "price": {
+            "type": "string",
+            "nullable": true
+          },
+          "is_free": {
+            "type": "boolean"
+          },
+          "source_url": {
+            "type": "string",
+            "nullable": true
+          },
+          "source_name": {
+            "type": "string",
+            "nullable": true
+          },
+          "images": {
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": true
+              },
+              {
+                "type": "array",
+                "items": {}
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              }
+            ],
+            "nullable": true
+          },
+          "status": {
+            "type": "string"
+          },
+          "recurrence_info": {
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": true
+              },
+              {
+                "type": "array",
+                "items": {}
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              }
+            ],
+            "nullable": true
+          },
+          "is_featured": {
+            "type": "boolean"
+          },
+          "view_count": {
+            "type": "integer"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "avg_rating": {
+            "type": "string",
+            "nullable": true
+          },
+          "rating_count": {
+            "type": "integer"
+          },
+          "tags": {
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": true
+              },
+              {
+                "type": "array",
+                "items": {}
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              }
+            ],
+            "nullable": true
+          },
+          "is_favorited": {
+            "type": "boolean"
+          },
+          "is_in_calendar": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "description",
+          "start_datetime",
+          "end_datetime",
+          "timezone",
+          "venue_name",
+          "address",
+          "city_id",
+          "latitude",
+          "longitude",
+          "age_min",
+          "age_max",
+          "price",
+          "is_free",
+          "source_url",
+          "source_name",
+          "images",
+          "status",
+          "recurrence_info",
+          "is_featured",
+          "view_count",
+          "created_at",
+          "updated_at",
+          "avg_rating",
+          "rating_count",
+          "tags",
+          "is_favorited",
+          "is_in_calendar"
+        ]
+      },
+      "EventsPageDto": {
+        "type": "object",
+        "properties": {
+          "events": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EnrichedEventDto"
+            }
+          },
+          "next_cursor": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "events",
+          "next_cursor"
+        ]
+      },
+      "TagDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "color": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "slug",
+          "color"
+        ]
+      },
       "HealthResponse": {
         "type": "object",
         "properties": {}
