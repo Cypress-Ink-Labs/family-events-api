@@ -1,7 +1,7 @@
 # NestJS backend rewrite plan (reconstructed) — units U20–U33
 
-**Status:** U20 and U22 done; U27 foundation landed (topology + gate); U28/U30 pure-logic
-ports landed; everything else pending.
+**Status:** U20 and U22 done; U23 write repositories landed; U27 foundation landed
+(topology + gate); U28/U30 pure-logic ports landed; everything else pending.
 **Supersedes:** old U13–U18 of `2026-08-14-001` (production-readiness plan), per the mid-session
 redirect: *everything server-side moves to NestJS*.
 
@@ -85,10 +85,16 @@ U19's `clerk_user_mapping` consumption: request identity = Clerk `sub` mapped to
 mirroring the migration DDL (FK cascade, shape/role checks). Provisioning script
 stays in family-events-backend until cutover.
 
-### U23 — Data access layer
+### U23 — Data access layer 🟡 (write repositories landed)
 Repositories over the existing schema for events, sources, queues, users, notifications.
 Integration-tested against real Postgres (CI service container; locally the Supabase
 stack on 127.0.0.1:55322). Port `packages/contracts` generated types or regenerate.
+**Write-side consumer repositories landed:** `FavoritesRepository`, `CalendarRepository`,
+`RatingsRepository`, `CommentsRepository`, `SubmissionsRepository` (with transactional
+5-per-24h rate limit), `PreferredCitiesRepository` (demote-first semantics), all ported
+field-for-field from `family-events-app` server modules with idempotent `ON CONFLICT`
+semantics and integration test coverage. Remaining: read-side repositories for events,
+sources, queues, notifications.
 
 ### U24 — Consumer read API
 Parity endpoints for `search_events` (keyset cursor `(start_datetime, id)`, page 24),
@@ -106,14 +112,17 @@ invites (`redeem/request/claim`). All behind the Clerk guard.
 + `plan_events_for_user_range` 8-factor scoring parity (distance, weather, age,
 history_affinity, family_fit, timing, novelty, budget).
 
-### U27 — Pipeline foundation 🟡 (topology + gate landed)
+### U27 — Pipeline foundation 🟡 (topology + gate + failure pings landed)
 pg-boss queue topology mirroring the 8 cron services — **landed with parity tests**;
 registration deliberately deferred per single-writer rule. Kill-switch parity
 (`private.cron_enabled` per legacy label, missing-row-means-enabled) and run-history
 writes (`private.railway_cron_runs` continuity for the admin UI) — **landed as
-`CronGateService.runGated` with unit + real-Postgres integration tests**. Remaining:
-U3 Telegram failure pings, per-stage `CUTOVER` gating so individual queues can be
-enabled independently at U33.
+`CronGateService.runGated` with unit + real-Postgres integration tests**. U3 Telegram
+failure pings — **landed via `FailurePingService`** (posts to Telegram Bot API with
+legacy HTML format, 500-char error slice, kind labels `run failed`/`dead-lettered`/
+`function crashed`, 10s timeout, bot-token redaction; missing env is silent skip).
+Remaining: per-stage `CUTOVER` gating so individual queues can be enabled independently
+at U33.
 
 ### U28 — Ingestion port 🟡 (dedup landed)
 `scrape-due-sources` → `run_due_source_scrapes` enqueue; source-queue worker (claim 1,
@@ -148,7 +157,7 @@ replacement here (poll vs SSE); the old SPA's four Supabase channels are referen
 Sentry, structured logs, `@pg-boss/dashboard` as separate basic-auth Railway service
 (documented U12 deviation), Railway service for the API in project `family-events-ui`,
 deploy-cli/IaC updates, secret management parity (`.env.example` is the authoritative
-var list).
+var list; U27 introduced `TELEGRAM_BOT_TOKEN` + `TELEGRAM_FAILURE_CHAT_ID`).
 
 ### U33 — Staged cutover + decommission (operator-gated)
 Per-stage: enable pg-boss queue → disable matching Railway cron via `private.cron_enabled`
@@ -162,6 +171,8 @@ pipeline remains the single writer for any stage/family not yet flipped.
 U21+U22 unblock everything consumer-facing; U23 unblocks U24–U26 (parallel) and
 feeds U28–U31. U27→U28→U29→U30 is the pipeline spine (U28/U29/U30 internally
 parallelizable per queue). U31 anytime after U23. U32 rides along. U33 last, staged.
+**U23 write repositories partially unblock U25:** the consumer write API can proceed
+for favorites, calendar, ratings, comments, submissions, and preferred cities.
 
 ## Standing blockers (user action)
 

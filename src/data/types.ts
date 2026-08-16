@@ -1,5 +1,5 @@
 // Consumer wire shapes, kept field-for-field identical to the app's server
-// data layer (family-events-app src/server/events.ts + reference.ts, U6).
+// data layer (family-events-app src/server/*.ts, U6).
 // snake_case is deliberate: these rows ARE the contract the app already
 // serves; the OpenAPI DTOs (U21/U24) freeze them, they do not rename them.
 //
@@ -113,4 +113,68 @@ export interface Tag {
   name: string
   slug: string
   color: string
+}
+
+export interface Favorite {
+  id: string
+  user_id: string
+  event_id: string
+  created_at: string
+}
+
+export interface CalendarEvent {
+  event_id: string
+  added_at: string
+  notes: string | null
+  title: string
+  start_datetime: string
+  end_datetime: string | null
+  venue_name: string | null
+  address: string | null
+  city_id: string | null
+  is_free: boolean
+  price: string | null
+  images: Json
+}
+
+export interface Rating {
+  id: string
+  user_id: string
+  event_id: string
+  score: number
+  created_at: string
+}
+
+export interface EventComment {
+  id: string
+  user_id: string
+  event_id: string
+  body: string
+  is_approved: boolean
+  is_flagged: boolean
+  created_at: string
+  updated_at: string
+  display_name: string | null
+  avatar_url: string | null
+}
+
+export interface CommunityEventInput {
+  title: string
+  description?: string | null
+  startDatetime: string
+  endDatetime?: string | null
+  venueName?: string | null
+  address?: string | null
+  cityId: string
+  ageMin?: number | null
+  ageMax?: number | null
+  isFree?: boolean
+  price?: number | null
+}
+
+export interface PreferredCity {
+  user_id: string
+  city_id: string
+  is_primary: boolean
+  created_at: string
 }

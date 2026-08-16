@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common"
 
 import { CronGateService } from "./cron-gate.service.js"
+import { FailurePingService } from "./failure-ping.service.js"
 
 /**
  * Pipeline infrastructure (U27). Stage workers (U28-U30) register their
@@ -8,7 +9,7 @@ import { CronGateService } from "./cron-gate.service.js"
  * at boot and the Railway crons remain the single writer.
  */
 @Module({
-  providers: [CronGateService],
-  exports: [CronGateService],
+  providers: [CronGateService, FailurePingService],
+  exports: [CronGateService, FailurePingService],
 })
 export class PipelineModule {}
