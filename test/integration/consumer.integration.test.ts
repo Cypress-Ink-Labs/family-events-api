@@ -18,15 +18,19 @@ import { integrationDatabaseUrl } from "./db.js"
 vi.mock("@clerk/backend", () => ({
   verifyToken: vi.fn(async (token: string) => {
     if (token === "mapped-token") return { sub: "user_reader" }
+    if (token === "other-token") return { sub: "user_other" }
     if (token === "unmapped-token") return { sub: "user_unmapped" }
     throw new Error("bad token")
   }),
 }))
 
 const CITY = "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
-const INACTIVE_CITY = "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
+const OTHER_CITY = "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
+const INACTIVE_CITY = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
 const TAG_FREE = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"
 const TAG_OUTDOOR = "ffffffff-ffff-4fff-8fff-ffffffffffff"
+const USER_READER = "99999999-9999-4999-8999-999999999999"
+const USER_OTHER = "88888888-8888-4888-8888-888888888888"
 
 describe("consumer read HTTP API", () => {
   let app: INestApplication
@@ -77,13 +81,28 @@ describe("consumer read HTTP API", () => {
     await db.query(
       `INSERT INTO public.cities (id, name, slug, state, timezone, latitude, longitude, is_active) VALUES
        ($1, 'Lafayette', 'lafayette', 'LA', 'America/Chicago', 30.22, -92.02, true),
-       ($2, 'Retired', 'retired', 'LA', 'America/Chicago', NULL, NULL, false)`,
-      [CITY, INACTIVE_CITY]
+       ($2, 'Baton Rouge', 'baton-rouge', 'LA', 'America/Chicago', 30.45, -91.19, true),
+       ($3, 'Retired', 'retired', 'LA', 'America/Chicago', NULL, NULL, false)`,
+      [CITY, OTHER_CITY, INACTIVE_CITY]
     )
     await db.query(
       `INSERT INTO public.tags (id, name, slug, color) VALUES
        ($1, 'Outdoor', 'outdoor', '#222222'), ($2, 'Free', 'free', '#111111')`,
       [TAG_OUTDOOR, TAG_FREE]
+    )
+    await db.query("INSERT INTO auth.users (id) VALUES ($1), ($2)", [USER_READER, USER_OTHER])
+    await db.query(
+      `INSERT INTO public.clerk_user_mapping
+       (clerk_user_id, supabase_uuid, email, role) VALUES
+       ('user_reader', $1, 'reader@example.com', 'member'),
+       ('user_other', $2, 'other@example.com', 'member')`,
+      [USER_READER, USER_OTHER]
+    )
+    await db.query(
+      `INSERT INTO public.user_profiles (id, email, display_name) VALUES
+       ($1, 'reader@example.com', 'Reader'),
+       ($2, 'other@example.com', 'Other')`,
+      [USER_READER, USER_OTHER]
     )
   })
 
@@ -161,15 +180,10 @@ describe("consumer read HTTP API", () => {
 
   it("personalizes detail for a mapped Clerk identity", async () => {
     const id = await insertEvent({ title: "Favorite" })
-    const userId = randomUUID()
-    await db.query("INSERT INTO auth.users (id) VALUES ($1)", [userId])
-    await db.query(
-      `INSERT INTO public.clerk_user_mapping
-       (clerk_user_id, supabase_uuid, email, role)
-       VALUES ('user_reader', $1, 'reader@example.com', 'member')`,
-      [userId]
-    )
-    await db.query("INSERT INTO public.favorites (user_id, event_id) VALUES ($1, $2)", [userId, id])
+    await db.query("INSERT INTO public.favorites (user_id, event_id) VALUES ($1, $2)", [
+      USER_READER,
+      id,
+    ])
 
     const response = await request(app.getHttpServer())
       .get(`/v1/events/${id}`)
@@ -183,6 +197,7 @@ describe("consumer read HTTP API", () => {
   it("returns active cities and tags ordered by slug", async () => {
     const cities = await request(app.getHttpServer()).get("/v1/cities").expect(200)
     expect(cities.body).toEqual([
+      expect.objectContaining({ id: OTHER_CITY, name: "Baton Rouge", slug: "baton-rouge" }),
       expect.objectContaining({ id: CITY, name: "Lafayette", slug: "lafayette" }),
     ])
 
@@ -197,6 +212,162 @@ describe("consumer read HTTP API", () => {
     await request(app.getHttpServer()).get("/v1/events").query({ cursor: "%%%" }).expect(400)
   })
 
+  it("requires a provisioned authenticated identity for writes", async () => {
+    const eventId = await insertEvent({ title: "Protected" })
+
+    await request(app.getHttpServer())
+      .put(`/v1/events/${eventId}/favorite`)
+      .send({ on: true })
+      .expect(401)
+    await request(app.getHttpServer())
+      .put(`/v1/events/${eventId}/favorite`)
+      .set("Authorization", "Bearer unmapped-token")
+      .send({ on: true })
+      .expect(403)
+  })
+
+  it("toggles favorite and calendar personalization round-trip", async () => {
+    const eventId = await insertEvent({ title: "Personalized" })
+    const server = request(app.getHttpServer())
+
+    await server
+      .put(`/v1/events/${eventId}/favorite`)
+      .set("Authorization", "Bearer mapped-token")
+      .send({ on: true })
+      .expect(200, { ok: true })
+    await server
+      .put(`/v1/events/${eventId}/calendar`)
+      .set("Authorization", "Bearer mapped-token")
+      .send({ on: true })
+      .expect(200, { ok: true })
+
+    const enabled = await server
+      .get(`/v1/events/${eventId}`)
+      .set("Authorization", "Bearer mapped-token")
+      .expect(200)
+    expect(enabled.body).toMatchObject({ is_favorited: true, is_in_calendar: true })
+
+    await server
+      .put(`/v1/events/${eventId}/favorite`)
+      .set("Authorization", "Bearer mapped-token")
+      .send({ on: false })
+      .expect(200, { ok: true })
+    await server
+      .put(`/v1/events/${eventId}/calendar`)
+      .set("Authorization", "Bearer mapped-token")
+      .send({ on: false })
+      .expect(200, { ok: true })
+
+    const disabled = await server
+      .get(`/v1/events/${eventId}`)
+      .set("Authorization", "Bearer mapped-token")
+      .expect(200)
+    expect(disabled.body).toMatchObject({ is_favorited: false, is_in_calendar: false })
+  })
+
+  it("upserts one rating for the mapped user", async () => {
+    const eventId = await insertEvent({ title: "Rate me" })
+    const server = request(app.getHttpServer())
+
+    await server
+      .put(`/v1/events/${eventId}/rating`)
+      .set("Authorization", "Bearer mapped-token")
+      .send({ score: 3 })
+      .expect(200, { score: 3 })
+    await server
+      .put(`/v1/events/${eventId}/rating`)
+      .set("Authorization", "Bearer mapped-token")
+      .send({ score: 5 })
+      .expect(200, { score: 5 })
+
+    const rows = await db.query<{ score: number }>(
+      "SELECT score FROM public.ratings WHERE user_id = $1 AND event_id = $2",
+      [USER_READER, eventId]
+    )
+    expect(rows).toEqual([{ score: 5 }])
+  })
+
+  it("posts comments and only removes the owner's comment", async () => {
+    const eventId = await insertEvent({ title: "Discuss me" })
+    const server = request(app.getHttpServer())
+    const posted = await server
+      .post(`/v1/events/${eventId}/comments`)
+      .set("Authorization", "Bearer mapped-token")
+      .send({ body: "  Great event  " })
+      .expect(201)
+
+    expect(posted.body.id).toEqual(expect.any(String))
+    await server
+      .delete(`/v1/comments/${posted.body.id}`)
+      .set("Authorization", "Bearer other-token")
+      .expect(200, { removed: false })
+    await server
+      .delete(`/v1/comments/${posted.body.id}`)
+      .set("Authorization", "Bearer mapped-token")
+      .expect(200, { removed: true })
+  })
+
+  it("inserts draft submissions and rejects the sixth in 24 hours", async () => {
+    const server = request(app.getHttpServer())
+    const submit = (number: number) =>
+      server
+        .post("/v1/events")
+        .set("Authorization", "Bearer mapped-token")
+        .send({
+          title: `Community Event ${number}`,
+          description: "Bring a blanket",
+          startDatetime: "2026-08-19T15:00:00+00:00",
+          cityId: CITY,
+        })
+
+    const first = await submit(1).expect(201)
+    for (let number = 2; number <= 5; number++) {
+      await submit(number).expect(201)
+    }
+    await submit(6).expect(429)
+
+    const [row] = await db.query<{
+      id: string
+      status: string
+      source_name: string
+      submitted_by: string
+    }>(
+      `SELECT id::text, status::text, source_name, submitted_by::text
+       FROM public.events WHERE id = $1`,
+      [first.body.id]
+    )
+    expect(row).toEqual({
+      id: first.body.id,
+      status: "draft",
+      source_name: "community",
+      submitted_by: USER_READER,
+    })
+  })
+
+  it("sets, flips, and gets preferred cities by demoting the old primary first", async () => {
+    const server = request(app.getHttpServer())
+
+    await server
+      .put("/v1/me/preferred-cities")
+      .set("Authorization", "Bearer mapped-token")
+      .send({ city_ids: [CITY, OTHER_CITY], primary_city_id: CITY })
+      .expect(200, { ok: true })
+    await server
+      .put("/v1/me/preferred-cities")
+      .set("Authorization", "Bearer mapped-token")
+      .send({ city_ids: [CITY, OTHER_CITY], primary_city_id: OTHER_CITY })
+      .expect(200, { ok: true })
+
+    const response = await server
+      .get("/v1/me/preferred-cities")
+      .set("Authorization", "Bearer mapped-token")
+      .expect(200)
+    expect(response.body).toHaveLength(2)
+    expect(response.body.filter((city: { is_primary: boolean }) => city.is_primary)).toEqual([
+      expect.objectContaining({ city_id: OTHER_CITY }),
+    ])
+  })
+
   it("requires a mapped Clerk session for GET /v1/plan", async () => {
     await request(app.getHttpServer()).get("/v1/plan").expect(401)
     await request(app.getHttpServer())
@@ -206,14 +377,6 @@ describe("consumer read HTTP API", () => {
   })
 
   it("returns today's plan for a mapped identity", async () => {
-    const userId = randomUUID()
-    await db.query("INSERT INTO auth.users (id) VALUES ($1)", [userId])
-    await db.query(
-      `INSERT INTO public.clerk_user_mapping
-       (clerk_user_id, supabase_uuid, email, role)
-       VALUES ('user_reader', $1, 'reader@example.com', 'member')`,
-      [userId]
-    )
     const start = new Date(Date.now() + 3_600_000).toISOString()
     const id = await insertEvent({ title: "Tonight", start })
 
@@ -233,14 +396,6 @@ describe("consumer read HTTP API", () => {
   })
 
   it("rejects an invalid plan city_id", async () => {
-    const userId = randomUUID()
-    await db.query("INSERT INTO auth.users (id) VALUES ($1)", [userId])
-    await db.query(
-      `INSERT INTO public.clerk_user_mapping
-       (clerk_user_id, supabase_uuid, email, role)
-       VALUES ('user_reader', $1, 'reader@example.com', 'member')`,
-      [userId]
-    )
     await request(app.getHttpServer())
       .get("/v1/plan")
       .query({ city_id: "not-a-uuid" })
