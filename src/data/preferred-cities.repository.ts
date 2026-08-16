@@ -5,6 +5,13 @@ import type { PreferredCity } from "./types.js"
 
 // Ported from family-events-app src/server/preferred-cities.ts
 
+export class PreferredCitiesValidationError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = "PreferredCitiesValidationError"
+  }
+}
+
 const LIST_SQL = `
 SELECT user_id::text, city_id::text, is_primary, created_at
 FROM public.user_preferred_cities
@@ -53,10 +60,12 @@ export class PreferredCitiesRepository {
   ): Promise<void> {
     const uniqueCityIds = Array.from(new Set(cityIds))
     if (uniqueCityIds.length === 0) {
-      throw new Error("set_preferred_cities: city set must be non-empty")
+      throw new PreferredCitiesValidationError("set_preferred_cities: city set must be non-empty")
     }
     if (!uniqueCityIds.includes(primaryCityId)) {
-      throw new Error("set_preferred_cities: primary city must be one of the selected cities")
+      throw new PreferredCitiesValidationError(
+        "set_preferred_cities: primary city must be one of the selected cities"
+      )
     }
 
     await this.db.withTransaction(async (client) => {
