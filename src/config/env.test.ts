@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { cutoverFamilies, validateEnv } from "./env.js"
+import { validateEnv } from "./env.js"
 
 const base = { DATABASE_URL: "postgresql://u:p@localhost:5432/db" }
 
@@ -23,15 +23,11 @@ describe("validateEnv", () => {
   it("rejects a non-numeric PORT", () => {
     expect(() => validateEnv({ ...base, PORT: "abc" })).toThrow(/PORT/)
   })
-})
 
-describe("cutoverFamilies", () => {
-  it("parses a comma-separated list, trimmed and lowercased", () => {
-    const env = validateEnv({ ...base, CUTOVER_FAMILIES: " Smith, jones ,DOE " })
-    expect(cutoverFamilies(env)).toEqual(new Set(["smith", "jones", "doe"]))
-  })
-
-  it("returns an empty set when unset (no family gets provisioned)", () => {
-    expect(cutoverFamilies(validateEnv(base)).size).toBe(0)
+  it("passes cutover flags through as raw strings for flags.ts semantics", () => {
+    const env = validateEnv({ ...base, CUTOVER_SCRAPE: "true", CUTOVER_TAG: "false" })
+    expect(env.CUTOVER_SCRAPE).toBe("true")
+    expect(env.CUTOVER_TAG).toBe("false")
+    expect(env.CUTOVER_NOTIFY).toBeUndefined()
   })
 })
