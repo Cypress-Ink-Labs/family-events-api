@@ -4,10 +4,12 @@ import { join } from "node:path"
 import type { DbService } from "../../src/db/db.service.js"
 
 /**
- * Installs the consumer catalog the U23 repositories read: the tables the
- * events_enriched / search_events RPCs touch (column names and types match
- * family-events-backend's schema baseline) plus the RPCs themselves,
- * extracted VERBATIM from the backend migrations into test/integration/sql/:
+ * Installs the consumer catalog the U23 repositories read and write: the
+ * tables the events_enriched / search_events RPCs touch plus the write-side
+ * tables (favorites, calendar, ratings, comments, user_profiles,
+ * user_preferred_cities). Column names and types match
+ * family-events-backend's schema baseline. RPCs are extracted VERBATIM from
+ * the backend migrations into test/integration/sql/:
  *
  * - events_enriched.sql  <- 20260601019000_restore_events_enriched_cursor_signature.sql
  *   (grant/revoke statements trimmed: the bare test database has no
@@ -16,6 +18,8 @@ import type { DbService } from "../../src/db/db.service.js"
  *
  * Deviation: events.search_vector is a generated column here, while the real
  * schema maintains it out of band; the FTS semantics under test are the same.
+ * events.submitted_by / llm_review_status come from later migrations
+ * (20260601033000 / 20260601004000) that community submit writes.
  */
 // Vitest always runs from the package root, so resolve from cwd (import.meta
 // is unavailable under the CJS-mode typecheck).
@@ -30,14 +34,21 @@ export async function ensureCatalogSchema(db: DbService): Promise<void> {
   // createIntegrationDb(), which refuses non-disposable databases.
   await db.query(`
     DROP TABLE IF EXISTS
+      public.comments, public.user_preferred_cities, public.user_profiles,
       public.event_image_attributions, public.user_calendar_events, public.favorites,
       public.ratings, public.event_tags, public.tags, public.events, public.cities
     CASCADE
   `)
+  await db.query("DROP TYPE IF EXISTS public.llm_event_review_status CASCADE")
   await db.query("DROP TYPE IF EXISTS public.event_status CASCADE")
   await db.query(
     "CREATE TYPE public.event_status AS ENUM ('draft', 'published', 'rejected', 'archived')"
   )
+  await db.query(`
+    CREATE TYPE public.llm_event_review_status AS ENUM (
+      'not_required', 'pending', 'succeeded', 'failed', 'skipped'
+    )
+  `)
   await db.query(`
     CREATE TABLE public.cities (
       id uuid PRIMARY KEY,
@@ -54,7 +65,7 @@ export async function ensureCatalogSchema(db: DbService): Promise<void> {
   `)
   await db.query(`
     CREATE TABLE public.events (
-      id uuid PRIMARY KEY,
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
       title text NOT NULL,
       description text,
       start_datetime timestamptz NOT NULL,
@@ -85,6 +96,8 @@ export async function ensureCatalogSchema(db: DbService): Promise<void> {
       search_vector tsvector GENERATED ALWAYS AS (
         to_tsvector('english', coalesce(title, '') || ' ' || coalesce(description, ''))
       ) STORED,
+      submitted_by uuid,
+      llm_review_status public.llm_event_review_status NOT NULL DEFAULT 'not_required',
       created_at timestamptz NOT NULL DEFAULT now(),
       updated_at timestamptz NOT NULL DEFAULT now()
     )
@@ -148,6 +161,48 @@ export async function ensureCatalogSchema(db: DbService): Promise<void> {
       created_at timestamptz NOT NULL DEFAULT now()
     )
   `)
+  await db.query(`
+    CREATE TABLE public.user_profiles (
+      id uuid PRIMARY KEY,
+      email text,
+      display_name text,
+      avatar_url text,
+      role text NOT NULL DEFAULT 'user',
+      city_preference_id uuid REFERENCES public.cities (id) ON DELETE SET NULL,
+      child_name text,
+      child_age integer,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now(),
+      CONSTRAINT user_profiles_role_check CHECK (role = ANY (ARRAY['user'::text, 'admin'::text]))
+    )
+  `)
+  await db.query(`
+    CREATE TABLE public.comments (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      user_id uuid NOT NULL REFERENCES public.user_profiles (id) ON DELETE CASCADE,
+      event_id uuid NOT NULL REFERENCES public.events (id) ON DELETE CASCADE,
+      body text NOT NULL,
+      is_approved boolean NOT NULL DEFAULT true,
+      is_flagged boolean NOT NULL DEFAULT false,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now(),
+      CONSTRAINT comments_body_len_chk CHECK ((length(body) >= 1) AND (length(body) <= 4000))
+    )
+  `)
+  await db.query(`
+    CREATE TABLE public.user_preferred_cities (
+      user_id uuid NOT NULL REFERENCES public.user_profiles (id) ON DELETE CASCADE,
+      city_id uuid NOT NULL REFERENCES public.cities (id) ON DELETE CASCADE,
+      is_primary boolean NOT NULL DEFAULT false,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      PRIMARY KEY (user_id, city_id)
+    )
+  `)
+  await db.query(`
+    CREATE UNIQUE INDEX user_preferred_cities_one_primary
+      ON public.user_preferred_cities (user_id)
+      WHERE is_primary
+  `)
   for (const file of ["events_enriched.sql", "search_events.sql"]) {
     await db.query(readFileSync(join(SQL_DIR, file), "utf8"))
   }
@@ -155,6 +210,7 @@ export async function ensureCatalogSchema(db: DbService): Promise<void> {
 
 export async function truncateCatalog(db: DbService): Promise<void> {
   await db.query(`TRUNCATE
+    public.comments, public.user_preferred_cities, public.user_profiles,
     public.event_image_attributions, public.user_calendar_events, public.favorites,
     public.ratings, public.event_tags, public.tags, public.events, public.cities
     CASCADE`)
