@@ -69,18 +69,11 @@ export class CronGateService {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       await this.recordRun(schedule.replaces, "failed", (Date.now() - startedAtMs) / 1000, message)
-      if (this.failurePing !== undefined) {
-        try {
-          await this.failurePing.send({
-            functionName: schedule.replaces,
-            kind: "function_failed",
-            error: message,
-          })
-        } catch (pingError) {
-          const pingMessage = pingError instanceof Error ? pingError.message : String(pingError)
-          this.logger.warn(`failure ping threw: ${pingMessage}`)
-        }
-      }
+      await this.failurePing
+        ?.send({ functionName: schedule.replaces, kind: "function_failed", error: message })
+        .catch((pingError: unknown) => {
+          this.logger.warn(`failure ping threw: ${String(pingError)}`)
+        })
       throw error
     }
   }
