@@ -1,4 +1,4 @@
-import { ForbiddenException } from "@nestjs/common"
+import { ForbiddenException, NotFoundException } from "@nestjs/common"
 import type { ExecutionContext } from "@nestjs/common"
 import { describe, expect, it, vi } from "vitest"
 
@@ -71,10 +71,10 @@ describe("OperatorGuard", () => {
     expect(guard.canActivate(makeContext({ identity: identity("operator") }))).toBe(true)
   })
 
-  it("forbids members", () => {
+  it("hides operator routes from members as 404 (U9 semantics)", () => {
     const guard = new OperatorGuard()
     expect(() => guard.canActivate(makeContext({ identity: identity("member") }))).toThrow(
-      ForbiddenException
+      NotFoundException
     )
   })
 })

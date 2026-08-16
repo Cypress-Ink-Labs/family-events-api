@@ -17,10 +17,27 @@ personal/web/family-events/docs/plans/`, not a git repo). This document is a
 - a full API-surface inventory of `Cypress-Ink-Labs/family-events-web` (old SPA, reference),
 - the four decisions resolved by the user on 2026-08-16.
 
-`family-events-app` (the new TanStack Start app holding U4–U6, U8, U12) was **not
-readable** by this agent. Units touching its server layer (U21, U24–U26) are specified
-from the old SPA's consumer contract and the handoff's recorded conventions; reconcile
-them against the app's actual server functions when that repo is available.
+**Reconciliation update (2026-08-16, later same day):** `family-events-app` @ `97b6284`
+has now been read in full and this plan is reconciled against it. Key corrections applied:
+
+- **Cutover flags are per *job family*** (`CUTOVER_SCRAPE|TAG|REVIEW|DIGEST|REMINDERS|NOTIFY`,
+  worker `flags.ts` semantics: production = exact `"true"` required, non-prod = on unless
+  `"false"`), not per family slug as first reconstructed.
+- **Queue topology follows the U12 worker registry verbatim** (`src/pipeline/families.ts`):
+  six job families with per-family DLQs, retry 3/30s/backoff, digest+reminders strictly
+  serial; db-maintenance is *not* a job family (old pipeline until U18). The legacy
+  Railway-label mapping survives in each schedule's `replaces` field, which is what the
+  kill switch and run history key on.
+- **Operator routes hide as 404, not 403** (U9 decision, mirrored from
+  `requireOperatorIdentity`).
+- The old plan's **U13–U18 meanings recovered** from app-repo references: U13 DLQ
+  alerting, U14 scrape handlers, U15 tag/review handlers, U16 digest/reminders/notify +
+  Railway IaC, U18 flip cutover flags + move db-maintenance. U20–U33 still supersede them.
+- The consumer wire contract for U24–U26 is `src/fn/consumer.ts` (13 server functions,
+  TS interfaces, no zod): explore/search keyset `(start_datetime, id)` page 24, map
+  limit 200, plan-for-today limit 5, detail+similar+comments+ratings, favorites,
+  calendar, submit (5/24h rate limit), plus the not-yet-exposed `preferred-cities`
+  module. Webhooks: Svix-verified Clerk endpoint, log-only until U7.
 
 ## Decisions (resolved 2026-08-16)
 

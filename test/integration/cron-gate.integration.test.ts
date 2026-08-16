@@ -3,13 +3,13 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest"
 import type { DbService } from "../../src/db/db.service.js"
 import { createIntegrationDb } from "./db.js"
 import { CronGateService } from "../../src/pipeline/cron-gate.service.js"
-import { PIPELINE_SCHEDULES } from "../../src/pipeline/schedules.js"
+import { FAMILIES } from "../../src/pipeline/families.js"
 
 /**
  * Runs against a real Postgres (DATABASE_URL). Creates the same private-schema
  * objects the legacy migrations define, scoped to this test database.
  */
-const SCHEDULE = PIPELINE_SCHEDULES.find((s) => s.queue === "scrape-sources")!
+const SCHEDULE = FAMILIES.scrape.schedules[0]!
 
 describe("CronGateService (integration)", () => {
   let db: DbService
@@ -44,11 +44,11 @@ describe("CronGateService (integration)", () => {
   })
 
   it("missing row means enabled; explicit false disables", async () => {
-    expect(await gate.isEnabled(SCHEDULE.legacyLabel)).toBe(true)
+    expect(await gate.isEnabled(SCHEDULE.replaces)).toBe(true)
     await db.query("INSERT INTO private.cron_enabled (label, enabled) VALUES ($1, false)", [
-      SCHEDULE.legacyLabel,
+      SCHEDULE.replaces,
     ])
-    expect(await gate.isEnabled(SCHEDULE.legacyLabel)).toBe(false)
+    expect(await gate.isEnabled(SCHEDULE.replaces)).toBe(false)
   })
 
   it("successful gated run lands in railway_cron_runs with succeeded status", async () => {
@@ -57,7 +57,7 @@ describe("CronGateService (integration)", () => {
       "SELECT label, status, body FROM private.railway_cron_runs"
     )
     expect(runs).toEqual([
-      { label: SCHEDULE.legacyLabel, status: "succeeded", body: "ok: 3 sources due" },
+      { label: SCHEDULE.replaces, status: "succeeded", body: "ok: 3 sources due" },
     ])
   })
 
@@ -75,7 +75,7 @@ describe("CronGateService (integration)", () => {
 
   it("disabled label runs nothing and records nothing", async () => {
     await db.query("INSERT INTO private.cron_enabled (label, enabled) VALUES ($1, false)", [
-      SCHEDULE.legacyLabel,
+      SCHEDULE.replaces,
     ])
     let executed = false
     await gate.runGated(SCHEDULE, async () => {
