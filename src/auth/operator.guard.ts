@@ -1,19 +1,23 @@
 import {
-  ForbiddenException,
   Injectable,
+  NotFoundException,
   type CanActivate,
   type ExecutionContext,
 } from "@nestjs/common"
 
 import type { IdentifiedRequest } from "./mapped-identity.guard.js"
 
-/** Requires MappedIdentityGuard earlier in the chain. Gates admin surface (U31). */
+/**
+ * Requires MappedIdentityGuard earlier in the chain. Gates the admin surface
+ * (U31). Non-operators get 404, not 403 — U9 decision (mirrors the app's
+ * requireOperatorIdentity): operator routes are hidden, not advertised.
+ */
 @Injectable()
 export class OperatorGuard implements CanActivate {
   canActivate(context: ExecutionContext): boolean {
     const request = context.switchToHttp().getRequest<IdentifiedRequest>()
     if (request.identity.role !== "operator") {
-      throw new ForbiddenException("operator role required")
+      throw new NotFoundException()
     }
     return true
   }

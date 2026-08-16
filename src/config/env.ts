@@ -10,11 +10,18 @@ export const envSchema = z.object({
   /** Clerk secret key. Required outside tests; endpoints behind ClerkAuthGuard fail closed without it. */
   CLERK_SECRET_KEY: z.string().optional(),
   /**
-   * Comma-separated list of family slugs this instance is allowed to write for.
-   * Mirrors the per-family CUTOVER_<FAMILY> creation-time guards from the app worker:
-   * a family absent from this list gets no schedules/jobs installed at boot.
+   * Per-job-family cutover flags (U12 worker semantics, see src/pipeline/flags.ts):
+   * production installs a family only when its flag is the exact string "true";
+   * outside production a family is enabled unless the flag is exactly "false".
+   * This is the single-writer guard: an unflagged family gets no queues,
+   * schedules, or workers at boot.
    */
-  CUTOVER_FAMILIES: z.string().default(""),
+  CUTOVER_SCRAPE: z.string().optional(),
+  CUTOVER_TAG: z.string().optional(),
+  CUTOVER_REVIEW: z.string().optional(),
+  CUTOVER_DIGEST: z.string().optional(),
+  CUTOVER_REMINDERS: z.string().optional(),
+  CUTOVER_NOTIFY: z.string().optional(),
 })
 
 export type Env = z.infer<typeof envSchema>
@@ -28,12 +35,4 @@ export function validateEnv(config: Record<string, unknown>): Env {
     throw new Error(`Invalid environment: ${issues}`)
   }
   return parsed.data
-}
-
-export function cutoverFamilies(env: Env): ReadonlySet<string> {
-  return new Set(
-    env.CUTOVER_FAMILIES.split(",")
-      .map((slug) => slug.trim().toLowerCase())
-      .filter((slug) => slug.length > 0)
-  )
 }
