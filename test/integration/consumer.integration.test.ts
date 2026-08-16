@@ -377,14 +377,6 @@ describe("consumer read HTTP API", () => {
   })
 
   it("returns today's plan for a mapped identity", async () => {
-    const userId = randomUUID()
-    await db.query("INSERT INTO auth.users (id) VALUES ($1)", [userId])
-    await db.query(
-      `INSERT INTO public.clerk_user_mapping
-       (clerk_user_id, supabase_uuid, email, role)
-       VALUES ('user_reader', $1, 'reader@example.com', 'member')`,
-      [userId]
-    )
     const start = new Date(Date.now() + 3_600_000).toISOString()
     const id = await insertEvent({ title: "Tonight", start })
 
@@ -404,14 +396,6 @@ describe("consumer read HTTP API", () => {
   })
 
   it("rejects an invalid plan city_id", async () => {
-    const userId = randomUUID()
-    await db.query("INSERT INTO auth.users (id) VALUES ($1)", [userId])
-    await db.query(
-      `INSERT INTO public.clerk_user_mapping
-       (clerk_user_id, supabase_uuid, email, role)
-       VALUES ('user_reader', $1, 'reader@example.com', 'member')`,
-      [userId]
-    )
     await request(app.getHttpServer())
       .get("/v1/plan")
       .query({ city_id: "not-a-uuid" })
