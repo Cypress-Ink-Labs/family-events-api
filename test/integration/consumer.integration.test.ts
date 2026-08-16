@@ -366,6 +366,8 @@ describe("consumer read HTTP API", () => {
     expect(response.body.filter((city: { is_primary: boolean }) => city.is_primary)).toEqual([
       expect.objectContaining({ city_id: OTHER_CITY }),
     ])
+  })
+
   it("requires a mapped Clerk session for GET /v1/plan", async () => {
     await request(app.getHttpServer()).get("/v1/plan").expect(401)
     await request(app.getHttpServer())
