@@ -1,6 +1,5 @@
 import { z } from "zod"
 
-/** Raw string flag consumed by src/pipeline/flags.ts, which owns the semantics. */
 const cutoverFlag = z.string().optional()
 
 export const envSchema = z.object({
@@ -12,13 +11,7 @@ export const envSchema = z.object({
   PGBOSS_SCHEMA: z.string().default("pgboss"),
   /** Clerk secret key. Required outside tests; endpoints behind ClerkAuthGuard fail closed without it. */
   CLERK_SECRET_KEY: z.string().optional(),
-  /**
-   * Per-job-family cutover flags (U12 worker semantics, see src/pipeline/flags.ts):
-   * production installs a family only when its flag is the exact string "true";
-   * outside production a family is enabled unless the flag is exactly "false".
-   * This is the single-writer guard: an unflagged family gets no queues,
-   * schedules, or workers at boot.
-   */
+  /** Per-job-family cutover flags. Semantics live in src/pipeline/flags.ts. */
   CUTOVER_SCRAPE: cutoverFlag,
   CUTOVER_TAG: cutoverFlag,
   CUTOVER_REVIEW: cutoverFlag,

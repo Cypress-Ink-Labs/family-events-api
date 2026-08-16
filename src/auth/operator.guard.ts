@@ -9,8 +9,7 @@ import type { IdentifiedRequest } from "./mapped-identity.guard.js"
 
 /**
  * Requires MappedIdentityGuard earlier in the chain. Gates the admin surface
- * (U31). Non-operators get 404, not 403 — U9 decision (mirrors the app's
- * requireOperatorIdentity): operator routes are hidden, not advertised.
+ * (U31). Non-operators get 404, not 403 (U9 / requireOperatorIdentity).
  */
 @Injectable()
 export class OperatorGuard implements CanActivate {
