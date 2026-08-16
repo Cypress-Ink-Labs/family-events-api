@@ -3,6 +3,7 @@ import { ConfigModule } from "@nestjs/config"
 
 import { AuthModule } from "./auth/auth.module.js"
 import { validateEnv } from "./config/env.js"
+import { DataModule } from "./data/data.module.js"
 import { DbModule } from "./db/db.module.js"
 import { HealthModule } from "./health/health.module.js"
 import { JobsModule } from "./jobs/jobs.module.js"
@@ -12,6 +13,7 @@ import { PipelineModule } from "./pipeline/pipeline.module.js"
   imports: [
     ConfigModule.forRoot({ isGlobal: true, validate: validateEnv }),
     DbModule,
+    DataModule,
     JobsModule,
     AuthModule,
     PipelineModule,
