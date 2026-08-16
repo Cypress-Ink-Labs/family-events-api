@@ -76,6 +76,72 @@ describe("EventsRepository.searchEvents", () => {
   })
 })
 
+describe("binding order (sentinel values)", () => {
+  // Every input field gets a distinct sentinel so a swapped positional bind
+  // fails loudly, without asserting SQL text.
+  it("listEvents binds each input to its RPC parameter position", async () => {
+    const { db, query } = makeDb()
+    await new EventsRepository(db).listEvents({
+      cityId: "city",
+      status: "draft",
+      userKey: "user",
+      eventIds: ["e1", "e2"],
+      dateFrom: "from",
+      dateTo: "to",
+      after: { startDatetime: "after-start", id: "after-id" },
+      limit: 7,
+    })
+    expect(query.mock.calls[0]?.[1]).toEqual([
+      "city",
+      "draft",
+      "user",
+      ["e1", "e2"],
+      "from",
+      "to",
+      "after-start",
+      "after-id",
+      7,
+    ])
+  })
+
+  it("searchEvents binds each input to its RPC parameter position", async () => {
+    const { db, query } = makeDb()
+    await new EventsRepository(db).searchEvents({
+      cityId: "city",
+      dateFrom: "from",
+      dateTo: "to",
+      ageMin: 1,
+      ageMax: 2,
+      isFree: true,
+      isFeatured: false,
+      tagSlugs: ["a", "b"],
+      keyword: "kw",
+      limit: 9,
+      after: { startDatetime: "after-start", id: "after-id" },
+      lat: 30.1,
+      lng: -92.2,
+      radiusKm: 25,
+    })
+    expect(query.mock.calls[0]?.[1]).toEqual([
+      "city",
+      "from",
+      "to",
+      1,
+      2,
+      true,
+      false,
+      ["a", "b"],
+      "kw",
+      9,
+      "after-start",
+      "after-id",
+      30.1,
+      -92.2,
+      25,
+    ])
+  })
+})
+
 describe("ReferenceRepository.listCities", () => {
   it("lists only active cities in name order", async () => {
     const { db, query } = makeDb()

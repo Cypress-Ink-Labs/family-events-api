@@ -1,7 +1,7 @@
-import { ConfigService } from "@nestjs/config"
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest"
 
-import { DbService } from "../../src/db/db.service.js"
+import type { DbService } from "../../src/db/db.service.js"
+import { createIntegrationDb } from "./db.js"
 import { CronGateService } from "../../src/pipeline/cron-gate.service.js"
 import { PIPELINE_SCHEDULES } from "../../src/pipeline/schedules.js"
 
@@ -9,9 +9,6 @@ import { PIPELINE_SCHEDULES } from "../../src/pipeline/schedules.js"
  * Runs against a real Postgres (DATABASE_URL). Creates the same private-schema
  * objects the legacy migrations define, scoped to this test database.
  */
-const DATABASE_URL =
-  process.env.DATABASE_URL ?? "postgresql://postgres:postgres@127.0.0.1:5432/postgres"
-
 const SCHEDULE = PIPELINE_SCHEDULES.find((s) => s.queue === "scrape-sources")!
 
 describe("CronGateService (integration)", () => {
@@ -19,7 +16,7 @@ describe("CronGateService (integration)", () => {
   let gate: CronGateService
 
   beforeAll(async () => {
-    db = new DbService(new ConfigService({ DATABASE_URL }) as unknown as ConfigService<never, true>)
+    db = createIntegrationDb()
     await db.query("CREATE SCHEMA IF NOT EXISTS private")
     await db.query(`CREATE TABLE IF NOT EXISTS private.cron_enabled (
       label text PRIMARY KEY,

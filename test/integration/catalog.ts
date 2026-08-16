@@ -25,11 +25,21 @@ export async function ensureCatalogSchema(db: DbService): Promise<void> {
   await db.query("CREATE SCHEMA IF NOT EXISTS extensions")
   await db.query("CREATE EXTENSION IF NOT EXISTS cube WITH SCHEMA extensions")
   await db.query("CREATE EXTENSION IF NOT EXISTS earthdistance WITH SCHEMA extensions")
-  await db.query(`DO $$ BEGIN
-    CREATE TYPE public.event_status AS ENUM ('draft', 'published', 'rejected', 'archived');
-  EXCEPTION WHEN duplicate_object THEN NULL; END $$`)
+  // Drop-first (not IF NOT EXISTS): a stale local fixture must never survive
+  // a definition change in this file. Safe because connections come from
+  // createIntegrationDb(), which refuses non-disposable databases.
   await db.query(`
-    CREATE TABLE IF NOT EXISTS public.cities (
+    DROP TABLE IF EXISTS
+      public.event_image_attributions, public.user_calendar_events, public.favorites,
+      public.ratings, public.event_tags, public.tags, public.events, public.cities
+    CASCADE
+  `)
+  await db.query("DROP TYPE IF EXISTS public.event_status CASCADE")
+  await db.query(
+    "CREATE TYPE public.event_status AS ENUM ('draft', 'published', 'rejected', 'archived')"
+  )
+  await db.query(`
+    CREATE TABLE public.cities (
       id uuid PRIMARY KEY,
       name text NOT NULL,
       state text,
@@ -43,7 +53,7 @@ export async function ensureCatalogSchema(db: DbService): Promise<void> {
     )
   `)
   await db.query(`
-    CREATE TABLE IF NOT EXISTS public.events (
+    CREATE TABLE public.events (
       id uuid PRIMARY KEY,
       title text NOT NULL,
       description text,
@@ -80,7 +90,7 @@ export async function ensureCatalogSchema(db: DbService): Promise<void> {
     )
   `)
   await db.query(`
-    CREATE TABLE IF NOT EXISTS public.tags (
+    CREATE TABLE public.tags (
       id uuid PRIMARY KEY,
       name text NOT NULL,
       slug text NOT NULL UNIQUE,
@@ -88,14 +98,14 @@ export async function ensureCatalogSchema(db: DbService): Promise<void> {
     )
   `)
   await db.query(`
-    CREATE TABLE IF NOT EXISTS public.event_tags (
+    CREATE TABLE public.event_tags (
       event_id uuid NOT NULL REFERENCES public.events (id) ON DELETE CASCADE,
       tag_id uuid NOT NULL REFERENCES public.tags (id) ON DELETE CASCADE,
       PRIMARY KEY (event_id, tag_id)
     )
   `)
   await db.query(`
-    CREATE TABLE IF NOT EXISTS public.ratings (
+    CREATE TABLE public.ratings (
       id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
       user_id uuid NOT NULL,
       event_id uuid NOT NULL REFERENCES public.events (id) ON DELETE CASCADE,
@@ -105,7 +115,7 @@ export async function ensureCatalogSchema(db: DbService): Promise<void> {
     )
   `)
   await db.query(`
-    CREATE TABLE IF NOT EXISTS public.favorites (
+    CREATE TABLE public.favorites (
       id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
       user_id uuid NOT NULL,
       event_id uuid NOT NULL REFERENCES public.events (id) ON DELETE CASCADE,
@@ -114,7 +124,7 @@ export async function ensureCatalogSchema(db: DbService): Promise<void> {
     )
   `)
   await db.query(`
-    CREATE TABLE IF NOT EXISTS public.user_calendar_events (
+    CREATE TABLE public.user_calendar_events (
       id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
       user_id uuid NOT NULL,
       event_id uuid NOT NULL REFERENCES public.events (id) ON DELETE CASCADE,
@@ -124,7 +134,7 @@ export async function ensureCatalogSchema(db: DbService): Promise<void> {
     )
   `)
   await db.query(`
-    CREATE TABLE IF NOT EXISTS public.event_image_attributions (
+    CREATE TABLE public.event_image_attributions (
       id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
       event_id uuid NOT NULL REFERENCES public.events (id) ON DELETE CASCADE,
       provider text NOT NULL,

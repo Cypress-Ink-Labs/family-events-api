@@ -1,15 +1,12 @@
 import { randomUUID } from "node:crypto"
 
-import { ConfigService } from "@nestjs/config"
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest"
 
 import { EventsRepository } from "../../src/data/events.repository.js"
 import { ReferenceRepository } from "../../src/data/reference.repository.js"
-import { DbService } from "../../src/db/db.service.js"
+import type { DbService } from "../../src/db/db.service.js"
+import { createIntegrationDb } from "./db.js"
 import { ensureCatalogSchema, truncateCatalog } from "./catalog.js"
-
-const DATABASE_URL =
-  process.env.DATABASE_URL ?? "postgresql://postgres:postgres@127.0.0.1:5432/postgres"
 
 const CITY = "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
 const OTHER_CITY = "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
@@ -23,7 +20,7 @@ describe("U23 data layer (integration, real RPCs)", () => {
   let reference: ReferenceRepository
 
   beforeAll(async () => {
-    db = new DbService(new ConfigService({ DATABASE_URL }) as unknown as ConfigService<never, true>)
+    db = createIntegrationDb()
     await ensureCatalogSchema(db)
     events = new EventsRepository(db)
     reference = new ReferenceRepository(db)
@@ -184,6 +181,74 @@ describe("U23 data layer (integration, real RPCs)", () => {
       await insertEvent({ title: "One", tagIds: [TAG_OUTDOOR] })
       const rows = await events.searchEvents({ tagSlugs: ["free", "outdoor"] })
       expect(rows.map((row) => row.id)).toEqual([both])
+    })
+  })
+
+  describe("wire-shape parity", () => {
+    // Full key-set assertions: if the deployed RPC or the projection drifts
+    // from the contract in src/data/types.ts, these fail before any consumer does.
+    const ENRICHED_KEYS = [
+      "id",
+      "title",
+      "description",
+      "start_datetime",
+      "end_datetime",
+      "timezone",
+      "venue_name",
+      "address",
+      "city_id",
+      "latitude",
+      "longitude",
+      "age_min",
+      "age_max",
+      "price",
+      "is_free",
+      "source_url",
+      "source_name",
+      "images",
+      "status",
+      "recurrence_info",
+      "is_featured",
+      "view_count",
+      "created_at",
+      "updated_at",
+      "avg_rating",
+      "rating_count",
+      "tags",
+      "is_favorited",
+      "is_in_calendar",
+    ].toSorted()
+
+    const SEARCHED_KEYS = [
+      "id",
+      "title",
+      "description",
+      "start_datetime",
+      "end_datetime",
+      "venue_name",
+      "address",
+      "city_id",
+      "latitude",
+      "longitude",
+      "age_min",
+      "age_max",
+      "price",
+      "is_free",
+      "images",
+      "status",
+      "is_featured",
+    ].toSorted()
+
+    it("EnrichedEvent rows carry exactly the contract keys", async () => {
+      await insertEvent({ title: "Shape" })
+      const [row] = await events.listEvents()
+      expect(Object.keys(row!).toSorted()).toEqual(ENRICHED_KEYS)
+    })
+
+    it("SearchedEvent rows carry exactly the contract keys", async () => {
+      await insertEvent({ title: "Shape" })
+      const [row] = await events.searchEvents()
+      expect(Object.keys(row!).toSorted()).toEqual(SEARCHED_KEYS)
     })
   })
 
