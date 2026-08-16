@@ -65,7 +65,7 @@ export async function ensureCatalogSchema(db: DbService): Promise<void> {
   `)
   await db.query(`
     CREATE TABLE public.events (
-      id uuid PRIMARY KEY,
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
       title text NOT NULL,
       description text,
       start_datetime timestamptz NOT NULL,

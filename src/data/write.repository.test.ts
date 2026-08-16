@@ -14,10 +14,12 @@ function makeDb() {
 }
 
 function makeTxDb(responses: unknown[][] = []) {
-  const query = vi.fn(async () => {
-    const rows = responses.shift() ?? []
-    return { rows }
-  })
+  const query = vi.fn<(text: string, params?: unknown[]) => Promise<{ rows: unknown[] }>>(
+    async () => {
+      const rows = responses.shift() ?? []
+      return { rows }
+    }
+  )
   const withTransaction = vi.fn(async (fn: (client: { query: typeof query }) => unknown) =>
     fn({ query })
   )

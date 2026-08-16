@@ -219,11 +219,11 @@ describe("U23 write-side data layer", () => {
           cityId: CITY,
         })
       ).rejects.toThrow("Title is required")
-      const [{ n }] = await db.query<{ n: number }>(
+      const counts = await db.query<{ n: number }>(
         "SELECT count(*)::int AS n FROM public.events WHERE submitted_by = $1",
         [USER_A]
       )
-      expect(n).toBe(0)
+      expect(counts[0]?.n).toBe(0)
     })
   })
 
