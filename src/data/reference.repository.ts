@@ -17,6 +17,6 @@ export class ReferenceRepository {
   constructor(private readonly db: DbService) {}
 
   async listCities(): Promise<City[]> {
-    return this.db.query<City & Record<string, unknown>>(CITIES_SQL)
+    return this.db.query<City>(CITIES_SQL)
   }
 }

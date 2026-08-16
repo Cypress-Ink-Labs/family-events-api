@@ -57,9 +57,8 @@ FROM public.search_events(
 export class EventsRepository {
   constructor(private readonly db: DbService) {}
 
-  /** Enriched consumer rows; default published, keyset page of 24 (U6 contract). */
   async listEvents(input: ListEventsInput = {}): Promise<EnrichedEvent[]> {
-    return this.db.query<EnrichedEvent & Record<string, unknown>>(LIST_SQL, [
+    return this.db.query<EnrichedEvent>(LIST_SQL, [
       input.cityId ?? null,
       input.status ?? "published",
       input.userKey ?? null,
@@ -72,9 +71,8 @@ export class EventsRepository {
     ])
   }
 
-  /** Filtered base rows from search_events (keyword FTS/ILIKE, tags AND, age overlap, radius). */
   async searchEvents(input: SearchEventsInput = {}): Promise<SearchedEvent[]> {
-    return this.db.query<SearchedEvent & Record<string, unknown>>(SEARCH_SQL, [
+    return this.db.query<SearchedEvent>(SEARCH_SQL, [
       input.cityId ?? null,
       input.dateFrom ?? null,
       input.dateTo ?? null,

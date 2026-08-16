@@ -16,7 +16,6 @@ describe("EventsRepository.listEvents", () => {
     const [sql, params] = query.mock.calls[0]!
     expect(sql).toContain("public.events_enriched(")
     expect(sql).toContain("p_after_start_datetime => $7::timestamptz")
-    // Default status published, default keyset page of 24, everything else null.
     expect(params).toEqual([null, "published", null, null, null, null, null, null, 24])
   })
 
@@ -146,7 +145,7 @@ describe("ReferenceRepository.listCities", () => {
   it("lists only active cities in name order", async () => {
     const { db, query } = makeDb()
     await new ReferenceRepository(db).listCities()
-    const sql = query.mock.calls[0]?.[0] ?? ""
+    const [sql] = query.mock.calls[0]!
     expect(sql).toContain("is_active = true")
     expect(sql).toContain("ORDER BY name ASC")
   })
