@@ -102,7 +102,11 @@ Parity endpoints for `search_events` (keyset cursor `(start_datetime, id)`, page
 cities, `public_events` preview. Contract fidelity matters more than SQL reuse: the
 RPCs' SQL can be called directly initially, then inlined.
 
-**Landed:** `GET /v1/cities`, `GET /v1/events` (filters + base64 keyset cursor, search path via `search_events` + enriched hydration, page 24 / max 100), `GET /v1/events/:id` (404 on missing/unpublished), `GET /v1/tags`. OpenAPI DTOs freeze the snake_case wire contract (`EnrichedEventDto` et al.); `openapi.json` regenerated and committed, drift-gated in CI. `OptionalClerkGuard` for permissive reads.
+Implemented with OpenAPI DTOs (`EnrichedEventDto`, `CityDto`, `TagDto`, `EventsPageDto`,
+`EventsQueryDto`), optional Clerk auth via `OptionalClerkGuard` for personalized fields
+(`is_favorited`, `is_in_calendar`), and base64 keyset cursor. Endpoints: `GET /v1/cities`,
+`GET /v1/events` (page 24/max 100), `GET /v1/events/:id` (404 on missing/unpublished),
+`GET /v1/tags`.
 
 ### U25 — Consumer write API
 Favorites, calendar, ratings, comments, profile + preferred cities (U6b demote-first
