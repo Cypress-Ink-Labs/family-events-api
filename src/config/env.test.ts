@@ -24,6 +24,11 @@ describe("validateEnv", () => {
     expect(() => validateEnv({ ...base, PORT: "abc" })).toThrow(/PORT/)
   })
 
+  it("treats OPENWEATHER_API_KEY as optional", () => {
+    expect(validateEnv(base).OPENWEATHER_API_KEY).toBeUndefined()
+    expect(validateEnv({ ...base, OPENWEATHER_API_KEY: "owm" }).OPENWEATHER_API_KEY).toBe("owm")
+  })
+
   it("passes cutover flags through as raw strings for flags.ts semantics", () => {
     const env = validateEnv({ ...base, CUTOVER_SCRAPE: "true", CUTOVER_TAG: "false" })
     expect(env.CUTOVER_SCRAPE).toBe("true")
