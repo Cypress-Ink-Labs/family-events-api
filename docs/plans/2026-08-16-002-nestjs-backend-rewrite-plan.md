@@ -1,7 +1,7 @@
 # NestJS backend rewrite plan (reconstructed) — units U20–U33
 
-**Status:** U20, U22, and U24 done; U23 write repositories landed; U27 foundation landed
-(topology + gate); U28/U30 pure-logic ports landed; everything else pending.
+**Status:** U20, U22, U24, and U25 done; U23 write repositories landed; U27 foundation
+landed (topology + gate); U28/U30 pure-logic ports landed; everything else pending.
 **Supersedes:** old U13–U18 of `2026-08-14-001` (production-readiness plan), per the mid-session
 redirect: *everything server-side moves to NestJS*.
 
@@ -108,10 +108,19 @@ Implemented with OpenAPI DTOs (`EnrichedEventDto`, `CityDto`, `TagDto`, `EventsP
 `GET /v1/events` (page 24/max 100), `GET /v1/events/:id` (404 on missing/unpublished),
 `GET /v1/tags`.
 
-### U25 — Consumer write API
-Favorites, calendar, ratings, comments, profile + preferred cities (U6b demote-first
-semantics), notification prefs/inbox (`mark_*_read`), `submit_community_event`,
-invites (`redeem/request/claim`). All behind the Clerk guard.
+### U25 — Consumer write API ✅ (done)
+Favorites, calendar, ratings, comments, profile + preferred cities — **landed with full
+coverage**. All routes require a verified Clerk session with a provisioned mapping
+(401/403 otherwise):
+
+- `PUT /v1/events/:id/favorite` and `/calendar` (idempotent toggles)
+- `PUT /v1/events/:id/rating` (1-5 upsert)
+- `POST /v1/events/:id/comments`, `DELETE /v1/comments/:id` (owner-only)
+- `POST /v1/events` (community submission; transactional 5-per-24h limit → 429)
+- `GET/PUT /v1/me/preferred-cities` (U6b demote-first semantics)
+
+**Deferred for later:** notification prefs/inbox (`mark_*_read`), invites
+(`redeem/request/claim`).
 
 ### U26 — Plan feature
 `plan_events_first_nonempty_window` (D+0..7, limit 3) + weather proxy (OpenWeatherMap)
