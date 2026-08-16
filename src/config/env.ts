@@ -1,5 +1,8 @@
 import { z } from "zod"
 
+/** Raw string flag consumed by src/pipeline/flags.ts, which owns the semantics. */
+const cutoverFlag = z.string().optional()
+
 export const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   PORT: z.coerce.number().int().positive().default(3001),
@@ -16,12 +19,12 @@ export const envSchema = z.object({
    * This is the single-writer guard: an unflagged family gets no queues,
    * schedules, or workers at boot.
    */
-  CUTOVER_SCRAPE: z.string().optional(),
-  CUTOVER_TAG: z.string().optional(),
-  CUTOVER_REVIEW: z.string().optional(),
-  CUTOVER_DIGEST: z.string().optional(),
-  CUTOVER_REMINDERS: z.string().optional(),
-  CUTOVER_NOTIFY: z.string().optional(),
+  CUTOVER_SCRAPE: cutoverFlag,
+  CUTOVER_TAG: cutoverFlag,
+  CUTOVER_REVIEW: cutoverFlag,
+  CUTOVER_DIGEST: cutoverFlag,
+  CUTOVER_REMINDERS: cutoverFlag,
+  CUTOVER_NOTIFY: cutoverFlag,
 })
 
 export type Env = z.infer<typeof envSchema>
