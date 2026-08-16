@@ -1,7 +1,8 @@
-import { Injectable, Logger } from "@nestjs/common"
+import { Injectable, Logger, Optional } from "@nestjs/common"
 
 import { DbService } from "../db/db.service.js"
 import type { FamilySchedule } from "./families.js"
+import { FailurePingService } from "./failure-ping.service.js"
 
 /**
  * Kill-switch and run-history parity with the legacy Railway cron runner (U27).
@@ -21,7 +22,10 @@ import type { FamilySchedule } from "./families.js"
 export class CronGateService {
   private readonly logger = new Logger(CronGateService.name)
 
-  constructor(private readonly db: DbService) {}
+  constructor(
+    private readonly db: DbService,
+    @Optional() private readonly failurePing?: FailurePingService
+  ) {}
 
   async isEnabled(legacyLabel: string): Promise<boolean> {
     const rows = await this.db.query<{ enabled: boolean }>(
@@ -65,6 +69,18 @@ export class CronGateService {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       await this.recordRun(schedule.replaces, "failed", (Date.now() - startedAtMs) / 1000, message)
+      if (this.failurePing !== undefined) {
+        try {
+          await this.failurePing.send({
+            functionName: schedule.replaces,
+            kind: "function_failed",
+            error: message,
+          })
+        } catch (pingError) {
+          const pingMessage = pingError instanceof Error ? pingError.message : String(pingError)
+          this.logger.warn(`failure ping threw: ${pingMessage}`)
+        }
+      }
       throw error
     }
   }
