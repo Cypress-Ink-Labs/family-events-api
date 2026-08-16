@@ -15,6 +15,10 @@ import type { DbService } from "../../src/db/db.service.js"
  *   (grant/revoke statements trimmed: the bare test database has no
  *   anon/authenticated/service_role roles)
  * - search_events.sql    <- 20260601028000_search_events_radius_filter.sql
+ * - plan_events_for_user_range.sql
+ *     <- 20260724020000_plan_events_for_user_range_hydrated.sql
+ *   (grant/revoke statements trimmed; uses cube/earthdistance already
+ *   installed above, no pgvector)
  *
  * Deviation: events.search_vector is a generated column here, while the real
  * schema maintains it out of band; the FTS semantics under test are the same.
@@ -203,7 +207,11 @@ export async function ensureCatalogSchema(db: DbService): Promise<void> {
       ON public.user_preferred_cities (user_id)
       WHERE is_primary
   `)
-  for (const file of ["events_enriched.sql", "search_events.sql"]) {
+  for (const file of [
+    "events_enriched.sql",
+    "search_events.sql",
+    "plan_events_for_user_range.sql",
+  ]) {
     await db.query(readFileSync(join(SQL_DIR, file), "utf8"))
   }
 }

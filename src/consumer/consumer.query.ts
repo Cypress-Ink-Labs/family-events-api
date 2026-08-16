@@ -57,6 +57,31 @@ export function parseExploreQuery(query: unknown): ExploreQuery {
   }
 }
 
+const planQuerySchema = z.strictObject({
+  city_id: z.uuid().optional(),
+  kid_age: integerString.optional(),
+})
+
+export interface PlanQuery {
+  cityId: string | null
+  kidAge: number | null
+}
+
+export function parsePlanQuery(query: unknown): PlanQuery {
+  const result = planQuerySchema.safeParse(query)
+  if (!result.success) {
+    throw new BadRequestException("invalid query parameters")
+  }
+  const kidAge = result.data.kid_age === undefined ? null : Number(result.data.kid_age)
+  if (kidAge !== null && !Number.isSafeInteger(kidAge)) {
+    throw new BadRequestException("invalid query parameters")
+  }
+  return {
+    cityId: result.data.city_id ?? null,
+    kidAge,
+  }
+}
+
 export function parseEventId(id: string): string {
   const result = eventIdSchema.safeParse(id)
   if (!result.success) throw new BadRequestException("invalid event id")

@@ -178,3 +178,29 @@ export interface PreferredCity {
   is_primary: boolean
   created_at: string
 }
+
+export interface PlanForRangeInput {
+  userKey: string
+  dateFrom: string
+  dateTo: string
+  cityIds?: string[] | null
+  lat?: number | null
+  lng?: number | null
+  kidAge?: number | null
+  weatherFit?: string
+  limit?: number
+}
+
+/** Ranked planner row: family-events-app src/server/events.ts PlannedEvent. */
+export interface PlannedEvent {
+  event_id: string
+  score: string
+  start_datetime: string
+  city_id: string | null
+  title: string
+  venue_name: string | null
+  address: string | null
+  is_free: boolean
+  price: string | null
+  images: Json
+}
