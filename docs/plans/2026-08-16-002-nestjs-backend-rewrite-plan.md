@@ -106,14 +106,17 @@ invites (`redeem/request/claim`). All behind the Clerk guard.
 + `plan_events_for_user_range` 8-factor scoring parity (distance, weather, age,
 history_affinity, family_fit, timing, novelty, budget).
 
-### U27 — Pipeline foundation 🟡 (topology + gate landed)
+### U27 — Pipeline foundation 🟡 (topology + gate + failure pings landed)
 pg-boss queue topology mirroring the 8 cron services — **landed with parity tests**;
 registration deliberately deferred per single-writer rule. Kill-switch parity
 (`private.cron_enabled` per legacy label, missing-row-means-enabled) and run-history
 writes (`private.railway_cron_runs` continuity for the admin UI) — **landed as
-`CronGateService.runGated` with unit + real-Postgres integration tests**. Remaining:
-U3 Telegram failure pings, per-stage `CUTOVER` gating so individual queues can be
-enabled independently at U33.
+`CronGateService.runGated` with unit + real-Postgres integration tests**. U3 Telegram
+failure pings — **landed via `FailurePingService`** (posts to Telegram Bot API with
+legacy HTML format, 500-char error slice, kind labels `run failed`/`dead-lettered`/
+`function crashed`, 10s timeout, bot-token redaction; missing env is silent skip).
+Remaining: per-stage `CUTOVER` gating so individual queues can be enabled independently
+at U33.
 
 ### U28 — Ingestion port 🟡 (dedup landed)
 `scrape-due-sources` → `run_due_source_scrapes` enqueue; source-queue worker (claim 1,
@@ -148,7 +151,7 @@ replacement here (poll vs SSE); the old SPA's four Supabase channels are referen
 Sentry, structured logs, `@pg-boss/dashboard` as separate basic-auth Railway service
 (documented U12 deviation), Railway service for the API in project `family-events-ui`,
 deploy-cli/IaC updates, secret management parity (`.env.example` is the authoritative
-var list).
+var list; U27 introduced `TELEGRAM_BOT_TOKEN` + `TELEGRAM_FAILURE_CHAT_ID`).
 
 ### U33 — Staged cutover + decommission (operator-gated)
 Per-stage: enable pg-boss queue → disable matching Railway cron via `private.cron_enabled`
