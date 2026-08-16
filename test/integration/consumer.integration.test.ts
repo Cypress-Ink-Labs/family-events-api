@@ -196,4 +196,55 @@ describe("consumer read HTTP API", () => {
   it("rejects a malformed cursor", async () => {
     await request(app.getHttpServer()).get("/v1/events").query({ cursor: "%%%" }).expect(400)
   })
+
+  it("requires a mapped Clerk session for GET /v1/plan", async () => {
+    await request(app.getHttpServer()).get("/v1/plan").expect(401)
+    await request(app.getHttpServer())
+      .get("/v1/plan")
+      .set("Authorization", "Bearer unmapped-token")
+      .expect(403)
+  })
+
+  it("returns today's plan for a mapped identity", async () => {
+    const userId = randomUUID()
+    await db.query("INSERT INTO auth.users (id) VALUES ($1)", [userId])
+    await db.query(
+      `INSERT INTO public.clerk_user_mapping
+       (clerk_user_id, supabase_uuid, email, role)
+       VALUES ('user_reader', $1, 'reader@example.com', 'member')`,
+      [userId]
+    )
+    const start = new Date(Date.now() + 3_600_000).toISOString()
+    const id = await insertEvent({ title: "Tonight", start })
+
+    const response = await request(app.getHttpServer())
+      .get("/v1/plan")
+      .query({ city_id: CITY, kid_age: 5 })
+      .set("Authorization", "Bearer mapped-token")
+      .expect(200)
+
+    expect(response.body.available).toBe(true)
+    expect(response.body.planned.map((row: { event_id: string }) => row.event_id)).toEqual([id])
+    expect(response.body.planned[0]).toMatchObject({
+      event_id: id,
+      title: "Tonight",
+      city_id: CITY,
+    })
+  })
+
+  it("rejects an invalid plan city_id", async () => {
+    const userId = randomUUID()
+    await db.query("INSERT INTO auth.users (id) VALUES ($1)", [userId])
+    await db.query(
+      `INSERT INTO public.clerk_user_mapping
+       (clerk_user_id, supabase_uuid, email, role)
+       VALUES ('user_reader', $1, 'reader@example.com', 'member')`,
+      [userId]
+    )
+    await request(app.getHttpServer())
+      .get("/v1/plan")
+      .query({ city_id: "not-a-uuid" })
+      .set("Authorization", "Bearer mapped-token")
+      .expect(400)
+  })
 })

@@ -22,6 +22,8 @@ export const envSchema = z.object({
   TELEGRAM_BOT_TOKEN: z.string().optional(),
   /** Operator chat/channel for pipeline failure pings (U3). */
   TELEGRAM_FAILURE_CHAT_ID: z.string().optional(),
+  /** OpenWeatherMap key for the plan weather proxy. Unset returns a neutral snapshot. */
+  OPENWEATHER_API_KEY: z.string().optional(),
 })
 
 export type Env = z.infer<typeof envSchema>
