@@ -140,6 +140,53 @@
         "tags": [
           "consumer"
         ]
+      },
+      "post": {
+        "operationId": "ConsumerWriteController_submitEvent",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CommunityEventInputDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdResponseDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid path or request body"
+          },
+          "401": {
+            "description": "A valid Clerk bearer token is required"
+          },
+          "403": {
+            "description": "The Clerk user is not provisioned"
+          },
+          "429": {
+            "description": "Daily community submission limit reached"
+          }
+        },
+        "security": [
+          {
+            "clerk": []
+          }
+        ],
+        "summary": "Submit a community event for moderation",
+        "tags": [
+          "consumer"
+        ]
       }
     },
     "/v1/events/{id}": {
@@ -218,6 +265,359 @@
           }
         ],
         "summary": "List event tags",
+        "tags": [
+          "consumer"
+        ]
+      }
+    },
+    "/v1/events/{id}/favorite": {
+      "put": {
+        "operationId": "ConsumerWriteController_setFavorite",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ToggleInputDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkResponseDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid path or request body"
+          },
+          "401": {
+            "description": "A valid Clerk bearer token is required"
+          },
+          "403": {
+            "description": "The Clerk user is not provisioned"
+          }
+        },
+        "security": [
+          {
+            "clerk": []
+          }
+        ],
+        "summary": "Set favorite state for an event",
+        "tags": [
+          "consumer"
+        ]
+      }
+    },
+    "/v1/events/{id}/calendar": {
+      "put": {
+        "operationId": "ConsumerWriteController_setCalendar",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ToggleInputDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkResponseDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid path or request body"
+          },
+          "401": {
+            "description": "A valid Clerk bearer token is required"
+          },
+          "403": {
+            "description": "The Clerk user is not provisioned"
+          }
+        },
+        "security": [
+          {
+            "clerk": []
+          }
+        ],
+        "summary": "Set calendar state for an event",
+        "tags": [
+          "consumer"
+        ]
+      }
+    },
+    "/v1/events/{id}/rating": {
+      "put": {
+        "operationId": "ConsumerWriteController_rateEvent",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RatingInputDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RatingResponseDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid path or request body"
+          },
+          "401": {
+            "description": "A valid Clerk bearer token is required"
+          },
+          "403": {
+            "description": "The Clerk user is not provisioned"
+          }
+        },
+        "security": [
+          {
+            "clerk": []
+          }
+        ],
+        "summary": "Upsert the current user's event rating",
+        "tags": [
+          "consumer"
+        ]
+      }
+    },
+    "/v1/events/{id}/comments": {
+      "post": {
+        "operationId": "ConsumerWriteController_postComment",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CommentInputDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdResponseDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid path or request body"
+          },
+          "401": {
+            "description": "A valid Clerk bearer token is required"
+          },
+          "403": {
+            "description": "The Clerk user is not provisioned"
+          }
+        },
+        "security": [
+          {
+            "clerk": []
+          }
+        ],
+        "summary": "Post a comment on an event",
+        "tags": [
+          "consumer"
+        ]
+      }
+    },
+    "/v1/comments/{id}": {
+      "delete": {
+        "operationId": "ConsumerWriteController_removeComment",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RemovedResponseDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid path or request body"
+          },
+          "401": {
+            "description": "A valid Clerk bearer token is required"
+          },
+          "403": {
+            "description": "The Clerk user is not provisioned"
+          }
+        },
+        "security": [
+          {
+            "clerk": []
+          }
+        ],
+        "summary": "Remove the current user's comment",
+        "tags": [
+          "consumer"
+        ]
+      }
+    },
+    "/v1/me/preferred-cities": {
+      "put": {
+        "operationId": "ConsumerWriteController_setPreferredCities",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PreferredCitiesInputDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkResponseDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid path or request body"
+          },
+          "401": {
+            "description": "A valid Clerk bearer token is required"
+          },
+          "403": {
+            "description": "The Clerk user is not provisioned"
+          }
+        },
+        "security": [
+          {
+            "clerk": []
+          }
+        ],
+        "summary": "Replace the current user's preferred cities",
+        "tags": [
+          "consumer"
+        ]
+      },
+      "get": {
+        "operationId": "ConsumerWriteController_listPreferredCities",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PreferredCityDto"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid path or request body"
+          },
+          "401": {
+            "description": "A valid Clerk bearer token is required"
+          },
+          "403": {
+            "description": "The Clerk user is not provisioned"
+          }
+        },
+        "security": [
+          {
+            "clerk": []
+          }
+        ],
+        "summary": "List the current user's preferred cities",
         "tags": [
           "consumer"
         ]
@@ -565,6 +965,198 @@
           "name",
           "slug",
           "color"
+        ]
+      },
+      "ToggleInputDto": {
+        "type": "object",
+        "properties": {
+          "on": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "on"
+        ]
+      },
+      "OkResponseDto": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          }
+        },
+        "required": [
+          "ok"
+        ]
+      },
+      "RatingInputDto": {
+        "type": "object",
+        "properties": {
+          "score": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5
+          }
+        },
+        "required": [
+          "score"
+        ]
+      },
+      "RatingResponseDto": {
+        "type": "object",
+        "properties": {
+          "score": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5
+          }
+        },
+        "required": [
+          "score"
+        ]
+      },
+      "CommentInputDto": {
+        "type": "object",
+        "properties": {
+          "body": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4000
+          }
+        },
+        "required": [
+          "body"
+        ]
+      },
+      "IdResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "RemovedResponseDto": {
+        "type": "object",
+        "properties": {
+          "removed": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "removed"
+        ]
+      },
+      "CommunityEventInputDto": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "startDatetime": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "endDatetime": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "venueName": {
+            "type": "string",
+            "nullable": true
+          },
+          "address": {
+            "type": "string",
+            "nullable": true
+          },
+          "cityId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "ageMin": {
+            "type": "integer",
+            "minimum": 0,
+            "nullable": true
+          },
+          "ageMax": {
+            "type": "integer",
+            "minimum": 0,
+            "nullable": true
+          },
+          "isFree": {
+            "type": "boolean",
+            "default": true
+          },
+          "price": {
+            "type": "number",
+            "minimum": 0,
+            "nullable": true
+          }
+        },
+        "required": [
+          "title",
+          "startDatetime",
+          "cityId"
+        ]
+      },
+      "PreferredCitiesInputDto": {
+        "type": "object",
+        "properties": {
+          "city_ids": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "primary_city_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "city_ids",
+          "primary_city_id"
+        ]
+      },
+      "PreferredCityDto": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "city_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "is_primary": {
+            "type": "boolean"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "user_id",
+          "city_id",
+          "is_primary",
+          "created_at"
         ]
       },
       "HealthResponse": {
