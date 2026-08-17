@@ -1,0 +1,42 @@
+[
+  {
+    "_id": "65d000000000000000000001",
+    "slug": "family-storytime-at-the-library",
+    "name": "Family Storytime at the Library",
+    "start": "2026-06-01T15:00:00.000Z",
+    "end": "2026-06-01T16:00:00.000Z",
+    "location": {
+      "name": "Lafayette Main Library",
+      "address": "301 W Congress St",
+      "city": "Lafayette",
+      "state": "LA",
+      "zip": "70501"
+    },
+    "cost": "Free",
+    "who": "Families with kids ages 2-6",
+    "where": "Children's wing, second floor",
+    "how": "Drop in. No registration required.",
+    "image": "https://images.macaronikid.com/storytime.jpg"
+  },
+  {
+    "_id": "65d000000000000000000002",
+    "slug": "summer-music-night",
+    "name": "Summer Music Night",
+    "start": "2026-07-15T23:00:00.000Z",
+    "end": "2026-07-16T02:00:00.000Z",
+    "location": {
+      "name": "Parc Sans Souci",
+      "address": "201 E Vermilion St",
+      "city": "Lafayette",
+      "state": "LA"
+    },
+    "cost": "$10 per family",
+    "who": "All ages welcome",
+    "where": "Main lawn",
+    "how": "Bring a picnic blanket.",
+    "images": [
+      "https://images.macaronikid.com/music-1.jpg",
+      "https://images.macaronikid.com/music-2.jpg"
+    ]
+  }
+]

@@ -1,0 +1,53 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Vermilionville - ECPv6.16.2//NONSGML v1.0//EN
+CALSCALE:GREGORIAN
+METHOD:PUBLISH
+X-WR-CALNAME:Vermilionville
+X-ORIGINAL-URL:https://bayouvermiliondistrict.org
+X-WR-CALDESC:Events for Vermilionville
+BEGIN:VTIMEZONE
+TZID:America/Chicago
+BEGIN:DAYLIGHT
+TZOFFSETFROM:-0600
+TZOFFSETTO:-0500
+TZNAME:CDT
+DTSTART:20260308T080000
+END:DAYLIGHT
+BEGIN:STANDARD
+TZOFFSETFROM:-0500
+TZOFFSETTO:-0600
+TZNAME:CST
+DTSTART:20261101T070000
+END:STANDARD
+END:VTIMEZONE
+BEGIN:VEVENT
+DTSTART;TZID=America/Chicago:20260530T130000
+DTEND;TZID=America/Chicago:20260530T150000
+DTSTAMP:20260526T205603
+CREATED:20250604T142453Z
+LAST-MODIFIED:20251104T204004Z
+UID:10013023-vermilionville@bayouvermiliondistrict.org
+SUMMARY:CFMA Cajun Jam
+DESCRIPTION:Vermilionville's weekly Cajun Jam Saturday afternoons 1-3 PM is led by some of the area's finest musicians. The free jam is held in the Performance Center and is open to all skill levels-beginner to professional. Admission is free but does not include entry to the park.
+URL:https://bayouvermiliondistrict.org/event/cfma-cajun-jam/2026-05-30/
+LOCATION:Vermilionville\, 300 Fisher Road\, Lafayette\, LA\, 70508\, United States
+CATEGORIES:Music,Special Event
+ATTACH;FMTTYPE=image/jpeg:https://bayouvermiliondistrict.org/wp-content/uploads/2023/08/cajunjam3.jpg
+ORGANIZER;CN="Bayou Vermilion District":MAILTO:marketing@bayouvermiliondistrict.org
+END:VEVENT
+BEGIN:VEVENT
+DTSTART;TZID=America/Chicago:20260527T100000
+DTEND;TZID=America/Chicago:20260527T160000
+DTSTAMP:20260526T205603
+CREATED:20251230T184642Z
+LAST-MODIFIED:20260304T193322Z
+UID:10013353-vermilionville@bayouvermiliondistrict.org
+SUMMARY:Homeschool Days at Vermilionville
+DESCRIPTION:The last Wednesday of each month is Homeschool Day at Vermilionville — homeschooling families get a discount on visits to the village! Come enjoy a self-guided tour and an optional rain garden tour at 11:30 AM. Admission: age 5-17: $6; 18+ $10.
+URL:https://bayouvermiliondistrict.org/event/homeschool-days-at-vermilionville/2026-05-27/
+LOCATION:Vermilionville\, 300 Fisher Road\, Lafayette\, LA\, 70508\, United States
+ATTACH;FMTTYPE=image/jpeg:https://bayouvermiliondistrict.org/wp-content/uploads/2025/04/Chief-sitting-bear.jpg
+ORGANIZER;CN="Bayou Vermilion District":MAILTO:marketing@bayouvermiliondistrict.org
+END:VEVENT
+END:VCALENDAR

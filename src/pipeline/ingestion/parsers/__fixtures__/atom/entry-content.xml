@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom" xmlns:dc="http://purl.org/dc/elements/1.1/">
+  <entry>
+    <title><![CDATA[Neighborhood Meetup]]></title>
+    <link rel="alternate" href="https://atom.example.com/events/meetup" />
+    <updated>2026-06-01T18:00:00-05:00</updated>
+    <dc:date>2026-06-01T18:00:00-05:00</dc:date>
+    <content type="html"><![CDATA[<p>Join us downtown <img src="https://atom.example.com/image.jpg" /></p>]]></content>
+  </entry>
+</feed>

@@ -1,0 +1,46 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Lafayette Mom - ECPv6.16.2//NONSGML v1.0//EN
+CALSCALE:GREGORIAN
+METHOD:PUBLISH
+X-WR-CALNAME:Lafayette Mom
+X-ORIGINAL-URL:https://thelafayettemom.com
+X-WR-CALDESC:Events for Lafayette Mom
+BEGIN:VTIMEZONE
+TZID:America/Chicago
+BEGIN:DAYLIGHT
+TZOFFSETFROM:-0600
+TZOFFSETTO:-0500
+TZNAME:CDT
+DTSTART:20260308T080000
+END:DAYLIGHT
+BEGIN:STANDARD
+TZOFFSETFROM:-0500
+TZOFFSETTO:-0600
+TZNAME:CST
+DTSTART:20261101T070000
+END:STANDARD
+END:VTIMEZONE
+BEGIN:VEVENT
+DTSTART;TZID=America/Chicago:20260601T093000
+DTEND;TZID=America/Chicago:20260601T103000
+DTSTAMP:20260526T205446
+CREATED:20260523T181147Z
+LAST-MODIFIED:20260523T181147Z
+UID:10022988-lafayette-mom@thelafayettemom.com
+SUMMARY:Stay & Play: West Regional Library
+DESCRIPTION:Join us for informal play and social time during days when regular storytimes are not available. Ages birth – 6 years.
+URL:https://thelafayettemom.com/event/stay-play-west-regional-library/
+END:VEVENT
+BEGIN:VEVENT
+DTSTART;VALUE=DATE:20260607
+DTEND;VALUE=DATE:20260608
+DTSTAMP:20260526T205446
+CREATED:20260523T181217Z
+LAST-MODIFIED:20260523T181217Z
+UID:10022989-lafayette-mom@thelafayettemom.com
+SUMMARY:Book Buddy: West Regional Library
+DESCRIPTION:Visit the children's department to pick up a craft kit based on a picture book. Available while supplies last. Ages 3-8.
+URL:https://thelafayettemom.com/event/book-buddy-west-regional-library/
+END:VEVENT
+END:VCALENDAR

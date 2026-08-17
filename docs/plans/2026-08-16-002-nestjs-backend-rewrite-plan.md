@@ -1,7 +1,8 @@
 # NestJS backend rewrite plan (reconstructed) — units U20–U33
 
 **Status:** U20, U21, U22, U23, U24, U25, and U26 done; U27 foundation landed
-(topology + gate + failure pings); U28/U30 pure-logic ports landed; U28–U33 remaining.
+(topology + gate + failure pings); U28/U30 pure-logic ports landed (dedup + weekend
+window + parsers); U28–U33 remaining.
 **Supersedes:** old U13–U18 of `2026-08-14-001` (production-readiness plan), per the mid-session
 redirect: *everything server-side moves to NestJS*.
 
@@ -134,15 +135,14 @@ legacy HTML format, 500-char error slice, kind labels `run failed`/`dead-lettere
 Remaining: per-stage `CUTOVER` gating so individual queues can be enabled independently
 at U33.
 
-### U28 — Ingestion port 🟡 (dedup + shared utils landed)
+### U28 — Ingestion port 🟡 (dedup + parsers landed)
 `scrape-due-sources` → `run_due_source_scrapes` enqueue; source-queue worker (claim 1,
 SKIP LOCKED); the 9 parser adapters (website/rss/ical/manual/macaronikid/brec/
-downtownlafayette/lcglafayette/localhop) — **remaining**; guarded-fetch SSRF + image-host
-allowlist (**ported**); parsing, extraction pipeline, enrichment, event processing, and
-date utilities (**ported with full test suites**); `bulk_import_scrape_events`;
-cross-source dedup (**pure logic ported with full test suite**: fingerprint or Jaccard
-≥ 0.7 within ±4h, plan 033); zero-result stale escalation (threshold 3, audit log,
-scheduler exclusion — plans 034/U1).
+downtownlafayette/lcglafayette/localhop — **pure logic ported with full test suite**
+in PR #15, fixtures byte-identical); guarded-fetch SSRF + image-host allowlist;
+`bulk_import_scrape_events`; cross-source dedup (**landed with full test suite**:
+fingerprint or Jaccard ≥ 0.7 within ±4h, plan 033); zero-result stale escalation
+(threshold 3, audit log, scheduler exclusion — plans 034/U1).
 
 ### U29 — Classification + enrichment port
 Tag queue worker (batch 20, concurrency 4) + LLM tagging; review queue worker

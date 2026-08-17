@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:dc="http://purl.org/dc/elements/1.1/">
+  <channel>
+    <item>
+      <title>Community Picnic</title>
+      <description>Free outdoor event for all families</description>
+      <link>https://feed.example.com/picnic</link>
+      <dc:date>2026-05-02T10:00:00-05:00</dc:date>
+    </item>
+  </channel>
+</rss>
