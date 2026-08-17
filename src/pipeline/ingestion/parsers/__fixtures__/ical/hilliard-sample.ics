@@ -1,0 +1,52 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Hilliard Art Museum - ECPv6.16.2//NONSGML v1.0//EN
+CALSCALE:GREGORIAN
+METHOD:PUBLISH
+X-WR-CALNAME:Hilliard Art Museum
+X-ORIGINAL-URL:https://hilliardartmuseum.org
+X-WR-CALDESC:Events for Hilliard Art Museum
+BEGIN:VTIMEZONE
+TZID:America/Chicago
+BEGIN:DAYLIGHT
+TZOFFSETFROM:-0600
+TZOFFSETTO:-0500
+TZNAME:CDT
+DTSTART:20260308T080000
+END:DAYLIGHT
+BEGIN:STANDARD
+TZOFFSETFROM:-0500
+TZOFFSETTO:-0600
+TZNAME:CST
+DTSTART:20261101T070000
+END:STANDARD
+END:VTIMEZONE
+BEGIN:VEVENT
+DTSTART;TZID=America/Chicago:20260613T100000
+DTEND;TZID=America/Chicago:20260613T120000
+DTSTAMP:20260526T205447
+CREATED:20260423T220025Z
+LAST-MODIFIED:20260515T183952Z
+UID:10000071-hilliard@hilliardartmuseum.org
+SUMMARY:Create & Play Café - Andy Warhol Edition!
+DESCRIPTION:Join us for this family-friendly special edition of Create & Play Café\, inspired by the Andy Warhol exhibition. Designed for ages 4 and up. No pre-registration required.
+URL:https://hilliardartmuseum.org/event/create-play-cafe-warhol/
+LOCATION:Hilliard Art Museum\, 710 E St Mary Blvd\, Lafayette\, LA\, 70503\, United States
+CATEGORIES:Family
+ATTACH;FMTTYPE=image/webp:https://hilliardartmuseum.org/wp-content/uploads/2025/09/kids-cafe.webp
+END:VEVENT
+BEGIN:VEVENT
+DTSTART;TZID=America/Chicago:20260529T120000
+DTEND;TZID=America/Chicago:20260529T130000
+DTSTAMP:20260526T205447
+CREATED:20260423T215505Z
+LAST-MODIFIED:20260515T183921Z
+UID:10000408-hilliard@hilliardartmuseum.org
+SUMMARY:Gulf Streams: Guided Public Tour
+DESCRIPTION:Explore new exhibitions with Education Director\, Barbara Helveston. Members are always free. Tour included in museum admission. Advance registration required.
+URL:https://hilliardartmuseum.org/event/gulf-streams-guided-public-tour/
+LOCATION:Hilliard Art Museum\, 710 E St Mary Blvd\, Lafayette\, LA\, 70503\, United States
+CATEGORIES:Learn
+ATTACH;FMTTYPE=image/webp:https://hilliardartmuseum.org/wp-content/uploads/2026/04/HilliardMuseum_SpringFete.webp
+END:VEVENT
+END:VCALENDAR

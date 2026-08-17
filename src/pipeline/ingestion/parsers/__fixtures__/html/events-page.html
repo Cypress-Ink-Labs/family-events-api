@@ -1,0 +1,38 @@
+<!doctype html>
+<html>
+  <head>
+    <title>City Events</title>
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "Event",
+            "name": "City Science Fair",
+            "description": "Hands-on exhibits for families.",
+            "startDate": "2026-08-11T10:00:00-05:00",
+            "endDate": "2026-08-11T14:00:00-05:00",
+            "url": "/events/science-fair",
+            "image": ["https://events.example.com/science-fair.jpg"],
+            "location": {
+              "@type": "Place",
+              "name": "Riverfront Hall",
+              "address": "101 Main St"
+            },
+            "offers": {
+              "@type": "Offer",
+              "price": 0,
+              "priceCurrency": "USD"
+            }
+          },
+          {
+            "@type": "Event",
+            "name": "Date Missing Event",
+            "description": "This should be ignored because startDate is missing"
+          }
+        ]
+      }
+    </script>
+  </head>
+  <body></body>
+</html>

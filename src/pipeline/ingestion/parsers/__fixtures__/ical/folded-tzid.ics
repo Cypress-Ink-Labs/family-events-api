@@ -1,0 +1,14 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Family Events//EN
+BEGIN:VEVENT
+SUMMARY:Neighborhood Orchestra
+DESCRIPTION:Line one with detail and 
+ continuation text\; bring chairs\nSnacks included
+DTSTART;TZID=America/New_York:20260515T193000
+DTEND;TZID=America/New_York:20260515T210000
+LOCATION:Town Hall\, Main Street
+URL:https://calendar.example.com/events/orchestra
+ATTACH;FMTTYPE=image/jpeg:https://calendar.example.com/poster.jpg
+END:VEVENT
+END:VCALENDAR

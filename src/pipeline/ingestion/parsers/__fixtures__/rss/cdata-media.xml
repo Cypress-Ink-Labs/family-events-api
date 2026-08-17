@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:media="http://search.yahoo.com/mrss/">
+  <channel>
+    <item>
+      <title><![CDATA[Family Fun <b>Night</b>]]></title>
+      <description><![CDATA[Bring kids for games <img src="/images/fun.jpg" /> Tickets $12.50]]></description>
+      <link>/events/family-fun</link>
+      <pubDate>Tue, 15 Apr 2026 14:30:00 GMT</pubDate>
+      <media:content url="https://cdn.example.com/family-fun.jpg" medium="image" />
+      <enclosure url="https://cdn.example.com/flyer.png" type="image/png" />
+    </item>
+  </channel>
+</rss>
