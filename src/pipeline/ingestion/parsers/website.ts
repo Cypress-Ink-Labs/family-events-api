@@ -4,7 +4,8 @@
 // noUncheckedIndexedAccess fixes for regex group access (optional chaining / ?? null fallbacks);
 // firstYearFromDocument narrows to HTMLDocument for body access and falls back to documentElement
 // text because linkedom leaves body empty when parsing HTML fragments (deno-dom moves fragment
-// content into body).
+// content into body); parseStructuredEvents restructured into named helpers to satisfy the repo
+// complexity gate (PR #15 review); logic unchanged, fixture tests pin behavior.
 
 import { DOMParser } from "linkedom"
 import {
@@ -325,14 +326,9 @@ function offerPrice(value: unknown): number | null {
   return null
 }
 
-function parseStructuredEvents(
-  doc: ReturnType<DOMParser["parseFromString"]>,
-  sourceUrl: string
-): StructuredEvent[] {
-  if (!doc) {
-    return []
-  }
-
+function collectJsonLdEventNodes(
+  doc: NonNullable<ReturnType<DOMParser["parseFromString"]>>
+): Record<string, unknown>[] {
   const eventCandidates: Record<string, unknown>[] = []
   for (const script of doc.querySelectorAll('script[type="application/ld+json"]')) {
     const rawJson = script.textContent?.trim() ?? ""
@@ -347,66 +343,98 @@ function parseStructuredEvents(
       continue
     }
   }
+  return eventCandidates
+}
+
+function structuredEventAddress(
+  locationObj: Record<string, unknown> | undefined,
+  venueName: string | null
+): string | null {
+  const rawAddr = locationObj?.address
+  return (
+    (rawAddr && typeof rawAddr === "object" && !Array.isArray(rawAddr)
+      ? [
+          pickText((rawAddr as Record<string, unknown>).streetAddress),
+          pickText((rawAddr as Record<string, unknown>).addressLocality),
+          pickText((rawAddr as Record<string, unknown>).addressRegion),
+          pickText((rawAddr as Record<string, unknown>).postalCode),
+        ]
+          .filter(Boolean)
+          .join(", ") || null
+      : (pickText(rawAddr) ?? pickText(locationObj?.["streetAddress"]))) ?? venueName
+  )
+}
+
+function collectStructuredImageUrls(imageValue: unknown, sourceUrl: string): string[] {
+  const webImages: string[] = []
+  for (const image of extractImageUrls(imageValue)) {
+    const normalized = normalizeUrl(image, sourceUrl)
+    if (normalized && validateExternalUrl(normalized).ok && !webImages.includes(normalized)) {
+      webImages.push(normalized)
+    }
+    if (webImages.length >= 5) {
+      break
+    }
+  }
+  return webImages
+}
+
+function mapStructuredEvent(
+  candidate: Record<string, unknown>,
+  sourceUrl: string
+): StructuredEvent | null {
+  const title = pickText(candidate.name)
+  if (!title) {
+    return null
+  }
+
+  const startDatetime = parseIsoDate(pickText(candidate.startDate))
+  if (!startDatetime) {
+    return null
+  }
+
+  const endDatetime = parseIsoDate(pickText(candidate.endDate))
+  const description = cleanDescription(pickText(candidate.description)) || title
+  const eventUrl = normalizeUrl(pickText(candidate.url), sourceUrl) ?? sourceUrl
+  const locationObj = candidate.location as Record<string, unknown> | undefined
+  const venueName = pickText(locationObj?.name) ?? pickText(candidate.location)
+  const address = structuredEventAddress(locationObj, venueName)
+  const webImages = collectStructuredImageUrls(candidate.image, sourceUrl)
+
+  const offers = candidate.offers as Record<string, unknown> | undefined
+  const priceFromOffers = offerPrice(offers?.price)
+  const isFreeFromOffers = priceFromOffers === 0
+  const priceInfo = extractPrice(description)
+
+  return {
+    title,
+    description: description.slice(0, 500),
+    startDatetime,
+    endDatetime,
+    venueName,
+    address,
+    sourceUrl: eventUrl,
+    imageUrl: webImages[0] ?? null,
+    images: webImages,
+    price: priceFromOffers ?? priceInfo.price,
+    isFree: isFreeFromOffers || priceInfo.isFree,
+  }
+}
+
+function parseStructuredEvents(
+  doc: ReturnType<DOMParser["parseFromString"]>,
+  sourceUrl: string
+): StructuredEvent[] {
+  if (!doc) {
+    return []
+  }
 
   const events: StructuredEvent[] = []
-  for (const candidate of eventCandidates) {
-    const title = pickText(candidate.name)
-    if (!title) {
-      continue
+  for (const candidate of collectJsonLdEventNodes(doc)) {
+    const event = mapStructuredEvent(candidate, sourceUrl)
+    if (event) {
+      events.push(event)
     }
-
-    const startDatetime = parseIsoDate(pickText(candidate.startDate))
-    if (!startDatetime) {
-      continue
-    }
-
-    const endDatetime = parseIsoDate(pickText(candidate.endDate))
-    const description = cleanDescription(pickText(candidate.description)) || title
-    const eventUrl = normalizeUrl(pickText(candidate.url), sourceUrl) ?? sourceUrl
-    const locationObj = candidate.location as Record<string, unknown> | undefined
-    const venueName = pickText(locationObj?.name) ?? pickText(candidate.location)
-    const rawAddr = locationObj?.address
-    const address =
-      (rawAddr && typeof rawAddr === "object" && !Array.isArray(rawAddr)
-        ? [
-            pickText((rawAddr as Record<string, unknown>).streetAddress),
-            pickText((rawAddr as Record<string, unknown>).addressLocality),
-            pickText((rawAddr as Record<string, unknown>).addressRegion),
-            pickText((rawAddr as Record<string, unknown>).postalCode),
-          ]
-            .filter(Boolean)
-            .join(", ") || null
-        : (pickText(rawAddr) ?? pickText(locationObj?.["streetAddress"]))) ?? venueName
-
-    const webImages: string[] = []
-    for (const image of extractImageUrls(candidate.image)) {
-      const normalized = normalizeUrl(image, sourceUrl)
-      if (normalized && validateExternalUrl(normalized).ok && !webImages.includes(normalized)) {
-        webImages.push(normalized)
-      }
-      if (webImages.length >= 5) {
-        break
-      }
-    }
-
-    const offers = candidate.offers as Record<string, unknown> | undefined
-    const priceFromOffers = offerPrice(offers?.price)
-    const isFreeFromOffers = priceFromOffers === 0
-    const priceInfo = extractPrice(description)
-
-    events.push({
-      title,
-      description: description.slice(0, 500),
-      startDatetime,
-      endDatetime,
-      venueName,
-      address,
-      sourceUrl: eventUrl,
-      imageUrl: webImages[0] ?? null,
-      images: webImages,
-      price: priceFromOffers ?? priceInfo.price,
-      isFree: isFreeFromOffers || priceInfo.isFree,
-    })
   }
 
   return events

@@ -2,7 +2,10 @@
 // supabase/functions/scrape-source/parsers/downtownlafayette.ts (U28).
 // Deviations: @b-fuze/deno-dom replaced with linkedom; regex-group index access
 // gained an optional-chaining guard for noUncheckedIndexedAccess (behavior
-// unchanged).
+// unchanged). Restructured into named helpers to satisfy the repo complexity
+// gate (PR #15 review); logic unchanged, fixture tests pin behavior. A minimal
+// structural Element type is declared locally for the helper signatures (same
+// approach as brec.ts).
 
 // Downtown Lafayette (DDA) event parser.
 //
@@ -49,6 +52,13 @@ import type { SourceParser } from "./_lib/types.js"
 
 const BASE_URL = "https://www.downtownlafayette.org"
 
+type Element = {
+  getAttribute(name: string): string | null
+  readonly textContent: string | null
+  querySelector(selectors: string): Element | null
+  querySelectorAll(selectors: string): ArrayLike<Element>
+}
+
 const MONTHS: Record<string, number> = {
   jan: 0,
   feb: 1,
@@ -91,6 +101,120 @@ function inferYear(month: number, day: number, now: Date): number {
   return thisYear + 1
 }
 
+function extractTitleAndSourceUrl(
+  card: Element
+): { title: string; sourceUrl: string | null } | null {
+  // Title: prefer aria-label on the absolute-link; fall back to h2 text
+  const absLink = card.querySelector(".c-abso-link")
+  const title =
+    absLink?.getAttribute("aria-label")?.trim() ?? card.querySelector("h2")?.textContent?.trim()
+  if (!title) return null
+
+  // Source URL
+  const href = absLink?.getAttribute("href")?.trim() ?? null
+  const sourceUrl = href ? (href.startsWith("http") ? href : `${BASE_URL}${href}`) : null
+
+  return { title, sourceUrl }
+}
+
+function extractCalendarDate(
+  card: Element,
+  now: Date
+): { year: number; month: number; day: number } | null {
+  // Month / day from the cal block
+  const calBlock = card.querySelector(".c-card-cal")
+  const monthText = calBlock
+    ?.querySelector(".c-card-subtitle")
+    ?.textContent?.trim()
+    ?.toLowerCase()
+    ?.slice(0, 3)
+  const dayText = calBlock?.querySelector(".c-card-title")?.textContent?.trim()
+  if (!monthText || !dayText) return null
+  const month = MONTHS[monthText]
+  if (month === undefined) return null
+  const day = Number(dayText)
+  if (!Number.isFinite(day) || day < 1 || day > 31) return null
+
+  return { year: inferYear(month, day, now), month, day }
+}
+
+function extractDatetimes(
+  card: Element,
+  date: { year: number; month: number; day: number }
+): { startDatetime: string; endDatetime: string | null } | null {
+  const { year, month, day } = date
+
+  // Time range from c-card-timewrap
+  const timeEl = card.querySelectorAll(".c-card-timewrap .c-card-subtitle")
+  const startRaw = timeEl[0]?.textContent?.trim() ?? ""
+  const endRaw = timeEl[2]?.textContent?.trim() ?? ""
+  const startClock = parseClock(startRaw)
+  const endClock = parseClock(endRaw)
+
+  const startHour = startClock?.hour ?? 0
+  const startMin = startClock?.minute ?? 0
+  const startDatetime = wallClockToIso(
+    { year, month: month + 1, day, hour: startHour, minute: startMin, second: 0 },
+    "America/Chicago",
+    { fallback: "null" }
+  )
+  if (!startDatetime) return null
+
+  let endDatetime: string | null = null
+  if (endClock) {
+    endDatetime =
+      wallClockToIso(
+        { year, month: month + 1, day, hour: endClock.hour, minute: endClock.minute, second: 0 },
+        "America/Chicago",
+        { fallback: "null" }
+      ) ?? null
+  }
+
+  return { startDatetime, endDatetime }
+}
+
+function extractImageUrl(card: Element): string | null {
+  // Image: g_visual_img src
+  const imgEl = card.querySelector("img.g_visual_img")
+  const imgSrc = imgEl?.getAttribute("src")?.trim() ?? null
+  return imgSrc && validateExternalUrl(imgSrc).ok ? imgSrc : null
+}
+
+function parseCard(card: Element, now: Date): ParsedEvent | null {
+  const titleAndUrl = extractTitleAndSourceUrl(card)
+  if (!titleAndUrl) return null
+  const { title, sourceUrl } = titleAndUrl
+
+  const calDate = extractCalendarDate(card, now)
+  if (!calDate) return null
+
+  const datetimes = extractDatetimes(card, calDate)
+  if (!datetimes) return null
+
+  // Venue: c-card-subtext
+  const venue = card.querySelector(".c-card-subtext")?.textContent?.trim() ?? null
+
+  const imageUrl = extractImageUrl(card)
+
+  // Description is not available on the listing page — use title as placeholder
+  const description = title
+  const priceInfo = extractPrice(description)
+
+  return {
+    title,
+    description: cleanDescription(description).slice(0, 500),
+    startDatetime: datetimes.startDatetime,
+    endDatetime: datetimes.endDatetime,
+    venueName: venue,
+    address: venue,
+    sourceUrl,
+    imageUrl,
+    images: imageUrl ? [imageUrl] : [],
+    price: priceInfo.price,
+    isFree: priceInfo.isFree,
+  }
+}
+
 export function parseDowntownLafayetteEvents(html: string, now: Date = new Date()): ParsedEvent[] {
   const parser = new DOMParser()
   const doc = parser.parseFromString(html, "text/html")
@@ -101,87 +225,14 @@ export function parseDowntownLafayetteEvents(html: string, now: Date = new Date(
 
   // Each event card is a div with class "c-card-wrap w-dyn-item"
   for (const card of doc.querySelectorAll(".c-card-wrap.w-dyn-item")) {
-    // Title: prefer aria-label on the absolute-link; fall back to h2 text
-    const absLink = card.querySelector(".c-abso-link")
-    const title =
-      absLink?.getAttribute("aria-label")?.trim() ?? card.querySelector("h2")?.textContent?.trim()
-    if (!title) continue
+    const event = parseCard(card, now)
+    if (!event) continue
 
-    // Source URL
-    const href = absLink?.getAttribute("href")?.trim() ?? null
-    const sourceUrl = href ? (href.startsWith("http") ? href : `${BASE_URL}${href}`) : null
-
-    // Month / day from the cal block
-    const calBlock = card.querySelector(".c-card-cal")
-    const monthText = calBlock
-      ?.querySelector(".c-card-subtitle")
-      ?.textContent?.trim()
-      ?.toLowerCase()
-      ?.slice(0, 3)
-    const dayText = calBlock?.querySelector(".c-card-title")?.textContent?.trim()
-    if (!monthText || !dayText) continue
-    const month = MONTHS[monthText]
-    if (month === undefined) continue
-    const day = Number(dayText)
-    if (!Number.isFinite(day) || day < 1 || day > 31) continue
-
-    const year = inferYear(month, day, now)
-
-    // Time range from c-card-timewrap
-    const timeEl = card.querySelectorAll(".c-card-timewrap .c-card-subtitle")
-    const startRaw = timeEl[0]?.textContent?.trim() ?? ""
-    const endRaw = timeEl[2]?.textContent?.trim() ?? ""
-    const startClock = parseClock(startRaw)
-    const endClock = parseClock(endRaw)
-
-    const startHour = startClock?.hour ?? 0
-    const startMin = startClock?.minute ?? 0
-    const startDatetime = wallClockToIso(
-      { year, month: month + 1, day, hour: startHour, minute: startMin, second: 0 },
-      "America/Chicago",
-      { fallback: "null" }
-    )
-    if (!startDatetime) continue
-
-    let endDatetime: string | null = null
-    if (endClock) {
-      endDatetime =
-        wallClockToIso(
-          { year, month: month + 1, day, hour: endClock.hour, minute: endClock.minute, second: 0 },
-          "America/Chicago",
-          { fallback: "null" }
-        ) ?? null
-    }
-
-    // Venue: c-card-subtext
-    const venue = card.querySelector(".c-card-subtext")?.textContent?.trim() ?? null
-
-    // Image: g_visual_img src
-    const imgEl = card.querySelector("img.g_visual_img")
-    const imgSrc = imgEl?.getAttribute("src")?.trim() ?? null
-    const imageUrl = imgSrc && validateExternalUrl(imgSrc).ok ? imgSrc : null
-
-    // Description is not available on the listing page — use title as placeholder
-    const description = title
-    const priceInfo = extractPrice(description)
-
-    const key = `${title.toLowerCase()}::${startDatetime}`
+    const key = `${event.title.toLowerCase()}::${event.startDatetime}`
     if (seenKeys.has(key)) continue
     seenKeys.add(key)
 
-    events.push({
-      title,
-      description: cleanDescription(description).slice(0, 500),
-      startDatetime,
-      endDatetime,
-      venueName: venue,
-      address: venue,
-      sourceUrl,
-      imageUrl,
-      images: imageUrl ? [imageUrl] : [],
-      price: priceInfo.price,
-      isFree: priceInfo.isFree,
-    })
+    events.push(event)
   }
 
   return events

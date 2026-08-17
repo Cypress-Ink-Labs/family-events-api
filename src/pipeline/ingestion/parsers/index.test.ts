@@ -22,7 +22,7 @@ const DB_ALLOWED_SOURCE_TYPES = [
 
 describe("parser registry", () => {
   it("keys match the DB CHECK constraint allowlist", () => {
-    expect(Object.keys(parsers).slice().sort()).toEqual(DB_ALLOWED_SOURCE_TYPES.slice().sort())
+    expect(Object.keys(parsers).toSorted()).toEqual(DB_ALLOWED_SOURCE_TYPES.toSorted())
   })
 
   it("each registered parser exposes the correct type tag", () => {
