@@ -106,10 +106,7 @@ export async function resolveAndCheckPublicIp(rawUrl: string): Promise<ResolveRe
   // around IPv6 hostnames. Upstream matched bare hex too, so a single-label
   // hex hostname (e.g. "cafe", resolvable via intranet search domains) slipped
   // past the DNS range check entirely.
-  if (
-    /^\d+\.\d+\.\d+\.\d+$/.test(parsed.hostname) ||
-    /^\[[0-9a-fA-F:]+\]$/.test(parsed.hostname)
-  ) {
+  if (/^\d+\.\d+\.\d+\.\d+$/.test(parsed.hostname) || /^\[[0-9a-fA-F:]+\]$/.test(parsed.hostname)) {
     return { ok: true, resolvedIps: [parsed.hostname] }
   }
 
