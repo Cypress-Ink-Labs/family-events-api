@@ -207,10 +207,10 @@ export const localHopParser: SourceParser<"localhop"> = {
     } catch (err) {
       clearTimeout(timeoutId)
       if (err instanceof SsrfRejectedError) {
-        throw new Error(`localhop: blocked by SSRF guard: ${err.message}`)
+        throw new Error(`localhop: blocked by SSRF guard: ${err.message}`, { cause: err })
       }
       if (err instanceof Error && err.name === "AbortError") {
-        throw new Error(`localhop: fetch timed out after ${FETCH_TIMEOUT_MS}ms`)
+        throw new Error(`localhop: fetch timed out after ${FETCH_TIMEOUT_MS}ms`, { cause: err })
       }
       throw err
     }

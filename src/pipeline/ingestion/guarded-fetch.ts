@@ -33,6 +33,36 @@ export class SsrfRejectedError extends Error {
   }
 }
 
+const CREDENTIAL_HEADERS = ["authorization", "cookie", "proxy-authorization"]
+
+/**
+ * Derive the RequestInit for the next redirect hop (PR #14 review — the
+ * platform fetch applies these rules when it follows redirects itself, so the
+ * manual loop must too):
+ * - RFC 9110: 301/302/303 rewrite a non-GET/HEAD request to a bodyless GET,
+ *   which also keeps a one-shot ReadableStream body from being sent twice.
+ * - Credential headers never cross origins.
+ */
+function nextInit(init: RequestInit, status: number, from: URL, to: URL): RequestInit {
+  const next: RequestInit = { ...init }
+  const method = (init.method ?? "GET").toUpperCase()
+
+  if (status === 301 || status === 302 || status === 303) {
+    if (method !== "GET" && method !== "HEAD") {
+      next.method = "GET"
+      delete next.body
+    }
+  }
+
+  if (from.origin !== to.origin) {
+    const headers = new Headers(init.headers)
+    for (const name of CREDENTIAL_HEADERS) headers.delete(name)
+    next.headers = headers
+  }
+
+  return next
+}
+
 /**
  * Fetch a URL with SSRF protection on every redirect hop.
  *
@@ -48,6 +78,7 @@ export async function guardedFetch(
   const maxRedirects = opts.maxRedirects ?? 3
   const resolve = opts.resolve ?? resolveAndCheckPublicIp
   let currentUrl = rawUrl
+  let currentInit: RequestInit = init
 
   for (let hop = 0; hop <= maxRedirects; hop++) {
     const check = await resolve(currentUrl)
@@ -55,14 +86,16 @@ export async function guardedFetch(
       throw new SsrfRejectedError(check.reason ?? "unknown reason")
     }
 
-    const response = await fetch(currentUrl, { ...init, redirect: "manual" })
+    const response = await fetch(currentUrl, { ...currentInit, redirect: "manual" })
 
     if (response.status >= 300 && response.status < 400) {
       const location = response.headers.get("location")
       if (!location) return response
       // Release the redirect response body before following the next hop.
       await response.body?.cancel().catch(() => {})
-      currentUrl = new URL(location, currentUrl).toString()
+      const nextUrl = new URL(location, currentUrl)
+      currentInit = nextInit(currentInit, response.status, new URL(currentUrl), nextUrl)
+      currentUrl = nextUrl.toString()
       continue
     }
 

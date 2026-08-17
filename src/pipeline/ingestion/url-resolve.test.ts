@@ -74,4 +74,22 @@ describe("resolveAndCheckPublicIp — resolved-record checks", () => {
     expect(result.ok).toBe(false)
     expect(result.reason).toContain("did not resolve")
   })
+
+  it("blocks expanded spellings of blocked IPv6 addresses (numeric, not text, matching)", async () => {
+    mockResolve4.mockRejectedValue(new Error("no A"))
+    mockResolve6.mockResolvedValue(["0:0:0:0:0:0:0:1"])
+
+    const result = await resolveAndCheckPublicIp("https://sneaky.example/feed")
+    expect(result.ok).toBe(false)
+    expect(result.reason).toContain("::1")
+  })
+
+  it("blocks AAAA records that map IPv4 private space", async () => {
+    mockResolve4.mockRejectedValue(new Error("no A"))
+    mockResolve6.mockResolvedValue(["::ffff:10.0.0.7"])
+
+    const result = await resolveAndCheckPublicIp("https://mapped.example/feed")
+    expect(result.ok).toBe(false)
+    expect(result.reason).toContain("IPv4-mapped")
+  })
 })

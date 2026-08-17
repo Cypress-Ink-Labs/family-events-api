@@ -122,7 +122,8 @@ export function mapMacaroniKidEvent(raw: unknown, sourceBase: string): ParsedEve
     asString(node.endDateTime) ?? asString(node.end) ?? asString(node.endDate)
   )
 
-  const id = asString(node._id) ?? asString(node.id)
+  // "_id" is the Macaroni KID API's own field name (Mongo-style), not ours.
+  const id = asString(node["_id"]) ?? asString(node.id)
   const slug = asString(node.slug)
   const sourceUrl = buildSourceUrl(sourceBase, id, slug)
 

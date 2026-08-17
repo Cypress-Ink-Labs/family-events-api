@@ -1,15 +1,18 @@
 import { describe, expect, it } from "vitest"
 
 import {
+  calendarComponentsValid,
   cleanDescription,
   decodeHtml,
   dedupKey,
   extractPrice,
+  isoCalendarComponentsValid,
   parseIcalDate,
   parseIsoDate,
   stripHtml,
   stripShortcodes,
   unescapeIcalText,
+  utcMinute,
 } from "./parsing.js"
 
 // Ported verbatim from family-events-backend _shared/parsing.test.ts (U28).
@@ -34,6 +37,31 @@ describe("parseIsoDate", () => {
     // new Date() parses "Apr 15, 2026" in JS
     expect(parseIsoDate("Apr 15, 2026")).not.toBeNull()
   })
+
+  it("rejects impossible calendar components instead of rolling them forward", () => {
+    expect(parseIsoDate("2026-02-30T10:00:00Z")).toBeNull()
+    expect(parseIsoDate("2026-13-01T10:00:00Z")).toBeNull()
+    expect(parseIsoDate("2026-04-15T24:61:00Z")).toBeNull()
+    // Leap-day handling stays correct in both directions.
+    expect(parseIsoDate("2024-02-29T10:00:00Z")).toBe("2024-02-29T10:00:00.000Z")
+    expect(parseIsoDate("2026-02-29T10:00:00Z")).toBeNull()
+  })
+})
+
+describe("calendar component validation", () => {
+  it("validates month/day/time ranges against the real calendar", () => {
+    expect(calendarComponentsValid(2026, 2, 28)).toBe(true)
+    expect(calendarComponentsValid(2026, 2, 30)).toBe(false)
+    expect(calendarComponentsValid(2026, 0, 1)).toBe(false)
+    expect(calendarComponentsValid(2026, 6, 1, 23, 59, 59)).toBe(true)
+    expect(calendarComponentsValid(2026, 6, 1, 24, 0, 0)).toBe(false)
+  })
+
+  it("only judges ISO-shaped strings; other formats pass through", () => {
+    expect(isoCalendarComponentsValid("2026-02-30T10:00:00Z")).toBe(false)
+    expect(isoCalendarComponentsValid("2026-04-15")).toBe(true)
+    expect(isoCalendarComponentsValid("Apr 15, 2026")).toBe(true)
+  })
 })
 
 describe("parseIcalDate", () => {
@@ -57,6 +85,12 @@ describe("parseIcalDate", () => {
   it("returns null for null or invalid input", () => {
     expect(parseIcalDate(null)).toBeNull()
     expect(parseIcalDate("garbage")).toBeNull()
+  })
+
+  it("rejects compact stamps with impossible components", () => {
+    expect(parseIcalDate("20260230")).toBeNull()
+    expect(parseIcalDate("20261301")).toBeNull()
+    expect(parseIcalDate("20260415T256000Z")).toBeNull()
   })
 })
 
@@ -105,6 +139,12 @@ describe("unescapeIcalText", () => {
 
   it("unescapes double-backslash to single backslash", () => {
     expect(unescapeIcalText("path\\\\to\\\\file")).toBe("path\\to\\file")
+  })
+
+  it("keeps an escaped backslash before n as backslash + n (single-pass)", () => {
+    // \\n in the wire format is an escaped backslash followed by a literal n —
+    // the old sequential replace consumed it as a newline escape instead.
+    expect(unescapeIcalText("a\\\\nb")).toBe("a\\nb")
   })
 
   it("leaves plain text alone", () => {
@@ -176,6 +216,14 @@ describe("extractPrice", () => {
       isFree: true,
     })
   })
+
+  it("does not classify negated free wording as free admission", () => {
+    expect(extractPrice("Admission is not free; tickets are $12")).toEqual({
+      price: 12,
+      isFree: false,
+    })
+    expect(extractPrice("This event isn't free")).toEqual({ price: null, isFree: false })
+  })
 })
 
 describe("dedupKey", () => {
@@ -212,6 +260,17 @@ describe("dedupKey", () => {
     const a = dedupKey("Event", "2026-04-15T10:00:00Z", "c")
     const b = dedupKey("Event", "2026-04-15T11:00:00Z", "c")
     expect(a).not.toBe(b)
+  })
+
+  it("collapses equivalent instants written with different offsets", () => {
+    const a = dedupKey("Event", "2026-04-15T10:00:00Z", "c")
+    const b = dedupKey("Event", "2026-04-15T05:00:00-05:00", "c")
+    expect(a).toBe(b)
+  })
+
+  it("falls back to raw slicing for invalid timestamps without throwing", () => {
+    expect(utcMinute("not-a-date-at-all")).toBe("not-a-date-at-al")
+    expect(dedupKey("Event", "not-a-date-at-all", "c")).toContain("not-a-date-at-al")
   })
 })
 

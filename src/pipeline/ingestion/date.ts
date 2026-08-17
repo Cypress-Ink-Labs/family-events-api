@@ -1,5 +1,13 @@
-// Wall-clock date helpers for source parsers. Ported verbatim from
-// family-events-backend supabase/functions/scrape-source/lib/date.ts (U28).
+// Wall-clock date helpers for source parsers. Ported from family-events-backend
+// supabase/functions/scrape-source/lib/date.ts (U28). Deviation (PR #14
+// review): wall-clock parts are validated against the real calendar before
+// Date.UTC construction. Under fallback "null" (and in
+// dateStampToWallClockIso) impossible components now return null; the default
+// "utc" fallback keeps the legacy rollover because its overload guarantees a
+// string to the parsers — ingestion-entry rejection of impossible ISO strings
+// lives in validateParsedEvents.
+
+import { calendarComponentsValid } from "./parsing.js"
 
 interface WallClockParts {
   year: number
@@ -74,6 +82,10 @@ export function wallClockToIso(
 ): string | null {
   const utcGuess = Date.UTC(year, month - 1, day, hour, minute, second)
 
+  if (!calendarComponentsValid(year, month, day, hour, minute, second)) {
+    return fallback === "null" ? null : new Date(utcGuess).toISOString()
+  }
+
   try {
     const initialOffset = getTimeZoneOffset(new Date(utcGuess), timeZone)
     let adjusted = utcGuess - initialOffset
@@ -99,6 +111,9 @@ export function dateStampToWallClockIso(
   }
 
   const [, year, month, day] = match
+  if (!calendarComponentsValid(Number(year), Number(month), Number(day), hour, minute)) {
+    return null
+  }
   return wallClockToIso(
     {
       year: Number(year),
