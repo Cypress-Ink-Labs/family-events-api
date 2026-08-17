@@ -133,6 +133,16 @@ describe("eventFingerprint", () => {
     ).toBe(true)
   })
 
+  it("equivalent instants with different offsets give the same fingerprint", () => {
+    expect(eventFingerprint("Story Time", "2026-06-20T14:00:00.000Z", "city-1")).toBe(
+      eventFingerprint("Story Time", "2026-06-20T09:00:00.000-05:00", "city-1")
+    )
+  })
+
+  it("invalid timestamps fall back to raw slicing without throwing", () => {
+    expect(eventFingerprint("Story Time", "not-a-date", "city-1")).toContain("not-a-date")
+  })
+
   it("different minutes produce different fingerprints", () => {
     expect(eventFingerprint("Story Time", "2026-06-20T14:00:00.000Z", "city-1")).not.toBe(
       eventFingerprint("Story Time", "2026-06-20T14:01:00.000Z", "city-1")

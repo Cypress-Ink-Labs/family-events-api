@@ -131,4 +131,21 @@ describe("sanitizeImagesForIngest", () => {
 
     expect(images).toHaveLength(5)
   })
+
+  it("bounds the candidate list so pages full of broken URLs cannot stall the worker", async () => {
+    const fetchMock = vi.fn(async () => new Response(null, { status: 404 }))
+    vi.stubGlobal("fetch", fetchMock)
+
+    const images = await sanitizeImagesForIngest(
+      buildParsed({
+        // 60 candidates that all fail validation — only the first 20 may be tried.
+        images: Array.from({ length: 60 }, (_, i) => `https://venue.example.com/broken-${i}.jpg`),
+      }),
+      "https://venue.example.com/events",
+      { resolve: okResolve }
+    )
+
+    expect(images).toEqual([])
+    expect(fetchMock.mock.calls.length).toBeLessThanOrEqual(20)
+  })
 })

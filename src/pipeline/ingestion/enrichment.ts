@@ -1,7 +1,12 @@
 // Ingest-time image sanitization: https-only, host allowlist (source host +
 // configured CDNs), guarded fetch on every hop, content-type + byte-size caps.
 // Ported from family-events-backend supabase/functions/scrape-source/lib/enrichment.ts
-// (U28); the only deviation is Deno.env.get → process.env.
+// (U28). Deviations (PR #14 review, beyond Deno.env.get → process.env):
+// - candidates are capped at MAX_IMAGE_CANDIDATES before validation so a page
+//   listing hundreds of broken image URLs cannot stall the worker,
+// - the per-candidate timeout aborts the in-flight request instead of
+//   abandoning it, and
+// - validateImageAtIngest is decomposed into named policy gates.
 
 import { validateExternalUrl } from "./url-validation.js"
 import { guardedFetch, type PublicIpResolver } from "./guarded-fetch.js"
@@ -10,6 +15,7 @@ import type { ParsedEvent } from "./types.js"
 const IMAGE_HEAD_TIMEOUT_MS = 5_000
 const IMAGE_MAX_BYTES = 2 * 1024 * 1024
 const MAX_IMAGES_PER_EVENT = 5
+const MAX_IMAGE_CANDIDATES = 20
 const IMAGE_VALIDATION_CONCURRENCY = 2
 const IMAGE_VALIDATION_TIMEOUT_MS = 6_000
 const IMAGE_HOST_ALLOWLIST_ENV = "SCRAPER_IMAGE_HOST_ALLOWLIST"
@@ -68,9 +74,15 @@ function configuredImageHostAllowlist(): string[] {
   return uniqueHosts([...DEFAULT_IMAGE_HOST_ALLOWLIST, ...configuredHosts])
 }
 
+function requestSignal(timeoutMs: number, outer?: AbortSignal): AbortSignal {
+  const timeout = AbortSignal.timeout(timeoutMs)
+  return outer ? AbortSignal.any([outer, timeout]) : timeout
+}
+
 async function measureImageByteLength(
   imageUrl: string,
-  resolve?: PublicIpResolver
+  resolve?: PublicIpResolver,
+  signal?: AbortSignal
 ): Promise<number | null> {
   let response: Response
   try {
@@ -82,7 +94,7 @@ async function measureImageByteLength(
           "User-Agent": "family-events-ingester/1.0 (+https://family-events.local)",
           Accept: "image/*",
         },
-        signal: AbortSignal.timeout(IMAGE_HEAD_TIMEOUT_MS),
+        signal: requestSignal(IMAGE_HEAD_TIMEOUT_MS, signal),
       },
       { resolve }
     )
@@ -121,11 +133,8 @@ async function measureImageByteLength(
   return total
 }
 
-async function validateImageAtIngest(
-  imageUrl: string,
-  allowedHosts: string[],
-  resolve?: PublicIpResolver
-): Promise<string | null> {
+/** Gate 1: URL shape policy — parseable, https-only, allowlisted host. */
+function checkImageUrlPolicy(imageUrl: string, allowedHosts: string[]): URL | null {
   const externalUrlValidation = validateExternalUrl(imageUrl)
   if (!externalUrlValidation.ok) return null
 
@@ -138,27 +147,15 @@ async function validateImageAtIngest(
 
   if (parsedUrl.protocol !== "https:") return null
   if (!hostAllowed(parsedUrl.hostname, allowedHosts)) return null
+  return parsedUrl
+}
 
-  let response: Response
-  try {
-    response = await guardedFetch(
-      parsedUrl.toString(),
-      {
-        method: "HEAD",
-        headers: {
-          "User-Agent": "family-events-ingester/1.0 (+https://family-events.local)",
-          Accept: "image/*",
-        },
-        signal: AbortSignal.timeout(IMAGE_HEAD_TIMEOUT_MS),
-      },
-      { resolve }
-    )
-  } catch {
-    return null
-  }
-
-  if (!response.ok) return null
-
+/** Gate 3: the post-redirect response must still satisfy the URL policy. */
+function checkFinalUrlPolicy(
+  response: Response,
+  parsedUrl: URL,
+  allowedHosts: string[]
+): URL | null {
   const responseUrl = response.url || parsedUrl.toString()
   const finalHost = hostFromUrl(responseUrl)
   if (!finalHost || !hostAllowed(finalHost, allowedHosts)) return null
@@ -173,13 +170,54 @@ async function validateImageAtIngest(
 
   const contentType = response.headers.get("content-type")?.toLowerCase() ?? ""
   if (!contentType.startsWith("image/")) return null
+  return finalUrl
+}
 
+/** Gate 4: size from content-length, or a capped streaming read without one. */
+async function resolveImageByteLength(
+  response: Response,
+  finalUrl: URL,
+  resolve?: PublicIpResolver,
+  signal?: AbortSignal
+): Promise<number | null> {
   const contentLengthHeader = response.headers.get("content-length")
-  const contentLength = contentLengthHeader ? Number(contentLengthHeader) : null
-  const measuredLength = contentLengthHeader
-    ? null
-    : await measureImageByteLength(finalUrl.toString(), resolve)
-  const effectiveLength = contentLength ?? measuredLength
+  if (contentLengthHeader) return Number(contentLengthHeader)
+  return measureImageByteLength(finalUrl.toString(), resolve, signal)
+}
+
+async function validateImageAtIngest(
+  imageUrl: string,
+  allowedHosts: string[],
+  resolve?: PublicIpResolver,
+  signal?: AbortSignal
+): Promise<string | null> {
+  const parsedUrl = checkImageUrlPolicy(imageUrl, allowedHosts)
+  if (!parsedUrl) return null
+
+  let response: Response
+  try {
+    response = await guardedFetch(
+      parsedUrl.toString(),
+      {
+        method: "HEAD",
+        headers: {
+          "User-Agent": "family-events-ingester/1.0 (+https://family-events.local)",
+          Accept: "image/*",
+        },
+        signal: requestSignal(IMAGE_HEAD_TIMEOUT_MS, signal),
+      },
+      { resolve }
+    )
+  } catch {
+    return null
+  }
+
+  if (!response.ok) return null
+
+  const finalUrl = checkFinalUrlPolicy(response, parsedUrl, allowedHosts)
+  if (!finalUrl) return null
+
+  const effectiveLength = await resolveImageByteLength(response, finalUrl, resolve, signal)
   if (
     effectiveLength === null ||
     !Number.isFinite(effectiveLength) ||
@@ -192,10 +230,17 @@ async function validateImageAtIngest(
   return finalUrl.toString()
 }
 
-function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T | null> {
+function withTimeout<T>(
+  start: (signal: AbortSignal) => Promise<T>,
+  timeoutMs: number
+): Promise<T | null> {
+  const controller = new AbortController()
   return new Promise((resolve) => {
-    const timeoutId = setTimeout(() => resolve(null), timeoutMs)
-    promise
+    const timeoutId = setTimeout(() => {
+      controller.abort()
+      resolve(null)
+    }, timeoutMs)
+    start(controller.signal)
       .then((value) => resolve(value))
       .catch(() => resolve(null))
       .finally(() => clearTimeout(timeoutId))
@@ -213,7 +258,7 @@ export async function sanitizeImagesForIngest(
 
   const imageCandidates = [
     ...new Set([...parsed.images, ...(parsed.imageUrl ? [parsed.imageUrl] : [])]),
-  ]
+  ].slice(0, MAX_IMAGE_CANDIDATES)
 
   const validImages: string[] = []
   let cursor = 0
@@ -225,7 +270,7 @@ export async function sanitizeImagesForIngest(
     const results = await Promise.all(
       batch.map((imageCandidate) =>
         withTimeout(
-          validateImageAtIngest(imageCandidate, allowedHosts, deps?.resolve),
+          (signal) => validateImageAtIngest(imageCandidate, allowedHosts, deps?.resolve, signal),
           IMAGE_VALIDATION_TIMEOUT_MS
         )
       )

@@ -46,6 +46,19 @@ describe("wallClockToIso", () => {
       })
     ).toBeNull()
   })
+
+  it("rejects impossible wall-clock parts under fallback null", () => {
+    expect(
+      wallClockToIso({ year: 2026, month: 2, day: 30, hour: 10, minute: 0 }, "America/Chicago", {
+        fallback: "null",
+      })
+    ).toBeNull()
+    expect(
+      wallClockToIso({ year: 2026, month: 6, day: 1, hour: 25, minute: 0 }, "America/Chicago", {
+        fallback: "null",
+      })
+    ).toBeNull()
+  })
 })
 
 describe("dateStampToWallClockIso", () => {
@@ -57,5 +70,11 @@ describe("dateStampToWallClockIso", () => {
 
   it("returns null for a malformed stamp", () => {
     expect(dateStampToWallClockIso("2026-06-01", 10, 30, "America/Chicago")).toBeNull()
+  })
+
+  it("returns null for impossible calendar components", () => {
+    expect(dateStampToWallClockIso("20260230", 10, 30, "America/Chicago")).toBeNull()
+    expect(dateStampToWallClockIso("20261301", 10, 30, "America/Chicago")).toBeNull()
+    expect(dateStampToWallClockIso("20260601", 25, 0, "America/Chicago")).toBeNull()
   })
 })

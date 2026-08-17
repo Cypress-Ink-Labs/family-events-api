@@ -101,6 +101,21 @@ describe("validateExternalUrl — IPv4 blocked ranges", () => {
     expect(validateExternalUrl("http://2130706433/").ok).toBe(false)
     expect(validateExternalUrl("http://0x7f000001/").ok).toBe(false)
   })
+
+  it("rejects RFC 6598 shared space and IETF internal-use ranges", () => {
+    const cgnat = validateExternalUrl("http://100.100.100.200/")
+    expect(cgnat.ok).toBe(false)
+    expect(cgnat.reason).toContain("100.64.0.0/10")
+    expect(validateExternalUrl("http://192.0.0.10/").ok).toBe(false)
+    expect(validateExternalUrl("http://198.18.0.1/").ok).toBe(false)
+    expect(validateExternalUrl("http://198.19.255.254/").ok).toBe(false)
+    // Neighbouring public space stays allowed.
+    expect(validateExternalUrl("http://100.63.255.254/").ok).toBe(true)
+    expect(validateExternalUrl("http://100.128.0.1/").ok).toBe(true)
+    expect(validateExternalUrl("http://198.17.0.1/").ok).toBe(true)
+    expect(validateExternalUrl("http://198.20.0.1/").ok).toBe(true)
+    expect(validateExternalUrl("http://192.0.1.1/").ok).toBe(true)
+  })
 })
 
 describe("validateExternalUrl — IPv6 blocked ranges", () => {
@@ -145,6 +160,13 @@ describe("validateExternalUrl — IPv6 blocked ranges", () => {
 
   it("allows IPv6 just outside fc00::/7 (fb00::)", () => {
     expect(validateExternalUrl("http://[fb00::1]/").ok).toBe(true)
+  })
+
+  it("range-checks dotted IPv4-mapped IPv6 literals instead of passing them as hostnames", () => {
+    const mappedLoopback = validateExternalUrl("http://[::ffff:127.0.0.1]/")
+    expect(mappedLoopback.ok).toBe(false)
+    expect(mappedLoopback.reason).toContain("IPv4-mapped")
+    expect(validateExternalUrl("http://[::ffff:8.8.8.8]/").ok).toBe(true)
   })
 })
 

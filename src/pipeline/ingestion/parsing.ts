@@ -1,8 +1,56 @@
-// Pure parsing helpers for source ingestion. Ported verbatim from
-// family-events-backend supabase/functions/_shared/parsing.ts (U28).
+// Pure parsing helpers for source ingestion. Ported from family-events-backend
+// supabase/functions/_shared/parsing.ts (U28). Deviations (PR #14 review):
+// impossible calendar components (e.g. Feb 30) are rejected instead of letting
+// Date roll them into a different valid date, iCal escapes are parsed in one
+// pass, negated "free" wording no longer classifies as free admission, and
+// dedup keys normalize valid timestamps to UTC before minute-slicing.
+
+/** True when the components form a real calendar date/time (no rollover). */
+export function calendarComponentsValid(
+  year: number,
+  month: number,
+  day: number,
+  hour = 0,
+  minute = 0,
+  second = 0
+): boolean {
+  if (!Number.isInteger(year) || !Number.isInteger(month) || !Number.isInteger(day)) return false
+  if (month < 1 || month > 12) return false
+  // Day zero of the next month = last day of this month.
+  const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate()
+  if (day < 1 || day > daysInMonth) return false
+  if (hour < 0 || hour > 23) return false
+  if (minute < 0 || minute > 59) return false
+  if (second < 0 || second > 59) return false
+  return true
+}
+
+const ISO_PREFIX = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2}))?)?/
+
+/**
+ * For ISO-shaped strings, verify the calendar components are real before any
+ * Date construction (Date.parse rolls 2026-02-30 into 2026-03-02). Non-ISO
+ * shapes return true — Date parsing remains the judge for those.
+ */
+export function isoCalendarComponentsValid(value: string): boolean {
+  const match = value.match(ISO_PREFIX)
+  if (!match) return true
+  return calendarComponentsValid(
+    Number(match[1]),
+    Number(match[2]),
+    Number(match[3]),
+    match[4] === undefined ? 0 : Number(match[4]),
+    match[5] === undefined ? 0 : Number(match[5]),
+    match[6] === undefined ? 0 : Number(match[6])
+  )
+}
 
 export function parseIsoDate(value: string | null | undefined): string | null {
   if (!value) {
+    return null
+  }
+
+  if (!isoCalendarComponentsValid(value)) {
     return null
   }
 
@@ -23,27 +71,31 @@ export function parseIcalDate(value: string | null): string | null {
     const year = compact.slice(0, 4)
     const month = compact.slice(4, 6)
     const day = compact.slice(6, 8)
+    if (!calendarComponentsValid(Number(year), Number(month), Number(day))) return null
     return new Date(`${year}-${month}-${day}T00:00:00Z`).toISOString()
   }
 
-  if (/^\d{8}T\d{6}Z$/.test(compact)) {
+  if (/^\d{8}T\d{6}Z?$/.test(compact)) {
     const year = compact.slice(0, 4)
     const month = compact.slice(4, 6)
     const day = compact.slice(6, 8)
     const hour = compact.slice(9, 11)
     const minute = compact.slice(11, 13)
     const second = compact.slice(13, 15)
-    return new Date(`${year}-${month}-${day}T${hour}:${minute}:${second}Z`).toISOString()
-  }
-
-  if (/^\d{8}T\d{6}$/.test(compact)) {
-    const year = compact.slice(0, 4)
-    const month = compact.slice(4, 6)
-    const day = compact.slice(6, 8)
-    const hour = compact.slice(9, 11)
-    const minute = compact.slice(11, 13)
-    const second = compact.slice(13, 15)
-    // Treat timezone-less iCal as UTC for consistent behaviour across server environments
+    if (
+      !calendarComponentsValid(
+        Number(year),
+        Number(month),
+        Number(day),
+        Number(hour),
+        Number(minute),
+        Number(second)
+      )
+    ) {
+      return null
+    }
+    // Timezone-less iCal is treated as UTC for consistent behaviour across
+    // server environments (same as the explicit-Z form).
     return new Date(`${year}-${month}-${day}T${hour}:${minute}:${second}Z`).toISOString()
   }
 
@@ -112,15 +164,16 @@ export function normalizeExtractedText(value: string): string {
 }
 
 /**
- * Unescape iCal (RFC 5545 §3.3.11) text values: \n, \N → newline, \, → comma,
- * \; → semicolon, \\ → backslash. Leaves other sequences as-is.
+ * Unescape iCal (RFC 5545 §3.3.11) text values: \n, \N → space, \, → comma,
+ * \; → semicolon, \\ → backslash. Leaves other sequences as-is. Single-pass
+ * token replacement so an escaped backslash followed by "n" stays a literal
+ * backslash + n instead of being re-read as a newline escape.
  */
 export function unescapeIcalText(value: string): string {
-  return value
-    .replace(/\\n/gi, " ")
-    .replace(/\\,/g, ",")
-    .replace(/\\;/g, ";")
-    .replace(/\\\\/g, "\\")
+  return value.replace(/\\([nN,;\\])/g, (_match, escaped: string) => {
+    if (escaped === "n" || escaped === "N") return " "
+    return escaped
+  })
 }
 
 export function stripHtml(value: string): string {
@@ -165,26 +218,45 @@ export function cleanDescription(value: string | null | undefined): string {
 export function extractPrice(text: string): { price: number | null; isFree: boolean } {
   const lower = text.toLowerCase()
 
-  const freePatterns = [
-    /\bfree\b/,
-    /\bno cost\b/,
-    /\bno charge\b/,
-    /\bcomplimentary\b/,
-    /\bfree admission\b/,
-    /\bfree event\b/,
-  ]
-  for (const pattern of freePatterns) {
-    if (pattern.test(lower)) {
-      return { price: null, isFree: true }
+  const priceMatch = text.match(/\$\s*(\d+(?:\.\d{1,2})?)/)
+
+  // Negated "free" wording is not free admission; when a dollar amount is
+  // present it wins, otherwise fall through as unknown price.
+  const negatedFreePatterns = [/\bnot\s+free\b/, /\bisn'?t\s+free\b/, /\bno\s+longer\s+free\b/]
+  const negatedFree = negatedFreePatterns.some((pattern) => pattern.test(lower))
+
+  if (!negatedFree) {
+    const freePatterns = [
+      /\bfree\b/,
+      /\bno cost\b/,
+      /\bno charge\b/,
+      /\bcomplimentary\b/,
+      /\bfree admission\b/,
+      /\bfree event\b/,
+    ]
+    for (const pattern of freePatterns) {
+      if (pattern.test(lower)) {
+        return { price: null, isFree: true }
+      }
     }
   }
 
-  const priceMatch = text.match(/\$\s*(\d+(?:\.\d{1,2})?)/)
   if (priceMatch) {
     return { price: Number(priceMatch[1]), isFree: false }
   }
 
   return { price: null, isFree: false }
+}
+
+/**
+ * Normalize a timestamp to its UTC ISO minute for key building: equivalent
+ * instants written with different offsets collapse to one key. Invalid input
+ * falls back to raw slicing (never throws).
+ */
+export function utcMinute(startDatetime: string): string {
+  const parsed = new Date(startDatetime)
+  if (Number.isNaN(parsed.getTime())) return startDatetime.slice(0, 16)
+  return parsed.toISOString().slice(0, 16)
 }
 
 /**
@@ -194,6 +266,6 @@ export function extractPrice(text: string): { price: number | null; isFree: bool
 export function dedupKey(title: string, startDatetime: string, cityId: string | null): string {
   const normalizedTitle = title.trim().toLowerCase()
   // Truncate to minute precision to handle minor ISO format variations
-  const minute = startDatetime.slice(0, 16)
+  const minute = utcMinute(startDatetime)
   return `${cityId ?? "null"}::${minute}::${normalizedTitle}`
 }

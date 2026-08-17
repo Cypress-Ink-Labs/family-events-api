@@ -31,6 +31,18 @@ describe("validateParsedEvents", () => {
     expect(validateParsedEvents([{ ...validEvent, startDatetime: "not-a-date" }]).length).toBe(0)
     expect(validateParsedEvents([{ ...validEvent, endDatetime: "not-a-date" }]).length).toBe(0)
   })
+
+  it("rejects impossible calendar components that Date.parse would roll forward", () => {
+    expect(
+      validateParsedEvents([{ ...validEvent, startDatetime: "2026-02-30T10:00:00Z" }]).length
+    ).toBe(0)
+    expect(
+      validateParsedEvents([{ ...validEvent, endDatetime: "2026-04-31T10:00:00Z" }]).length
+    ).toBe(0)
+    expect(
+      validateParsedEvents([{ ...validEvent, startDatetime: "2024-02-29T10:00:00Z" }]).length
+    ).toBe(1)
+  })
 })
 
 describe("parseLlmParsedEvents", () => {
