@@ -11,11 +11,21 @@ import type { Env } from "../config/env.js"
 
 export type JobHandler<Data extends object> = (data: Data, jobId: string) => Promise<void>
 
+export interface QueueSchedule {
+  cron: string
+  data?: object
+  /** Distinguishes multiple schedules on one queue (pg-boss schedule key). */
+  key?: string
+}
+
 interface QueueRegistration {
   name: string
   options: Queue
-  schedule?: { cron: string; data?: object }
-  handler: JobHandler<never>
+  schedules: QueueSchedule[]
+  /** null = queue only (e.g. a dead-letter queue nothing consumes yet). */
+  handler: JobHandler<never> | null
+  /** work() batch size — max jobs in flight per registration (U12 concurrency). */
+  batchSize: number
 }
 
 /**
@@ -33,14 +43,20 @@ export class JobsService implements OnApplicationBootstrap, OnApplicationShutdow
 
   registerQueue<Data extends object>(
     name: string,
-    handler: JobHandler<Data>,
+    handler: JobHandler<Data> | null,
     options: Queue = { name },
-    schedule?: { cron: string; data?: Data }
+    config: { schedules?: QueueSchedule[]; batchSize?: number } = {}
   ): void {
     if (this.boss !== null) {
       throw new Error(`queue "${name}" registered after pg-boss start`)
     }
-    this.registrations.push({ name, options, schedule, handler: handler as JobHandler<never> })
+    this.registrations.push({
+      name,
+      options,
+      schedules: config.schedules ?? [],
+      handler: handler as JobHandler<never> | null,
+      batchSize: config.batchSize ?? 1,
+    })
   }
 
   async send(name: string, data: object, options?: SendOptions): Promise<string | null> {
@@ -59,15 +75,18 @@ export class JobsService implements OnApplicationBootstrap, OnApplicationShutdow
     await boss.start()
     for (const registration of this.registrations) {
       await boss.createQueue(registration.name, registration.options)
-      await boss.work(registration.name, async ([job]) => {
-        if (job === undefined) return
-        await registration.handler(job.data as never, job.id)
-      })
-      if (registration.schedule !== undefined) {
+      const { handler } = registration
+      if (handler !== null) {
+        await boss.work(registration.name, { batchSize: registration.batchSize }, async (jobs) => {
+          await Promise.all(jobs.map((job) => handler(job.data as never, job.id)))
+        })
+      }
+      for (const schedule of registration.schedules) {
         await boss.schedule(
           registration.name,
-          registration.schedule.cron,
-          registration.schedule.data ?? {}
+          schedule.cron,
+          schedule.data ?? {},
+          schedule.key === undefined ? {} : { key: schedule.key }
         )
       }
     }

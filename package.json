@@ -23,6 +23,8 @@
     "@nestjs/core": "^11.2.1",
     "@nestjs/platform-express": "^11.2.1",
     "@nestjs/swagger": "^11.4.6",
+    "class-transformer": "^0.5.1",
+    "class-validator": "^0.15.1",
     "fast-xml-parser": "^4.5.7",
     "linkedom": "^0.18.13",
     "pg": "^8.23.0",

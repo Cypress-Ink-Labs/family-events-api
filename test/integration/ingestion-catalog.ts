@@ -22,6 +22,8 @@ import { ensureCatalogSchema } from "./catalog.js"
  * - bulk_import_scrape_events.sql
  *     <- private def from 20260601017000, public wrapper from 20260601002000
  * - find_cross_source_event_candidates.sql <- 20260620010000
+ * - source_scrape_queue_rpcs.sql <- schema baseline (claim/mark/retry/release/
+ *   reap queue RPCs, run_due_source_scrapes, run_cleanup_stale_runs)
  *
  * Deviation: public.invoke_process_tag_queue is a no-op stub here — the real
  * function fires net.http_post (pg_net) at the deployed process-tag-queue edge
@@ -277,7 +279,11 @@ export async function ensureIngestionSchema(db: DbService): Promise<void> {
     CREATE OR REPLACE FUNCTION public.invoke_process_tag_queue() RETURNS void
     LANGUAGE sql AS 'SELECT NULL::void'
   `)
-  for (const file of ["bulk_import_scrape_events.sql", "find_cross_source_event_candidates.sql"]) {
+  for (const file of [
+    "bulk_import_scrape_events.sql",
+    "find_cross_source_event_candidates.sql",
+    "source_scrape_queue_rpcs.sql",
+  ]) {
     await db.query(readFileSync(join(SQL_DIR, file), "utf8"))
   }
 }
