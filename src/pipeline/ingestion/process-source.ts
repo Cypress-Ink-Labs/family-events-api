@@ -214,6 +214,485 @@ export function buildParserContext(timezone: string): ParserContext {
   }
 }
 
+// ── Import-path helpers ──────────────────────────────────────────────────
+// importParsedSourceEvents was ported as one 400-line function; it is
+// decomposed below (PR #16 review) into the same sequential stages the
+// upstream comments already described. Semantics are pinned by the unit and
+// integration suites.
+
+interface EventPayloadContext {
+  source: EventSourceRow
+  timezone: string
+  cityCentroid: { latitude: number | null; longitude: number | null } | null
+}
+
+function prepEventPayload(parsed: ParsedEvent, ctx: EventPayloadContext): Record<string, unknown> {
+  const isOutdoor = deriveIsOutdoorFromParsedEvent(parsed)
+  const imageCandidates = deriveRawImageCandidates(parsed)
+
+  return {
+    title: parsed.title,
+    description: parsed.description ?? null,
+    start_datetime: parsed.startDatetime,
+    end_datetime: parsed.endDatetime ?? null,
+    timezone: ctx.timezone,
+    venue_name: parsed.venueName ?? null,
+    address: parsed.address ?? null,
+    city_id: ctx.source.city_id,
+    source_url: parsed.sourceUrl ?? null,
+    source_name: ctx.source.name,
+    images: imageCandidates,
+    price: parsed.price ?? null,
+    is_free: Boolean(parsed.isFree),
+    is_outdoor: isOutdoor,
+    latitude: ctx.cityCentroid?.latitude ?? null,
+    longitude: ctx.cityCentroid?.longitude ?? null,
+  }
+}
+
+// Observability: warn when >50% of a batch has no address data — possible
+// parser regression.
+function warnOnHighAddressNullRate(
+  source: EventSourceRow,
+  eventsFound: number,
+  addressNullCount: number
+): void {
+  const addressNullRate = eventsFound > 0 ? addressNullCount / eventsFound : 0
+  if (eventsFound > 0 && addressNullRate > 0.5) {
+    logEdgeEvent("warn", "high address null rate — possible parser regression", {
+      function: "process-source",
+      source_id: source.id,
+      source_name: source.name,
+      source_type: source.source_type,
+      events_found: eventsFound,
+      address_null: addressNullCount,
+      address_null_pct: Math.round(addressNullRate * 100),
+    })
+  }
+}
+
+type PreparedCandidate = CrossSourceCandidateRow & {
+  fp: string
+  tokens: Set<string>
+  hourBucket: number | null
+}
+
+/** ±4h window around the batch's start_datetime range, or null if none parse. */
+function dedupWindow(payloads: Record<string, unknown>[]): { from: string; to: string } | null {
+  const startTimes = payloads
+    .map((p) => new Date(p.start_datetime as string).getTime())
+    .filter((t) => !Number.isNaN(t))
+  if (startTimes.length === 0) return null
+  const FOUR_HOURS_MS = 4 * 60 * 60 * 1000
+  return {
+    from: new Date(Math.min(...startTimes) - FOUR_HOURS_MS).toISOString(),
+    to: new Date(Math.max(...startTimes) + FOUR_HOURS_MS).toISOString(),
+  }
+}
+
+/** Candidate fetch with the RPC-missing / transient-failure downgrade to "no dedup". */
+async function fetchDedupCandidates(
+  db: ProcessSourceDb,
+  source: EventSourceRow,
+  cityId: string,
+  window: { from: string; to: string }
+): Promise<CrossSourceCandidateRow[] | null> {
+  try {
+    return await db.findCrossSourceEventCandidates({
+      cityId,
+      startFrom: window.from,
+      startTo: window.to,
+      limit: 1000,
+    })
+  } catch (candidateError) {
+    const code = (candidateError as { code?: string }).code
+    if (code === "42883" || code === "42P01") {
+      // RPC not yet deployed — skip dedup gracefully and import all events.
+      // This is non-fatal: ingestion must continue even pre-migration.
+      logEdgeEvent("warn", "find_cross_source_event_candidates RPC missing — skipping dedup", {
+        function: "process-source",
+        source_id: source.id,
+        hint: "Run `supabase db push --linked` to apply migration 20260620010000.",
+      })
+    } else {
+      // Non-fatal: log and continue without dedup so ingestion is not blocked.
+      logEdgeEvent("warn", "cross-source dedup candidate fetch failed — skipping dedup", {
+        function: "process-source",
+        source_id: source.id,
+        error: formatError(candidateError),
+      })
+    }
+    return null
+  }
+}
+
+function prepareCandidateMaps(
+  rows: CrossSourceCandidateRow[],
+  source: EventSourceRow
+): { exactMap: Map<string, PreparedCandidate>; bucketMap: Map<number, PreparedCandidate[]> } {
+  const exactMap = new Map<string, PreparedCandidate>()
+  const bucketMap = new Map<number, PreparedCandidate[]>()
+  for (const candidate of rows) {
+    // Same-source dedup is handled by bulk_import_scrape_events.
+    if (candidate.source_id === source.id) continue
+
+    const startMs = new Date(candidate.start_datetime).getTime()
+    const prepared: PreparedCandidate = {
+      ...candidate,
+      fp: eventFingerprint(candidate.title, candidate.start_datetime, source.city_id),
+      tokens: titleTokens(candidate.title),
+      hourBucket: Number.isFinite(startMs) ? Math.floor(startMs / 3_600_000) : null,
+    }
+    exactMap.set(prepared.fp, prepared)
+    if (prepared.hourBucket !== null) {
+      const bucket = bucketMap.get(prepared.hourBucket)
+      if (bucket) {
+        bucket.push(prepared)
+      } else {
+        bucketMap.set(prepared.hourBucket, [prepared])
+      }
+    }
+  }
+  return { exactMap, bucketMap }
+}
+
+/** Exact fingerprint match, then the Jaccard ≥ threshold scan over ±4 hour buckets. */
+function findCrossSourceMatch(
+  payload: Record<string, unknown>,
+  source: EventSourceRow,
+  exactMap: Map<string, PreparedCandidate>,
+  bucketMap: Map<number, PreparedCandidate[]>
+): PreparedCandidate | undefined {
+  const title = payload.title as string
+  const startDatetime = payload.start_datetime as string
+  let match = exactMap.get(eventFingerprint(title, startDatetime, source.city_id))
+  if (match) return match
+
+  const startMs = new Date(startDatetime).getTime()
+  if (!Number.isFinite(startMs)) return undefined
+
+  const tokens = titleTokens(title)
+  const hourBucket = Math.floor(startMs / 3_600_000)
+  for (let bucket = hourBucket - 4; bucket <= hourBucket + 4 && !match; bucket += 1) {
+    const candidatesInBucket = bucketMap.get(bucket)
+    if (!candidatesInBucket) continue
+
+    for (const candidate of candidatesInBucket) {
+      if (
+        jaccardFromTokens(tokens, candidate.tokens) >= JACCARD_THRESHOLD &&
+        isCrossSourceDuplicate(
+          title,
+          startDatetime,
+          candidate.title,
+          candidate.start_datetime,
+          source.city_id
+        )
+      ) {
+        match = candidate
+        break
+      }
+    }
+  }
+  return match
+}
+
+// ── Cross-source fuzzy dedup pre-pass (CIL-16) ──────────────────────────────
+// Only runs when city_id is known — without a city scope the query cannot be
+// bounded, so we skip dedup and import everything.
+async function applyCrossSourceDedup(
+  db: ProcessSourceDb,
+  source: EventSourceRow,
+  runId: string,
+  payloads: Record<string, unknown>[]
+): Promise<{ payloads: Record<string, unknown>[]; skipped: number }> {
+  const cityId = source.city_id
+  if (!cityId || payloads.length === 0) return { payloads, skipped: 0 }
+
+  const window = dedupWindow(payloads)
+  if (!window) return { payloads, skipped: 0 }
+
+  const candidates = await fetchDedupCandidates(db, source, cityId, window)
+  if (!candidates) return { payloads, skipped: 0 }
+
+  if (candidates.length === 1000) {
+    logEdgeEvent(
+      "warn",
+      "cross-source dedup candidate cap reached — duplicates beyond cap may be missed",
+      {
+        function: "process-source",
+        source_id: source.id,
+        candidate_count: candidates.length,
+      }
+    )
+  }
+
+  const { exactMap, bucketMap } = prepareCandidateMaps(candidates, source)
+
+  let skipped = 0
+  const deduped = payloads.filter((payload) => {
+    const match = findCrossSourceMatch(payload, source, exactMap, bucketMap)
+    if (match) {
+      skipped += 1
+      logEdgeEvent("log", "skipped cross-source duplicate", {
+        function: "process-source",
+        source_id: source.id,
+        run_id: runId,
+        candidate_title: payload.title,
+        candidate_start: payload.start_datetime,
+        matched_event_id: match.id,
+        matched_source_id: match.source_id,
+      })
+      return false
+    }
+    return true
+  })
+  return { payloads: deduped, skipped }
+}
+
+// Single bulk RPC: classify + INSERT + UPDATE + event_tag_queue enqueue all in
+// one SQL transaction. Replaces the prior per-event loop (which blew the 150s
+// edge function wall at ~145/605 events). Throws on unexpected DB errors;
+// returns setupError when the RPC is missing (migration not applied yet).
+async function runBulkImport(
+  db: ProcessSourceDb,
+  source: EventSourceRow,
+  runId: string,
+  payloads: Record<string, unknown>[]
+): Promise<{ imported: number; skipped: number; setupError: string | null }> {
+  let bulkResult: BulkImportResult | null = null
+  try {
+    bulkResult = await db.bulkImportScrapeEvents(runId, source.id, payloads)
+  } catch (bulkError) {
+    const code = (bulkError as { code?: string }).code
+    if (code === "42883" || code === "42P01") {
+      // RPC missing -> grouped event ingestion migration not applied yet.
+      return {
+        imported: 0,
+        skipped: 0,
+        setupError:
+          "bulk_import_scrape_events RPC missing. Run `supabase db push --linked` to apply migration 20260601002000.",
+      }
+    }
+    throw bulkError
+  }
+
+  const imported = bulkResult?.imported ?? 0
+  const updated = bulkResult?.updated ?? 0
+  const skipped = bulkResult?.skipped ?? 0
+  const enqueued = bulkResult?.enqueued ?? 0
+  // The RPC enqueues into event_tag_queue under ON CONFLICT DO NOTHING.
+  // If imported+updated > enqueued, some rows were already pending in
+  // the queue from a prior run — benign, not an error.
+  if (imported + updated > 0 && enqueued < imported + updated) {
+    logEdgeEvent("log", "tag-queue enqueue partial (existing rows)", {
+      function: "scrape-source",
+      run_id: runId,
+      imported,
+      updated,
+      enqueued,
+    })
+  }
+  return { imported: imported + updated, skipped, setupError: null }
+}
+
+interface ImportRunOutcome {
+  status: RunStatus
+  errorMessage: string | null
+  eventsFound: number
+  eventsImported: number
+  eventsSkipped: number
+}
+
+// Final source_runs + event_sources writes. A finalization failure after a
+// successful/partial scrape makes the run retryable (source_runs first when
+// both fail); it never overwrites an original scrape failure.
+async function writeFinalRecords(
+  db: ProcessSourceDb,
+  source: EventSourceRow,
+  runId: string,
+  outcome: ImportRunOutcome,
+  escalation: { isNewEscalation: boolean; nextConsecutiveZero: number; escalatedAt?: string }
+): Promise<{ status: RunStatus; errorMessage: string | null }> {
+  const statusBeforeFinalization = outcome.status
+  let { status, errorMessage } = outcome
+  let finalizationFailureMessage: string | null = null
+
+  let runUpdateError: unknown = null
+  try {
+    await db.finalizeSourceRun(runId, {
+      completed_at: new Date().toISOString(),
+      status: statusBeforeFinalization,
+      events_found: outcome.eventsFound,
+      events_imported: outcome.eventsImported,
+      events_skipped: outcome.eventsSkipped,
+      error_log: errorMessage,
+    })
+  } catch (error) {
+    runUpdateError = error
+  }
+
+  const escalatedStatus = escalation.isNewEscalation ? "stale" : statusBeforeFinalization
+  let sourceUpdateError: unknown = null
+  try {
+    await db.updateEventSourceAfterRun(source.id, {
+      last_scraped_at: new Date().toISOString(),
+      last_status: escalatedStatus,
+      // Only reset error_count on full success. A 'partial' run (events
+      // found, none imported) used to clear the counter and mask persistent
+      // failures; keep accumulating until a clean success.
+      error_count:
+        statusBeforeFinalization === "success"
+          ? 0
+          : source.error_count + (statusBeforeFinalization === "error" ? 1 : 0),
+      consecutive_zero_result_scrapes: escalation.nextConsecutiveZero,
+      ...(escalation.escalatedAt != null ? { stale_escalated_at: escalation.escalatedAt } : {}),
+    })
+  } catch (error) {
+    sourceUpdateError = error
+  }
+
+  for (const [writeName, writeError] of [
+    ["source_runs", runUpdateError],
+    ["event_sources", sourceUpdateError],
+  ] as const) {
+    if (!writeError) continue
+
+    if (
+      finalizationFailureMessage === null &&
+      (statusBeforeFinalization === "success" || statusBeforeFinalization === "partial")
+    ) {
+      finalizationFailureMessage = `Failed to finalize ${writeName} write: ${formatError(writeError)}`
+      status = "error"
+      errorMessage = finalizationFailureMessage
+    }
+
+    const context = errorContext(writeError, {
+      function: "process-source",
+      source_id: source.id,
+      source_name: source.name,
+      run_id: runId,
+      stage: "finalize",
+      write: writeName,
+    })
+    logEdgeEvent("error", `failed to finalize ${writeName} write`, context)
+    await captureEdgeException(writeError, context)
+  }
+
+  return { status, errorMessage }
+}
+
+async function recordStaleEscalation(
+  db: ProcessSourceDb,
+  source: EventSourceRow,
+  nextConsecutiveZero: number
+): Promise<void> {
+  logEdgeEvent("warn", "source escalated to stale", {
+    function: "process-source",
+    source_id: source.id,
+    source_name: source.name,
+    consecutive_zero_result_scrapes: nextConsecutiveZero,
+    last_scraped_at: source.last_scraped_at,
+  })
+  try {
+    // A failed audit write must never break scrape finalization —
+    // whether the DB rejects it (RLS, constraints) or the call throws.
+    await db.insertAdminAuditLog({
+      action: "source.stale_escalated",
+      target_type: "event_source",
+      target_id: source.id,
+      admin_user_id: null,
+      metadata: {
+        consecutive_zero_result_scrapes: nextConsecutiveZero,
+        last_scraped_at: source.last_scraped_at,
+      },
+    })
+  } catch (auditError) {
+    logEdgeEvent("warn", "failed to write stale-escalation audit log", {
+      function: "process-source",
+      source_id: source.id,
+      error: formatError(auditError),
+    })
+  }
+}
+
+// Kick the tag-queue worker if we imported anything. Each RPC call fires
+// net.http_post (async) and returns immediately, so this is a fan-out, not a
+// blocking loop. process-tag-queue claims BATCH_SIZE=20 events per invocation
+// via SKIP LOCKED, so N kicks = up to N×20 events drained in parallel —
+// without waiting for the 1-min cron tick.
+//
+// Cap matches process-tag-queue CONCURRENCY×2 to leave headroom for the
+// OpenAI rate limit (the LLM is the actual bottleneck). The cron */1 keeps
+// backfilling whatever a burst leaves behind.
+async function kickTagQueue(
+  db: ProcessSourceDb,
+  source: EventSourceRow,
+  runId: string,
+  eventsImported: number
+): Promise<void> {
+  if (eventsImported <= 0) return
+  const TAG_QUEUE_BATCH_SIZE = 20
+  const MAX_KICKS = 8
+  const kicks = Math.min(Math.max(1, Math.ceil(eventsImported / TAG_QUEUE_BATCH_SIZE)), MAX_KICKS)
+  const results = await Promise.allSettled(
+    Array.from({ length: kicks }, () => db.invokeProcessTagQueue())
+  )
+  const failed = results.filter((r) => r.status === "rejected").length
+  if (failed > 0) {
+    logEdgeEvent("warn", "tag-queue kick(s) failed after source processing", {
+      function: "process-source",
+      source_id: source.id,
+      run_id: runId,
+      events_imported: eventsImported,
+      kicks_attempted: kicks,
+      kicks_failed: failed,
+    })
+  }
+}
+
+// Finalization MUST run even when the import phase throws unexpectedly.
+// Otherwise source_runs is left in 'running' state forever. Its own failures
+// are captured, never rethrown.
+async function finalizeImportRun(
+  db: ProcessSourceDb,
+  source: EventSourceRow,
+  runId: string,
+  outcome: ImportRunOutcome
+): Promise<{ status: RunStatus; errorMessage: string | null }> {
+  try {
+    // Stale-escalation: track consecutive zero-result successes.
+    const isZeroResult = outcome.status === "success" && outcome.eventsFound === 0
+    const nextConsecutiveZero = isZeroResult ? (source.consecutive_zero_result_scrapes ?? 0) + 1 : 0
+    const isNewEscalation =
+      nextConsecutiveZero >= STALE_THRESHOLD && source.stale_escalated_at == null
+    const escalatedAt = isNewEscalation ? new Date().toISOString() : undefined
+
+    const finalized = await writeFinalRecords(db, source, runId, outcome, {
+      isNewEscalation,
+      nextConsecutiveZero,
+      ...(escalatedAt != null ? { escalatedAt } : {}),
+    })
+
+    if (isNewEscalation) {
+      await recordStaleEscalation(db, source, nextConsecutiveZero)
+    }
+    await kickTagQueue(db, source, runId, outcome.eventsImported)
+    return finalized
+  } catch (finalizeError) {
+    await captureEdgeException(
+      finalizeError,
+      errorContext(finalizeError, {
+        function: "scrape-source",
+        source_id: source.id,
+        source_name: source.name,
+        run_id: runId,
+        stage: "finalize",
+      })
+    )
+    return { status: outcome.status, errorMessage: outcome.errorMessage }
+  }
+}
+
 export async function importParsedSourceEvents(
   db: ProcessSourceDb,
   source: EventSourceRow,
@@ -229,7 +708,7 @@ export async function importParsedSourceEvents(
   // Fatal pipeline-deploy errors (bulk RPC missing) short-circuit the run
   // because no further work can succeed. Non-fatal enqueue failures are
   // logged but don't propagate — the SQL bulk RPC handles them via
-  // ON CONFLICT DO NOTHING and returns a count we cross-check below.
+  // ON CONFLICT DO NOTHING and returns a count we cross-check in runBulkImport.
   let pipelineSetupError: string | null = null
 
   // Flush live progress to source_runs so the UI can show incremental counts.
@@ -254,19 +733,7 @@ export async function importParsedSourceEvents(
 
     // Observability: count events missing geocodable location data
     addressNullCount = parsedEvents.filter((e) => e.address === null && e.venueName === null).length
-    const addressNullRate = eventsFound > 0 ? addressNullCount / eventsFound : 0
-    // Warn when >50% of a batch has no address data — possible parser regression
-    if (eventsFound > 0 && addressNullRate > 0.5) {
-      logEdgeEvent("warn", "high address null rate — possible parser regression", {
-        function: "process-source",
-        source_id: source.id,
-        source_name: source.name,
-        source_type: source.source_type,
-        events_found: eventsFound,
-        address_null: addressNullCount,
-        address_null_pct: Math.round(addressNullRate * 100),
-      })
-    }
+    warnOnHighAddressNullRate(source, eventsFound, addressNullCount)
 
     // Write total found immediately so the UI shows "X found" while import runs.
     await flushProgress()
@@ -282,219 +749,18 @@ export async function importParsedSourceEvents(
     if (validEvents.length === 0) {
       await flushProgress()
     } else {
-      function prepEventPayload(parsed: ParsedEvent): Record<string, unknown> {
-        const isOutdoor = deriveIsOutdoorFromParsedEvent(parsed)
-        const imageCandidates = deriveRawImageCandidates(parsed)
+      const payloadContext: EventPayloadContext = { source, timezone, cityCentroid }
+      const payloads = validEvents.map((parsed) => prepEventPayload(parsed, payloadContext))
 
-        return {
-          title: parsed.title,
-          description: parsed.description ?? null,
-          start_datetime: parsed.startDatetime,
-          end_datetime: parsed.endDatetime ?? null,
-          timezone,
-          venue_name: parsed.venueName ?? null,
-          address: parsed.address ?? null,
-          city_id: source.city_id,
-          source_url: parsed.sourceUrl ?? null,
-          source_name: source.name,
-          images: imageCandidates,
-          price: parsed.price ?? null,
-          is_free: Boolean(parsed.isFree),
-          is_outdoor: isOutdoor,
-          latitude: cityCentroid?.latitude ?? null,
-          longitude: cityCentroid?.longitude ?? null,
-        }
-      }
-
-      const payloads = validEvents.map(prepEventPayload)
-
-      // ── Cross-source fuzzy dedup pre-pass (CIL-16) ──────────────────────
-      // Only runs when city_id is known — without a city scope the query cannot
-      // be bounded, so we skip dedup and import everything.
-      let crossSourceSkipped = 0
-      let dedupedPayloads = payloads
-      if (source.city_id && payloads.length > 0) {
-        // Build a ±4h window around the batch's start_datetime range.
-        const startTimes = payloads
-          .map((p) => new Date(p.start_datetime as string).getTime())
-          .filter((t) => !Number.isNaN(t))
-        if (startTimes.length > 0) {
-          const FOUR_HOURS_MS = 4 * 60 * 60 * 1000
-          const windowFrom = new Date(Math.min(...startTimes) - FOUR_HOURS_MS).toISOString()
-          const windowTo = new Date(Math.max(...startTimes) + FOUR_HOURS_MS).toISOString()
-
-          let candidates: CrossSourceCandidateRow[] | null = null
-          try {
-            candidates = await db.findCrossSourceEventCandidates({
-              cityId: source.city_id,
-              startFrom: windowFrom,
-              startTo: windowTo,
-              limit: 1000,
-            })
-          } catch (candidateError) {
-            const code = (candidateError as { code?: string }).code
-            if (code === "42883" || code === "42P01") {
-              // RPC not yet deployed — skip dedup gracefully and import all events.
-              // This is non-fatal: ingestion must continue even pre-migration.
-              logEdgeEvent(
-                "warn",
-                "find_cross_source_event_candidates RPC missing — skipping dedup",
-                {
-                  function: "process-source",
-                  source_id: source.id,
-                  hint: "Run `supabase db push --linked` to apply migration 20260620010000.",
-                }
-              )
-            } else {
-              // Non-fatal: log and continue without dedup so ingestion is not blocked.
-              logEdgeEvent("warn", "cross-source dedup candidate fetch failed — skipping dedup", {
-                function: "process-source",
-                source_id: source.id,
-                error: formatError(candidateError),
-              })
-            }
-          }
-
-          if (candidates) {
-            type PreparedCandidate = CrossSourceCandidateRow & {
-              fp: string
-              tokens: Set<string>
-              hourBucket: number | null
-            }
-            const rows = candidates
-
-            if (rows.length === 1000) {
-              logEdgeEvent(
-                "warn",
-                "cross-source dedup candidate cap reached — duplicates beyond cap may be missed",
-                {
-                  function: "process-source",
-                  source_id: source.id,
-                  candidate_count: rows.length,
-                }
-              )
-            }
-
-            const exactMap = new Map<string, PreparedCandidate>()
-            const bucketMap = new Map<number, PreparedCandidate[]>()
-            for (const candidate of rows) {
-              // Same-source dedup is handled by bulk_import_scrape_events.
-              if (candidate.source_id === source.id) continue
-
-              const startMs = new Date(candidate.start_datetime).getTime()
-              const prepared: PreparedCandidate = {
-                ...candidate,
-                fp: eventFingerprint(candidate.title, candidate.start_datetime, source.city_id),
-                tokens: titleTokens(candidate.title),
-                hourBucket: Number.isFinite(startMs) ? Math.floor(startMs / 3_600_000) : null,
-              }
-              exactMap.set(prepared.fp, prepared)
-              if (prepared.hourBucket !== null) {
-                const bucket = bucketMap.get(prepared.hourBucket)
-                if (bucket) {
-                  bucket.push(prepared)
-                } else {
-                  bucketMap.set(prepared.hourBucket, [prepared])
-                }
-              }
-            }
-
-            dedupedPayloads = payloads.filter((payload) => {
-              const title = payload.title as string
-              const startDatetime = payload.start_datetime as string
-              const fp = eventFingerprint(title, startDatetime, source.city_id)
-              let match = exactMap.get(fp)
-
-              if (!match) {
-                const startMs = new Date(startDatetime).getTime()
-                if (Number.isFinite(startMs)) {
-                  const tokens = titleTokens(title)
-                  const hourBucket = Math.floor(startMs / 3_600_000)
-                  for (
-                    let bucket = hourBucket - 4;
-                    bucket <= hourBucket + 4 && !match;
-                    bucket += 1
-                  ) {
-                    const candidatesInBucket = bucketMap.get(bucket)
-                    if (!candidatesInBucket) continue
-
-                    for (const candidate of candidatesInBucket) {
-                      if (
-                        jaccardFromTokens(tokens, candidate.tokens) >= JACCARD_THRESHOLD &&
-                        isCrossSourceDuplicate(
-                          title,
-                          startDatetime,
-                          candidate.title,
-                          candidate.start_datetime,
-                          source.city_id
-                        )
-                      ) {
-                        match = candidate
-                        break
-                      }
-                    }
-                  }
-                }
-              }
-
-              if (match) {
-                crossSourceSkipped += 1
-                logEdgeEvent("log", "skipped cross-source duplicate", {
-                  function: "process-source",
-                  source_id: source.id,
-                  run_id: runId,
-                  candidate_title: payload.title,
-                  candidate_start: payload.start_datetime,
-                  matched_event_id: match.id,
-                  matched_source_id: match.source_id,
-                })
-                return false
-              }
-              return true
-            })
-          }
-        }
-      }
+      const dedup = await applyCrossSourceDedup(db, source, runId, payloads)
       // Report cross-source skips alongside the RPC's own skipped count.
-      eventsSkipped += crossSourceSkipped
-      // ── End dedup pre-pass ───────────────────────────────────────────────
+      eventsSkipped += dedup.skipped
 
-      // Single bulk RPC: classify + INSERT + UPDATE + event_tag_queue enqueue
-      // all in one SQL transaction. Replaces the prior per-event loop (which
-      // blew the 150s edge function wall at ~145/605 events).
-      let bulkResult: BulkImportResult | null = null
-      try {
-        bulkResult = await db.bulkImportScrapeEvents(runId, source.id, dedupedPayloads)
-      } catch (bulkError) {
-        const code = (bulkError as { code?: string }).code
-        if (code === "42883" || code === "42P01") {
-          // RPC missing -> grouped event ingestion migration not applied yet.
-          pipelineSetupError =
-            "bulk_import_scrape_events RPC missing. Run `supabase db push --linked` to apply migration 20260601002000."
-        } else {
-          throw bulkError
-        }
-      }
+      const bulk = await runBulkImport(db, source, runId, dedup.payloads)
+      pipelineSetupError = bulk.setupError
       if (pipelineSetupError === null) {
-        const result = bulkResult
-        const imported = result?.imported ?? 0
-        const updated = result?.updated ?? 0
-        const skipped = result?.skipped ?? 0
-        const enqueued = result?.enqueued ?? 0
-        eventsImported = imported + updated
-        eventsSkipped += skipped
-        // The RPC enqueues into event_tag_queue under ON CONFLICT DO NOTHING.
-        // If imported+updated > enqueued, some rows were already pending in
-        // the queue from a prior run — benign, not an error.
-        if (imported + updated > 0 && enqueued < imported + updated) {
-          logEdgeEvent("log", "tag-queue enqueue partial (existing rows)", {
-            function: "scrape-source",
-            run_id: runId,
-            imported,
-            updated,
-            enqueued,
-          })
-        }
+        eventsImported = bulk.imported
+        eventsSkipped += bulk.skipped
       }
 
       await flushProgress()
@@ -530,176 +796,25 @@ export async function importParsedSourceEvents(
     // Error`, so the original code silently collapsed them to "Unknown scrape
     // failure").
     errorMessage = formatError(error) || "Unknown scrape failure."
-    await captureEdgeException(
-      error,
-      errorContext(error, {
-        function: "scrape-source",
-        source_id: source.id,
-        source_name: source.name,
-        source_type: source.source_type,
-        run_id: runId,
-      })
-    )
-    logEdgeEvent(
-      "error",
-      "scrape-source fetch failed",
-      errorContext(error, {
-        function: "scrape-source",
-        source_id: source.id,
-        source_name: source.name,
-        source_type: source.source_type,
-        run_id: runId,
-      })
-    )
+    const context = errorContext(error, {
+      function: "scrape-source",
+      source_id: source.id,
+      source_name: source.name,
+      source_type: source.source_type,
+      run_id: runId,
+    })
+    await captureEdgeException(error, context)
+    logEdgeEvent("error", "scrape-source fetch failed", context)
   } finally {
-    // Finalization MUST run even when the catch handler itself throws (e.g.
-    // a logging call fails) or when an unexpected error escapes after the
-    // catch. Otherwise source_runs is left in 'running' state forever.
-    const statusBeforeFinalization = status
-    let finalizationFailureMessage: string | null = null
-    try {
-      let runUpdateError: unknown = null
-      try {
-        await db.finalizeSourceRun(runId, {
-          completed_at: new Date().toISOString(),
-          status: statusBeforeFinalization,
-          events_found: eventsFound,
-          events_imported: eventsImported,
-          events_skipped: eventsSkipped,
-          error_log: errorMessage,
-        })
-      } catch (error) {
-        runUpdateError = error
-      }
-
-      // Stale-escalation: track consecutive zero-result successes.
-      const isZeroResult = statusBeforeFinalization === "success" && eventsFound === 0
-      const nextConsecutiveZero = isZeroResult
-        ? (source.consecutive_zero_result_scrapes ?? 0) + 1
-        : 0
-      const isNewEscalation =
-        nextConsecutiveZero >= STALE_THRESHOLD && source.stale_escalated_at == null
-      const escalatedStatus = isNewEscalation ? "stale" : statusBeforeFinalization
-      const escalatedAt = isNewEscalation ? new Date().toISOString() : undefined
-
-      let sourceUpdateError: unknown = null
-      try {
-        await db.updateEventSourceAfterRun(source.id, {
-          last_scraped_at: new Date().toISOString(),
-          last_status: escalatedStatus,
-          // Only reset error_count on full success. A 'partial' run (events
-          // found, none imported) used to clear the counter and mask persistent
-          // failures; keep accumulating until a clean success.
-          error_count:
-            statusBeforeFinalization === "success"
-              ? 0
-              : source.error_count + (statusBeforeFinalization === "error" ? 1 : 0),
-          consecutive_zero_result_scrapes: nextConsecutiveZero,
-          ...(escalatedAt != null ? { stale_escalated_at: escalatedAt } : {}),
-        })
-      } catch (error) {
-        sourceUpdateError = error
-      }
-
-      for (const [writeName, writeError] of [
-        ["source_runs", runUpdateError],
-        ["event_sources", sourceUpdateError],
-      ] as const) {
-        if (!writeError) continue
-
-        if (
-          finalizationFailureMessage === null &&
-          (statusBeforeFinalization === "success" || statusBeforeFinalization === "partial")
-        ) {
-          finalizationFailureMessage = `Failed to finalize ${writeName} write: ${formatError(writeError)}`
-          status = "error"
-          errorMessage = finalizationFailureMessage
-        }
-
-        const context = errorContext(writeError, {
-          function: "process-source",
-          source_id: source.id,
-          source_name: source.name,
-          run_id: runId,
-          stage: "finalize",
-          write: writeName,
-        })
-        logEdgeEvent("error", `failed to finalize ${writeName} write`, context)
-        await captureEdgeException(writeError, context)
-      }
-
-      if (isNewEscalation) {
-        logEdgeEvent("warn", "source escalated to stale", {
-          function: "process-source",
-          source_id: source.id,
-          source_name: source.name,
-          consecutive_zero_result_scrapes: nextConsecutiveZero,
-          last_scraped_at: source.last_scraped_at,
-        })
-        try {
-          // A failed audit write must never break scrape finalization —
-          // whether the DB rejects it (RLS, constraints) or the call throws.
-          await db.insertAdminAuditLog({
-            action: "source.stale_escalated",
-            target_type: "event_source",
-            target_id: source.id,
-            admin_user_id: null,
-            metadata: {
-              consecutive_zero_result_scrapes: nextConsecutiveZero,
-              last_scraped_at: source.last_scraped_at,
-            },
-          })
-        } catch (auditError) {
-          logEdgeEvent("warn", "failed to write stale-escalation audit log", {
-            function: "process-source",
-            source_id: source.id,
-            error: formatError(auditError),
-          })
-        }
-      }
-      // Kick the tag-queue worker if we imported anything. Each RPC call
-      // fires net.http_post (async) and returns immediately, so this is a
-      // fan-out, not a blocking loop. process-tag-queue claims BATCH_SIZE=20
-      // events per invocation via SKIP LOCKED, so N kicks = up to N×20 events
-      // drained in parallel — without waiting for the 1-min cron tick.
-      //
-      // Cap matches process-tag-queue CONCURRENCY×2 to leave headroom for
-      // the OpenAI rate limit (the LLM is the actual bottleneck). The cron
-      // */1 keeps backfilling whatever a burst leaves behind.
-      if (eventsImported > 0) {
-        const TAG_QUEUE_BATCH_SIZE = 20
-        const MAX_KICKS = 8
-        const kicks = Math.min(
-          Math.max(1, Math.ceil(eventsImported / TAG_QUEUE_BATCH_SIZE)),
-          MAX_KICKS
-        )
-        const results = await Promise.allSettled(
-          Array.from({ length: kicks }, () => db.invokeProcessTagQueue())
-        )
-        const failed = results.filter((r) => r.status === "rejected").length
-        if (failed > 0) {
-          logEdgeEvent("warn", "tag-queue kick(s) failed after source processing", {
-            function: "process-source",
-            source_id: source.id,
-            run_id: runId,
-            events_imported: eventsImported,
-            kicks_attempted: kicks,
-            kicks_failed: failed,
-          })
-        }
-      }
-    } catch (finalizeError) {
-      await captureEdgeException(
-        finalizeError,
-        errorContext(finalizeError, {
-          function: "scrape-source",
-          source_id: source.id,
-          source_name: source.name,
-          run_id: runId,
-          stage: "finalize",
-        })
-      )
-    }
+    const finalized = await finalizeImportRun(db, source, runId, {
+      status,
+      errorMessage,
+      eventsFound,
+      eventsImported,
+      eventsSkipped,
+    })
+    status = finalized.status
+    errorMessage = finalized.errorMessage
   }
 
   return {
