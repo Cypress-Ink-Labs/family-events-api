@@ -1,8 +1,7 @@
 # NestJS backend rewrite plan (reconstructed) — units U20–U33
 
 **Status:** U20, U21, U22, U23, U24, U25, and U26 done; U27 foundation landed
-(topology + gate + failure pings); U28/U30 pure-logic ports landed (dedup + weekend
-window + parsers); U28–U33 remaining.
+(topology + gate + failure pings); U28/U30 pure-logic ports landed; U28–U33 remaining.
 **Supersedes:** old U13–U18 of `2026-08-14-001` (production-readiness plan), per the mid-session
 redirect: *everything server-side moves to NestJS*.
 
@@ -123,26 +122,38 @@ into request path). Integration fixture: verbatim `plan_events_for_user_range` R
 definition (byte-identical from `20260724020000`, grants stripped), 8-factor scoring
 (distance, weather, age, history_affinity, family_fit, timing, novelty, budget).
 
-### U27 — Pipeline foundation 🟡 (topology + gate + failure pings landed)
-pg-boss queue topology mirroring the 8 cron services — **landed with parity tests**;
-registration deliberately deferred per single-writer rule. Kill-switch parity
-(`private.cron_enabled` per legacy label, missing-row-means-enabled) and run-history
-writes (`private.railway_cron_runs` continuity for the admin UI) — **landed as
-`CronGateService.runGated` with unit + real-Postgres integration tests**. U3 Telegram
-failure pings — **landed via `FailurePingService`** (posts to Telegram Bot API with
-legacy HTML format, 500-char error slice, kind labels `run failed`/`dead-lettered`/
-`function crashed`, 10s timeout, bot-token redaction; missing env is silent skip).
-Remaining: per-stage `CUTOVER` gating so individual queues can be enabled independently
-at U33.
+### U27 — Pipeline foundation ✅ (done)
+pg-boss queue topology mirroring the 8 cron services — **landed with parity tests**.
+Kill-switch parity (`private.cron_enabled` per legacy label, missing-row-means-enabled)
+and run-history writes (`private.railway_cron_runs` continuity for the admin UI) —
+**landed as `CronGateService.runGated` with unit + real-Postgres integration tests**.
+U3 Telegram failure pings — **landed via `FailurePingService`** (posts to Telegram Bot
+API with legacy HTML format, 500-char error slice, kind labels `run failed`/
+`dead-lettered`/`function crashed`, 10s timeout, bot-token redaction; missing env is
+silent skip). Per-stage `CUTOVER` gating — **landed with U28's `ScrapeQueueService`**:
+`JobsService` gained keyed multi-schedules, dead-letter queue registration, and work
+batch sizes; each family registers behind its own `CUTOVER_<FAMILY>` creation-time
+gate, so U33 can flip stages independently.
 
-### U28 — Ingestion port 🟡 (dedup + parsers landed)
-`scrape-due-sources` → `run_due_source_scrapes` enqueue; source-queue worker (claim 1,
-SKIP LOCKED); the 9 parser adapters (website/rss/ical/manual/macaronikid/brec/
-downtownlafayette/lcglafayette/localhop — **pure logic ported with full test suite**
-in PR #15, fixtures byte-identical); guarded-fetch SSRF + image-host allowlist;
-`bulk_import_scrape_events`; cross-source dedup (**landed with full test suite**:
-fingerprint or Jaccard ≥ 0.7 within ±4h, plan 033); zero-result stale escalation
-(threshold 3, audit log, scheduler exclusion — plans 034/U1).
+### U28 — Ingestion port ✅ (done)
+Landed across four stacked PRs (shared utils → parsers → import path → worker):
+`scrape-due-sources` → `run_due_source_scrapes` enqueue and `cleanup-stale-runs` →
+`run_cleanup_stale_runs`, both `CronGateService.runGated`-wrapped pg-boss schedule
+tasks; source-queue worker (claim 1, SKIP LOCKED via `claim_source_scrape_queue_batch`,
+5/15/60-min retry ladder, dead at attempt 4, extraction traces, run/dead-letter
+Telegram pings); the 9 parser adapters (website/rss/ical/manual/macaronikid/brec/
+downtownlafayette/lcglafayette/localhop, `@b-fuze/deno-dom` → linkedom, fixtures
+byte-identical); guarded-fetch SSRF (DNS + every redirect hop) + image-host allowlist;
+`bulk_import_scrape_events` via the same public RPC wrappers PostgREST exposed;
+cross-source dedup pre-pass (fingerprint or Jaccard ≥ 0.7 within ±4h, plan 033;
+candidate datetimes re-serialized as UTC ISO to keep fingerprint minute-slicing
+correct over pg text format); zero-result stale escalation (threshold 3, audit log —
+plans 034/U1). The scrape family registers behind `CUTOVER_SCRAPE` (queue + `scrape.dlq`
++ both schedules), completing the U27 tail; the legacy HTTP kick became a chained
+`drain-source-queue` pg-boss job (claim-1 semantics preserved). Queue RPC SQL extracted
+verbatim into `test/integration/sql/`; boot verified both ways (flag on: queue +
+schedules created; production without flag: nothing installed). LLM fallback extraction
+ported (`llm-config`/`llm-openai`, `deterministic_then_llm` semantics, 45s budget).
 
 ### U29 — Classification + enrichment port
 Tag queue worker (batch 20, concurrency 4) + LLM tagging; review queue worker
