@@ -4,6 +4,8 @@
  * (plan 033 semantics: fingerprint match, or Jaccard >= threshold within +/-4h).
  */
 
+import { utcMinute } from "./ingestion/parsing.js"
+
 export const JACCARD_THRESHOLD = 0.7
 
 const FUZZY_WINDOW_MS = 4 * 60 * 60 * 1000
@@ -60,14 +62,19 @@ export function jaccardSimilarity(a: string, b: string): number {
 
 /**
  * Composite fingerprint for an event at minute precision.
- * Format: `${cityId ?? "null"}::${startDatetime.slice(0,16)}::${canonicalizeTitle(title)}`
+ * Format: `${cityId ?? "null"}::${utcMinute(startDatetime)}::${canonicalizeTitle(title)}`
+ *
+ * Deviation from the verbatim port (PR #14 review): valid timestamps are
+ * normalized to their UTC ISO minute first, so equivalent instants written
+ * with different offsets produce the same fingerprint. Invalid input keeps
+ * the raw-slice fallback (never throws).
  */
 export function eventFingerprint(
   title: string,
   startDatetime: string,
   cityId: string | null
 ): string {
-  return `${cityId ?? "null"}::${startDatetime.slice(0, 16)}::${canonicalizeTitle(title)}`
+  return `${cityId ?? "null"}::${utcMinute(startDatetime)}::${canonicalizeTitle(title)}`
 }
 
 /**
