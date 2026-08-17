@@ -113,4 +113,54 @@ describe("guardedFetch — redirect re-validation", () => {
     await expect(guardedFetch("https://example.com/loop")).rejects.toThrow(SsrfRejectedError)
     await expect(guardedFetch("https://example.com/loop")).rejects.toThrow(/too many redirects/)
   })
+
+  it("strips credential headers when a redirect crosses origins", async () => {
+    mockResolve.mockResolvedValue({ ok: true, resolvedIps: ["93.184.216.34"] })
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(makeRedirectResponse("https://other.example.net/target"))
+      .mockResolvedValueOnce(makeOkResponse("done"))
+    vi.stubGlobal("fetch", fetchMock)
+
+    await guardedFetch("https://example.com/start", {
+      headers: { Authorization: "Bearer secret", Cookie: "sid=1", Accept: "text/html" },
+    })
+
+    const secondInit = fetchMock.mock.calls[1]?.[1] as RequestInit
+    const headers = new Headers(secondInit.headers)
+    expect(headers.get("authorization")).toBeNull()
+    expect(headers.get("cookie")).toBeNull()
+    expect(headers.get("accept")).toBe("text/html")
+  })
+
+  it("keeps headers on same-origin redirects", async () => {
+    mockResolve.mockResolvedValue({ ok: true, resolvedIps: ["93.184.216.34"] })
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(makeRedirectResponse("https://example.com/next"))
+      .mockResolvedValueOnce(makeOkResponse("done"))
+    vi.stubGlobal("fetch", fetchMock)
+
+    await guardedFetch("https://example.com/start", {
+      headers: { Authorization: "Bearer secret" },
+    })
+
+    const secondInit = fetchMock.mock.calls[1]?.[1] as RequestInit
+    expect(new Headers(secondInit.headers).get("authorization")).toBe("Bearer secret")
+  })
+
+  it("rewrites 302 POST to a bodyless GET on the next hop (RFC 9110)", async () => {
+    mockResolve.mockResolvedValue({ ok: true, resolvedIps: ["93.184.216.34"] })
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(makeRedirectResponse("https://example.com/next"))
+      .mockResolvedValueOnce(makeOkResponse("done"))
+    vi.stubGlobal("fetch", fetchMock)
+
+    await guardedFetch("https://example.com/start", { method: "POST", body: "payload" })
+
+    const secondInit = fetchMock.mock.calls[1]?.[1] as RequestInit
+    expect(secondInit.method).toBe("GET")
+    expect("body" in secondInit && secondInit.body !== undefined).toBe(false)
+  })
 })
