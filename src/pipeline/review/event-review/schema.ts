@@ -65,7 +65,10 @@ export function parseLlmDecisionJson(rawJson: string): LlmEventReviewDecisionPay
     throw new Error("invalid_decision")
   }
 
-  const confidenceRaw = Number(object.confidence)
+  if (typeof object.confidence !== "number") {
+    throw new Error("invalid_confidence")
+  }
+  const confidenceRaw = object.confidence
   if (!Number.isFinite(confidenceRaw) || confidenceRaw < 0 || confidenceRaw > 1) {
     throw new Error("invalid_confidence")
   }

@@ -111,13 +111,9 @@ export async function reviewEventWithLlm(
     )
 
     const parsed = parseLlmDecisionJson(providerOutput.rawText)
-    const applied = applyConfidenceThreshold(parsed, config.confidenceThreshold)
-    const elapsed = (deps?.now?.() ?? Date.now()) - startedAt
-
-    // Apply memory-based confidence adjustment
-    let adjustedConfidence = applied.confidence
+    let adjustedConfidence = parsed.confidence
     const memoryFlags: string[] = []
-    if (memoryContext && memoryContext.confidenceDelta !== 0 && adjustedConfidence !== null) {
+    if (memoryContext && memoryContext.confidenceDelta !== 0) {
       adjustedConfidence = Math.max(
         0,
         Math.min(1, adjustedConfidence + memoryContext.confidenceDelta)
@@ -128,12 +124,17 @@ export async function reviewEventWithLlm(
     } else if (memoryContext) {
       memoryFlags.push("memory_context_used")
     }
+    const applied = applyConfidenceThreshold(
+      { ...parsed, confidence: adjustedConfidence },
+      config.confidenceThreshold
+    )
+    const elapsed = (deps?.now?.() ?? Date.now()) - startedAt
 
     return {
       status: LLM_EVENT_REVIEW_STATUS.SUCCEEDED,
       modelDecision: applied.modelDecision,
       appliedDecision: applied.appliedDecision,
-      confidence: adjustedConfidence,
+      confidence: applied.confidence,
       reason: memoryContext?.confidenceDelta
         ? `${applied.reason} [Memory: ${memoryContext.confidenceReason}]`
         : applied.reason,

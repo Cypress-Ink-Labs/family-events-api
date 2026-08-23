@@ -57,6 +57,18 @@ describe("parseLlmDecisionJson", () => {
     ).toThrow("invalid_confidence")
   })
 
+  it.each([true, null, "1"])("rejects non-numeric confidence %j", (confidence) => {
+    expect(() =>
+      parseLlmDecisionJson(
+        JSON.stringify({
+          decision: "approve",
+          confidence,
+          reason: "bad",
+        })
+      )
+    ).toThrow("invalid_confidence")
+  })
+
   it("rejects missing reason", () => {
     expect(() =>
       parseLlmDecisionJson(

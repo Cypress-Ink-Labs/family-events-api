@@ -650,13 +650,15 @@ describe("should_auto_reject_source (real SQL)", () => {
 
   it("only considers published and rejected events within window", async () => {
     const { cityId, sourceId } = await seedSource()
-    // Old events outside window
-    await db.query(
-      `INSERT INTO public.events (id, city_id, title, start_datetime, status, source_id, updated_at)
-       VALUES ($1::uuid, $2::uuid, 'Old Event', now(), 'rejected', $3::uuid,
-               now() - interval '31 days')`,
-      [randomUUID(), cityId, sourceId]
-    )
+    // Counting these old published events would drop the rejection ratio to 5/15.
+    for (let i = 0; i < 10; i++) {
+      await db.query(
+        `INSERT INTO public.events (id, city_id, title, start_datetime, status, source_id, updated_at)
+         VALUES ($1::uuid, $2::uuid, 'Old Event', now(), 'published', $3::uuid,
+                 now() - interval '31 days')`,
+        [randomUUID(), cityId, sourceId]
+      )
+    }
     // Recent events within window
     for (let i = 0; i < 5; i++) {
       await seedEvent({ city_id: cityId, source_id: sourceId, status: "rejected" })

@@ -176,11 +176,12 @@ export class ReviewRepository implements ReviewQueueDb {
     return this.db.query<EventLlmReviewQueueRow>(CLAIM_REVIEW_QUEUE_BATCH_SQL, [limit])
   }
 
-  async markReviewQueueRowStarted(queueId: number): Promise<EventLlmReviewQueueRow> {
+  async markReviewQueueRowStarted(queueId: number): Promise<EventLlmReviewQueueRow | null> {
     const rows = await this.db.query<EventLlmReviewQueueRow>(MARK_REVIEW_QUEUE_ROW_STARTED_SQL, [
       queueId,
     ])
-    return rows[0]!
+    const row = rows[0]
+    return row && row.id !== null ? row : null
   }
 
   async releaseUnstartedReviewQueueRows(claimedIds: number[]): Promise<void> {

@@ -212,10 +212,9 @@ describe("reap_stuck_tag_queue_rows (real SQL)", () => {
       next_attempt_at: new Date(Date.now() - 10 * 60_000).toISOString(),
     })
     // Manually update claimed_at to fresh timestamp (simulating recent claim)
-    await db.query(
-      "UPDATE public.event_tag_queue SET claimed_at = now() WHERE id = $1::bigint",
-      [id]
-    )
+    await db.query("UPDATE public.event_tag_queue SET claimed_at = now() WHERE id = $1::bigint", [
+      id,
+    ])
 
     expect(await reapStuck()).toBe(0)
     expect((await queueRowById(id)).status).toBe("processing")
@@ -245,10 +244,9 @@ describe("reap_stuck_tag_queue_rows (real SQL)", () => {
       next_attempt_at: new Date(Date.now() - 10 * 60_000).toISOString(),
     })
     // Manually set claimed_at to NULL (simulating pre-migration row)
-    await db.query(
-      "UPDATE public.event_tag_queue SET claimed_at = NULL WHERE id = $1::bigint",
-      [id]
-    )
+    await db.query("UPDATE public.event_tag_queue SET claimed_at = NULL WHERE id = $1::bigint", [
+      id,
+    ])
 
     expect(await reapStuck()).toBe(1)
     expect((await queueRowById(id)).status).toBe("pending")

@@ -21,6 +21,7 @@ class FakeReviewQueueDb implements ReviewQueueDb {
   claimedRows: EventLlmReviewQueueRow[] = []
   events = new Map<string, EventReviewRow>()
   startedAttempts = new Map<number, number>()
+  unstartableRows = new Set<number>()
   featureFlags = new Map<string, boolean>()
   autoRejectedSources = new Set<string>()
   sourceCheckCalls: string[] = []
@@ -38,7 +39,8 @@ class FakeReviewQueueDb implements ReviewQueueDb {
     return this.claimedRows.slice(0, limit)
   }
 
-  async markReviewQueueRowStarted(queueId: number): Promise<EventLlmReviewQueueRow> {
+  async markReviewQueueRowStarted(queueId: number): Promise<EventLlmReviewQueueRow | null> {
+    if (this.unstartableRows.has(queueId)) return null
     const claimedRow = this.claimedRows.find((candidate) => candidate.id === queueId)
     if (!claimedRow) throw new Error("queue row missing")
     return {
@@ -216,6 +218,29 @@ async function runBatch(
 }
 
 describe("processReviewQueueBatch", () => {
+  it("ignores a claimed row when the start RPC reports no match", async () => {
+    const db = new FakeReviewQueueDb()
+    db.claimedRows = [row(1)]
+    db.unstartableRows.add(1)
+    const loadEvent = vi.spyOn(db, "loadReviewEvent")
+
+    const summary = await runBatch(db)
+
+    expect(summary).toEqual({
+      claimed: 1,
+      reaped: 0,
+      succeeded: 0,
+      failed: 0,
+      retrying: 0,
+      dead: 0,
+      approved: 0,
+      rejected: 0,
+      needsAdminReview: 0,
+    })
+    expect(loadEvent).not.toHaveBeenCalled()
+    expect(db.updates.size).toBe(0)
+  })
+
   it("counts approve, reject, and needs-admin-review decisions", async () => {
     const db = new FakeReviewQueueDb()
     db.claimedRows = [row(1), row(2), row(3)]

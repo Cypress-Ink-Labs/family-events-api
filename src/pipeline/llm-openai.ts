@@ -29,8 +29,7 @@ export interface ChatCompletionOptions {
 export class OpenAiChatCompletionHttpError extends Error {
   constructor(
     message: string,
-    readonly status: number,
-    readonly responseBody: string
+    readonly status: number
   ) {
     super(message)
     this.name = "OpenAiChatCompletionHttpError"
@@ -71,15 +70,10 @@ export async function postOpenAiChatCompletion(
   })
 
   if (!response.ok) {
-    const errorBody = await response.text().catch(() => "")
     const prefix =
       options.failureMessagePrefix ?? `${options.providerName ?? "provider"} call failed`
-    const responseBody = errorBody.slice(0, 200)
-    throw new OpenAiChatCompletionHttpError(
-      `${prefix} (${response.status}): ${responseBody}`,
-      response.status,
-      responseBody
-    )
+    await response.body?.cancel().catch(() => undefined)
+    throw new OpenAiChatCompletionHttpError(`${prefix} (${response.status})`, response.status)
   }
 
   const raw = await response.json()

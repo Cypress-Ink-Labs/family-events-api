@@ -145,7 +145,9 @@ async function queueState(id: number) {
     next_attempt_at: string
     last_error: string | null
   }>(
-    `SELECT status::text, attempt_count, started_at, finished_at, next_attempt_at, last_error
+    `SELECT status::text, attempt_count, started_at, finished_at, last_error,
+            to_char(next_attempt_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
+              AS next_attempt_at
      FROM public.event_llm_review_queue WHERE id = $1::bigint`,
     [id]
   )
@@ -176,7 +178,13 @@ async function activateReview(eventId?: string): Promise<{
 }> {
   const queueId = await enqueueReview({ eventId })
   await repo.claimReviewQueueBatch(1)
-  return { queueId, row: await repo.markReviewQueueRowStarted(queueId) }
+  return { queueId, row: await requireStartedRow(queueId) }
+}
+
+async function requireStartedRow(queueId: number): Promise<EventLlmReviewQueueRow> {
+  const row = await repo.markReviewQueueRowStarted(queueId)
+  if (!row) throw new Error(`queue row ${queueId} was not started`)
+  return row
 }
 
 describe("ReviewQueueDb queue operations", () => {
@@ -204,13 +212,20 @@ describe("ReviewQueueDb queue operations", () => {
     const queueId = await enqueueReview()
     const [claimed] = await repo.claimReviewQueueBatch(1)
 
-    const started = await repo.markReviewQueueRowStarted(queueId)
+    const started = await requireStartedRow(queueId)
 
     expect(claimed!.id).toBe(queueId)
     expect(started.id).toBe(queueId)
     expect(started.status).toBe("processing")
     expect(started.attempt_count).toBe(1)
     expect((await queueState(queueId)).started_at).not.toBeNull()
+  })
+
+  it("returns null when a queue row cannot be marked started", async () => {
+    const queueId = await enqueueReview()
+
+    expect(await repo.markReviewQueueRowStarted(queueId)).toBeNull()
+    expect((await queueState(queueId)).attempt_count).toBe(0)
   })
 
   it("releases only unstarted claimed rows", async () => {
@@ -263,7 +278,7 @@ describe("ReviewQueueDb queue operations", () => {
       started_at: null,
       last_error: "temporary failure",
     })
-    expect((await queueState(retry.queueId)).next_attempt_at).toContain("2026-09-02 03:04:05")
+    expect((await queueState(retry.queueId)).next_attempt_at).toBe("2026-09-02T03:04:05.000Z")
   })
 })
 
@@ -362,7 +377,7 @@ describe("ReviewQueueDb decisions", () => {
     const { eventId } = await seedEvent({ cityId, sourceId })
     const queueId = await enqueueReview({ eventId, sourceId, sourceRunId })
     const [claimed] = await repo.claimReviewQueueBatch(1)
-    const started = await repo.markReviewQueueRowStarted(queueId)
+    const started = await requireStartedRow(queueId)
     const event = await repo.loadReviewEvent(eventId)
 
     expect(claimed!.id).toBe(queueId)
@@ -436,7 +451,7 @@ describe("ReviewQueueDb decisions", () => {
     const { eventId } = await seedEvent({ cityId, sourceId })
     const queueId = await enqueueReview({ eventId, sourceId, sourceRunId })
     await repo.claimReviewQueueBatch(1)
-    const started = await repo.markReviewQueueRowStarted(queueId)
+    const started = await requireStartedRow(queueId)
     const event = await repo.loadReviewEvent(eventId)
     const rejectReview: AppliedLlmEventReviewDecision = {
       ...approveReview,

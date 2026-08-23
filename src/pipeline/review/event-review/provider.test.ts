@@ -30,6 +30,36 @@ const providerInput = {
   model: "gpt-4o-mini",
 }
 
+const reviewInput = {
+  eventId: "event-1",
+  title: "Family Story Time",
+  description: "Books and songs",
+  startDatetime: "2026-09-01T15:00:00Z",
+  endDatetime: null,
+  timezone: "America/Chicago",
+  venueName: "Main Library",
+  address: "301 W Congress St",
+  sourceName: "Library Calendar",
+  sourceUrl: "https://example.com/events/1",
+  category: null,
+  tags: [],
+}
+
+function decisionProvider(confidence: number) {
+  return {
+    review: async () => ({
+      rawText: JSON.stringify({
+        decision: "approve",
+        confidence,
+        reason: "Clear family event",
+      }),
+      rawResponse: null,
+      provider: "openai-compatible",
+      model: "gpt-4o-mini",
+    }),
+  }
+}
+
 describe("buildLlmReviewProvider", () => {
   it("calls OpenAI-compatible endpoint and returns parsed response", async () => {
     const config = reviewConfig()
@@ -111,30 +141,51 @@ describe("buildLlmReviewProvider", () => {
       Promise.resolve({
         ok: false,
         status: 429,
-        text: async () => "rate limited",
+        text: async () => "sensitive upstream diagnostics",
       })
     ) as unknown as typeof fetch
     const provider = buildLlmReviewProvider(config, mockFetch)
 
-    const result = await reviewEventWithLlm(
-      {
-        eventId: "event-1",
-        title: "Family Story Time",
-        description: "Books and songs",
-        startDatetime: "2026-09-01T15:00:00Z",
-        endDatetime: null,
-        timezone: "America/Chicago",
-        venueName: "Main Library",
-        address: "301 W Congress St",
-        sourceName: "Library Calendar",
-        sourceUrl: "https://example.com/events/1",
-        category: null,
-        tags: [],
-      },
-      { config, provider }
-    )
+    const result = await reviewEventWithLlm(reviewInput, { config, provider })
 
     expect(result.errorCode).toBe("provider_http_error")
-    expect(result.errorMessage).toBe("LLM review (429): rate limited")
+    expect(result.errorMessage).toBe("LLM review (429)")
+    expect(result.errorMessage).not.toContain("sensitive upstream diagnostics")
+  })
+
+  it("applies a memory penalty before the confidence threshold", async () => {
+    const result = await reviewEventWithLlm(
+      reviewInput,
+      { config: reviewConfig(), provider: decisionProvider(0.8) },
+      {
+        memoryPrompt: "",
+        similarEventIds: [],
+        confidenceDelta: -0.1,
+        confidenceReason: "conflicting history",
+      }
+    )
+
+    expect(result.confidence).toBeCloseTo(0.7)
+    expect(result.appliedDecision).toBe("needs_admin_review")
+    expect(result.flags).toContain("low_confidence")
+    expect(result.flags).toContain("memory_confidence_penalized")
+  })
+
+  it("applies a memory boost before the confidence threshold", async () => {
+    const result = await reviewEventWithLlm(
+      reviewInput,
+      { config: reviewConfig(), provider: decisionProvider(0.7) },
+      {
+        memoryPrompt: "",
+        similarEventIds: [],
+        confidenceDelta: 0.1,
+        confidenceReason: "consistent history",
+      }
+    )
+
+    expect(result.confidence).toBeCloseTo(0.8)
+    expect(result.appliedDecision).toBe("approve")
+    expect(result.flags).not.toContain("low_confidence")
+    expect(result.flags).toContain("memory_confidence_boosted")
   })
 })

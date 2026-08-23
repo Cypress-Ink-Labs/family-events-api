@@ -79,7 +79,7 @@ export interface ApplyEventDecisionInput {
 export interface ReviewQueueDb extends MemoryContextDb {
   reapStuckReviewQueueRows(): Promise<number>
   claimReviewQueueBatch(limit: number): Promise<EventLlmReviewQueueRow[]>
-  markReviewQueueRowStarted(queueId: number): Promise<EventLlmReviewQueueRow>
+  markReviewQueueRowStarted(queueId: number): Promise<EventLlmReviewQueueRow | null>
   releaseUnstartedReviewQueueRows(claimedIds: number[]): Promise<void>
   markReviewQueueRowSucceeded(queueId: number): Promise<void>
   markReviewQueueRowDead(queueId: number, error: string): Promise<void>
@@ -115,7 +115,7 @@ export interface ReviewQueueBatchSummary {
 }
 
 interface EventReviewQueueRowResult {
-  outcome: "succeeded" | "retrying" | "dead" | "skipped"
+  outcome: "succeeded" | "retrying" | "dead" | "skipped" | "not_started"
   appliedDecision: LlmEventReviewDecision | null
   failed: boolean
 }
@@ -375,6 +375,9 @@ async function processReviewQueueRow(
   row: EventLlmReviewQueueRow
 ): Promise<EventReviewQueueRowResult> {
   const startedRow = await db.markReviewQueueRowStarted(row.id)
+  if (!startedRow) {
+    return { outcome: "not_started", appliedDecision: null, failed: false }
+  }
   let event: EventReviewRow | null = null
   logEdgeEvent("log", "event_review_started", {
     function: "process-event-review-queue",
@@ -533,7 +536,7 @@ export async function processReviewQueueBatch(
       } else if (result.outcome === "retrying") {
         summary.retrying += 1
         summary.failed += 1
-      } else {
+      } else if (result.outcome === "dead") {
         summary.dead += 1
         summary.failed += 1
       }
