@@ -107,7 +107,8 @@ export async function ensureIngestionSchema(db: DbService): Promise<void> {
   // like the llm_review_* block above.
   await db.query(`
     ALTER TABLE public.events
-      ADD COLUMN IF NOT EXISTS llm_review_status public.llm_event_review_status,
+      ADD COLUMN IF NOT EXISTS llm_review_status public.llm_event_review_status
+        NOT NULL DEFAULT 'not_required'::public.llm_event_review_status,
       ADD COLUMN IF NOT EXISTS llm_review_decision public.llm_event_review_decision,
       ADD COLUMN IF NOT EXISTS llm_review_confidence numeric(4,3),
       ADD COLUMN IF NOT EXISTS llm_review_reason text,
@@ -164,6 +165,11 @@ export async function ensureIngestionSchema(db: DbService): Promise<void> {
         'brec'::text, 'downtownlafayette'::text, 'lcglafayette'::text, 'localhop'::text
       ]))
     )
+  `)
+  await db.query(`
+    ALTER TABLE public.events
+      ADD CONSTRAINT events_source_id_fkey
+      FOREIGN KEY (source_id) REFERENCES public.event_sources (id) ON DELETE SET NULL
   `)
   await db.query(`
     CREATE TABLE public.source_runs (

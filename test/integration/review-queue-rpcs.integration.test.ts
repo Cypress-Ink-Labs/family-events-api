@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto"
 
+import type { PoolClient } from "pg"
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest"
 
 import type { DbService } from "../../src/db/db.service.js"
@@ -37,6 +38,17 @@ async function seedCity(id: string = randomUUID()): Promise<string> {
     [id, slug]
   )
   return id
+}
+
+async function seedSource(cityId?: string): Promise<{ cityId: string; sourceId: string }> {
+  const sourceCityId = cityId ?? (await seedCity())
+  const sourceId = randomUUID()
+  await db.query(
+    `INSERT INTO public.event_sources (id, name, url, city_id)
+     VALUES ($1::uuid, 'Test Source', $2, $3::uuid)`,
+    [sourceId, `https://example.com/sources/${sourceId}`, sourceCityId]
+  )
+  return { cityId: sourceCityId, sourceId }
 }
 
 async function seedEvent(
@@ -231,6 +243,44 @@ async function shouldAutoRejectSource(
   return rows[0]!.should_reject
 }
 
+describe("review ingestion catalog", () => {
+  it("preserves the production llm_review_status enum, nullability, and default", async () => {
+    const [column] = await db.query<{
+      udt_schema: string
+      udt_name: string
+      is_nullable: string
+      column_default: string | null
+    }>(
+      `SELECT udt_schema, udt_name, is_nullable, column_default
+       FROM information_schema.columns
+       WHERE table_schema = 'public'
+         AND table_name = 'events'
+         AND column_name = 'llm_review_status'`
+    )
+
+    expect(column).toMatchObject({
+      udt_schema: "public",
+      udt_name: "llm_event_review_status",
+      is_nullable: "NO",
+    })
+    expect(column?.column_default).toContain("'not_required'::")
+  })
+
+  it("enforces the production events source FK with ON DELETE SET NULL", async () => {
+    const [constraint] = await db.query<{ constraint_name: string; delete_rule: string }>(
+      `SELECT constraint_name, delete_rule
+       FROM information_schema.referential_constraints
+       WHERE constraint_schema = 'public'
+         AND constraint_name = 'events_source_id_fkey'`
+    )
+
+    expect(constraint).toEqual({
+      constraint_name: "events_source_id_fkey",
+      delete_rule: "SET NULL",
+    })
+  })
+})
+
 describe("claim_event_llm_review_queue_batch (real SQL)", () => {
   it("claims oldest-first by next_attempt_at then enqueued_at, marks processing with started_at cleared", async () => {
     const second = await enqueueReview({ next_attempt_at: "2026-06-02T00:00:00Z" })
@@ -272,6 +322,41 @@ describe("claim_event_llm_review_queue_batch (real SQL)", () => {
     await enqueueReview({ status: "succeeded" })
     await enqueueReview({ status: "dead" })
     expect(await claimBatch(5)).toEqual([])
+  })
+
+  it("skips a row locked by another claimant and returns a disjoint row without blocking", async () => {
+    const first = await enqueueReview({ next_attempt_at: "2026-06-01T00:00:00Z" })
+    const second = await enqueueReview({ next_attempt_at: "2026-06-02T00:00:00Z" })
+    let lockingClient: PoolClient | undefined
+    let concurrentClient: PoolClient | undefined
+
+    try {
+      lockingClient = await db.pool.connect()
+      concurrentClient = await db.pool.connect()
+      await lockingClient.query("BEGIN")
+      await concurrentClient.query("BEGIN")
+      await lockingClient.query("SET LOCAL statement_timeout = '1000ms'")
+      await concurrentClient.query("SET LOCAL statement_timeout = '1000ms'")
+
+      const lockedClaim = await lockingClient.query<{ id: number }>(
+        "SELECT id::int AS id FROM public.claim_event_llm_review_queue_batch(1)"
+      )
+      expect(lockedClaim.rows.map((row) => row.id)).toEqual([first])
+
+      const concurrentClaim = await concurrentClient.query<{ id: number }>(
+        "SELECT id::int AS id FROM public.claim_event_llm_review_queue_batch(1)"
+      )
+      expect(concurrentClaim.rows.map((row) => row.id)).toEqual([second])
+    } finally {
+      if (concurrentClient) {
+        await concurrentClient.query("ROLLBACK").catch(() => undefined)
+        concurrentClient.release()
+      }
+      if (lockingClient) {
+        await lockingClient.query("ROLLBACK").catch(() => undefined)
+        lockingClient.release()
+      }
+    }
   })
 })
 
@@ -504,22 +589,22 @@ describe("apply_event_llm_review_decision (real SQL)", () => {
 
 describe("should_auto_reject_source (real SQL)", () => {
   it("returns false when below min events threshold", async () => {
-    const sourceId = randomUUID()
-    await seedEvent({ source_id: sourceId, status: "rejected" })
-    await seedEvent({ source_id: sourceId, status: "rejected" })
+    const { cityId, sourceId } = await seedSource()
+    await seedEvent({ city_id: cityId, source_id: sourceId, status: "rejected" })
+    await seedEvent({ city_id: cityId, source_id: sourceId, status: "rejected" })
 
     const shouldReject = await shouldAutoRejectSource(sourceId, 0.8, 5, 30)
     expect(shouldReject).toBe(false)
   })
 
   it("returns true when rejection rate > threshold and has min events", async () => {
-    const sourceId = randomUUID()
+    const { cityId, sourceId } = await seedSource()
     // 9 rejected / 10 total = 0.9 > 0.8 threshold
     for (let i = 0; i < 9; i++) {
-      await seedEvent({ source_id: sourceId, status: "rejected" })
+      await seedEvent({ city_id: cityId, source_id: sourceId, status: "rejected" })
     }
     for (let i = 0; i < 1; i++) {
-      await seedEvent({ source_id: sourceId, status: "published" })
+      await seedEvent({ city_id: cityId, source_id: sourceId, status: "published" })
     }
 
     const shouldReject = await shouldAutoRejectSource(sourceId, 0.8, 5, 30)
@@ -527,12 +612,12 @@ describe("should_auto_reject_source (real SQL)", () => {
   })
 
   it("returns false when rejection rate below threshold", async () => {
-    const sourceId = randomUUID()
+    const { cityId, sourceId } = await seedSource()
     for (let i = 0; i < 3; i++) {
-      await seedEvent({ source_id: sourceId, status: "rejected" })
+      await seedEvent({ city_id: cityId, source_id: sourceId, status: "rejected" })
     }
     for (let i = 0; i < 7; i++) {
-      await seedEvent({ source_id: sourceId, status: "published" })
+      await seedEvent({ city_id: cityId, source_id: sourceId, status: "published" })
     }
 
     const shouldReject = await shouldAutoRejectSource(sourceId, 0.8, 5, 30)
@@ -540,17 +625,17 @@ describe("should_auto_reject_source (real SQL)", () => {
   })
 
   it("only considers published and rejected events within window", async () => {
-    const sourceId = randomUUID()
+    const { cityId, sourceId } = await seedSource()
     // Old events outside window
     await db.query(
       `INSERT INTO public.events (id, city_id, title, start_datetime, status, source_id, updated_at)
        VALUES ($1::uuid, $2::uuid, 'Old Event', now(), 'rejected', $3::uuid,
                now() - interval '31 days')`,
-      [randomUUID(), await seedCity(), sourceId]
+      [randomUUID(), cityId, sourceId]
     )
     // Recent events within window
     for (let i = 0; i < 5; i++) {
-      await seedEvent({ source_id: sourceId, status: "rejected" })
+      await seedEvent({ city_id: cityId, source_id: sourceId, status: "rejected" })
     }
 
     const shouldReject = await shouldAutoRejectSource(sourceId, 0.8, 5, 30)
