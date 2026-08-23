@@ -8,7 +8,7 @@
 --   claim_event_llm_review_queue_batch: 20260601004000_llm_review_and_enrichment.sql
 --   mark_event_llm_review_queue_row_started: 20260601004000_llm_review_and_enrichment.sql
 --   release_unstarted_event_llm_review_rows: 20260601004000_llm_review_and_enrichment.sql
---   reap_stuck_event_llm_review_rows: 20260601004000_llm_review_and_enrichment.sql
+--   reap_stuck_event_llm_review_rows: 20260823000000_fix_queue_reap_claim_staleness.sql
 --   apply_event_llm_review_decision: 20260601017000_event_status_enum_and_validate_checks.sql
 --   should_auto_reject_source: 20260601022000_source_auto_reject_and_stats.sql
 
@@ -127,7 +127,7 @@ AS $$
   SELECT private.release_unstarted_event_llm_review_rows(p_claimed_ids);
 $$;
 
--- Source: 20260601004000_llm_review_and_enrichment.sql lines 389-412
+-- Source: 20260823000000_fix_queue_reap_claim_staleness.sql
 CREATE OR REPLACE FUNCTION private.reap_stuck_event_llm_review_rows()
 RETURNS integer
 LANGUAGE plpgsql
@@ -144,7 +144,7 @@ BEGIN
       updated_at = now()
   WHERE status = 'processing'
     AND (
-      (started_at IS NULL AND next_attempt_at < now() - interval '5 minutes')
+      (started_at IS NULL AND updated_at < now() - interval '5 minutes')
       OR started_at < now() - interval '15 minutes'
     );
 

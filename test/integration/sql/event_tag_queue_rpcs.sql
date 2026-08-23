@@ -1,5 +1,6 @@
 -- event_tag_queue worker RPCs, extracted VERBATIM from
 -- family-events-backend 20260601000000_schema_baseline.sql (U29).
+-- Updated from 20260823000000_fix_queue_reap_claim_staleness.sql (claim + reap).
 -- GRANT/REVOKE/ALTER FUNCTION ... OWNER TO statements omitted: the bare test
 -- database has no anon/authenticated/service_role roles and no "postgres"
 -- superuser to reassign ownership to.
@@ -18,7 +19,8 @@ BEGIN
   RETURN QUERY
   UPDATE public.event_tag_queue q SET
     status = 'processing',
-    started_at = NULL
+    started_at = NULL,
+    claimed_at = now()
   WHERE q.id IN (
     SELECT inner_q.id
     FROM public.event_tag_queue inner_q
@@ -64,7 +66,7 @@ BEGIN
       last_error = coalesce(last_error, 'reaped after stuck in processing')
   WHERE status = 'processing'
     AND (
-      (started_at IS NULL  AND next_attempt_at < now() - interval '5 minutes')
+      (started_at IS NULL AND COALESCE(claimed_at, next_attempt_at) < now() - interval '5 minutes')
       OR started_at < now() - interval '15 minutes'
     );
 

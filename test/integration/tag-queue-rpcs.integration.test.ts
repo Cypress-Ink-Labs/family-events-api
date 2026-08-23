@@ -202,12 +202,53 @@ describe("reap_stuck_tag_queue_rows (real SQL)", () => {
     expect(queueRow.last_error).toBe("reaped after stuck in processing")
   })
 
-  it("reaps rows stuck unstarted with a stale next_attempt_at over 5 minutes old", async () => {
+  it("does NOT reap rows claimed recently even if next_attempt_at is stale (fixes race)", async () => {
+    // Claim stamps claimed_at = now(). A row whose next_attempt_at is overdue but whose
+    // claimed_at is fresh should NOT be reaped (fixes the race where freshly claimed
+    // overdue rows were instantly reap-eligible).
     const id = await enqueue({
       status: "processing",
       started_at: null,
       next_attempt_at: new Date(Date.now() - 10 * 60_000).toISOString(),
     })
+    // Manually update claimed_at to fresh timestamp (simulating recent claim)
+    await db.query(
+      "UPDATE public.event_tag_queue SET claimed_at = now() WHERE id = $1::bigint",
+      [id]
+    )
+
+    expect(await reapStuck()).toBe(0)
+    expect((await queueRowById(id)).status).toBe("processing")
+  })
+
+  it("reaps rows stuck unstarted with a stale claimed_at over 5 minutes old", async () => {
+    // Now the reaper checks claimed_at (set by claim) not just next_attempt_at.
+    const id = await enqueue({
+      status: "processing",
+      started_at: null,
+    })
+    // Manually backdate claimed_at to >5 minutes ago
+    await db.query(
+      "UPDATE public.event_tag_queue SET claimed_at = $1::timestamptz WHERE id = $2::bigint",
+      [new Date(Date.now() - 10 * 60_000).toISOString(), id]
+    )
+
+    expect(await reapStuck()).toBe(1)
+    expect((await queueRowById(id)).status).toBe("pending")
+  })
+
+  it("reaps rows with NULL claimed_at and stale next_attempt_at (COALESCE fallback)", async () => {
+    // COALESCE(claimed_at, next_attempt_at) covers rows already in-flight when the migration landed.
+    const id = await enqueue({
+      status: "processing",
+      started_at: null,
+      next_attempt_at: new Date(Date.now() - 10 * 60_000).toISOString(),
+    })
+    // Manually set claimed_at to NULL (simulating pre-migration row)
+    await db.query(
+      "UPDATE public.event_tag_queue SET claimed_at = NULL WHERE id = $1::bigint",
+      [id]
+    )
 
     expect(await reapStuck()).toBe(1)
     expect((await queueRowById(id)).status).toBe("pending")

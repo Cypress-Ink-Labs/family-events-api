@@ -267,6 +267,7 @@ export async function ensureIngestionSchema(db: DbService): Promise<void> {
       attempt_count integer NOT NULL DEFAULT 0,
       last_error text,
       status public.event_tag_queue_status NOT NULL DEFAULT 'pending',
+      claimed_at timestamptz,
       CONSTRAINT event_tag_queue_trigger_type_check CHECK (trigger_type = ANY (ARRAY[
         'import'::text, 'reclassify'::text, 'manual-review'::text
       ]))

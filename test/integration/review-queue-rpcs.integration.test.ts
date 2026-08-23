@@ -430,12 +430,36 @@ describe("reap_stuck_event_llm_review_rows (real SQL)", () => {
     expect(queueRow.last_error).toBe("reaped after stuck in processing")
   })
 
-  it("reaps rows stuck unstarted with a stale next_attempt_at over 5 minutes old", async () => {
+  it("does NOT reap rows claimed recently even if next_attempt_at is stale (fixes race)", async () => {
+    // Claim stamps updated_at = now(). A row whose next_attempt_at is overdue but whose
+    // updated_at is fresh should NOT be reaped (fixes the race where freshly claimed
+    // overdue rows were instantly reap-eligible).
     const id = await enqueueReview({
       status: "processing",
       started_at: null,
       next_attempt_at: new Date(Date.now() - 10 * 60_000).toISOString(),
     })
+    // Manually update updated_at to fresh timestamp (simulating recent claim)
+    await db.query(
+      "UPDATE public.event_llm_review_queue SET updated_at = now() WHERE id = $1::bigint",
+      [id]
+    )
+
+    expect(await reapStuck()).toBe(0)
+    expect((await queueRowById(id)).status).toBe("processing")
+  })
+
+  it("reaps rows stuck unstarted with a stale updated_at over 5 minutes old", async () => {
+    // Now the reaper checks updated_at (set by claim) not next_attempt_at (the DUE time).
+    const id = await enqueueReview({
+      status: "processing",
+      started_at: null,
+    })
+    // Manually backdate updated_at to >5 minutes ago
+    await db.query(
+      "UPDATE public.event_llm_review_queue SET updated_at = $1::timestamptz WHERE id = $2::bigint",
+      [new Date(Date.now() - 10 * 60_000).toISOString(), id]
+    )
 
     expect(await reapStuck()).toBe(1)
     expect((await queueRowById(id)).status).toBe("retrying")
