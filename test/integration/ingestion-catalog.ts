@@ -15,6 +15,17 @@ import { ensureCatalogSchema } from "./catalog.js"
  * family-events-backend's migrations (schema baseline + 20260601004000 llm
  * review + 20260620000000 stale escalation + 20260816000000 stale status).
  *
+ * U29 adds the classification-side tables the tagging/memory-context seams
+ * read and write: event_ai_traces (baseline + prompt_version from
+ * 20260601005000), admin_event_decisions (20260601021000), ai_feature_config +
+ * approved_ai_models (20260601005000; that file contains duplicate CREATE
+ * TABLE blocks from re-runs — both are identical), the baseline event_tags
+ * classification columns (confidence / is_manual_override / created_at), and
+ * the baseline events ai_tag_model / ai_tag_status columns. RLS policies,
+ * GRANT/REVOKE, and non-behavioral indexes are trimmed (no anon/authenticated/
+ * service_role roles here). The tables' updated_by/admin_user_id columns FK to
+ * auth.users, so a minimal auth.users stub is installed first.
+ *
  * RPCs are extracted VERBATIM from the backend migrations into
  * test/integration/sql/ (GRANT/REVOKE trimmed — no anon/authenticated/
  * service_role roles here):
@@ -39,9 +50,10 @@ export async function ensureIngestionSchema(db: DbService): Promise<void> {
 
   await db.query(`
     DROP TABLE IF EXISTS
-      public.admin_audit_log, public.event_llm_review_queue, public.event_tag_queue,
-      public.source_extraction_traces, public.source_scrape_queue, public.source_runs,
-      public.event_sources
+      public.ai_feature_config, public.approved_ai_models, public.admin_event_decisions,
+      public.event_ai_traces, public.admin_audit_log, public.event_llm_review_queue,
+      public.event_tag_queue, public.source_extraction_traces, public.source_scrape_queue,
+      public.source_runs, public.event_sources
     CASCADE
   `)
   await db.query("DROP TYPE IF EXISTS public.source_extraction_mode CASCADE")
@@ -84,7 +96,9 @@ export async function ensureIngestionSchema(db: DbService): Promise<void> {
 
   // Events columns written by bulk_import_scrape_events (20260601004000) and
   // the admin field-lock feature, plus its ON CONFLICT (source_id, source_url)
-  // partial unique index.
+  // partial unique index. ai_tag_model / ai_tag_status come from the schema
+  // baseline and are written by the tag-event update (U29); CHECKs trimmed
+  // like the llm_review_* block above.
   await db.query(`
     ALTER TABLE public.events
       ADD COLUMN IF NOT EXISTS llm_review_decision public.llm_event_review_decision,
@@ -96,7 +110,17 @@ export async function ensureIngestionSchema(db: DbService): Promise<void> {
       ADD COLUMN IF NOT EXISTS llm_review_prompt_version text,
       ADD COLUMN IF NOT EXISTS llm_reviewed_at timestamptz,
       ADD COLUMN IF NOT EXISTS llm_review_error text,
-      ADD COLUMN IF NOT EXISTS admin_locked_fields text[] DEFAULT '{}'::text[] NOT NULL
+      ADD COLUMN IF NOT EXISTS admin_locked_fields text[] DEFAULT '{}'::text[] NOT NULL,
+      ADD COLUMN IF NOT EXISTS ai_tag_model text,
+      ADD COLUMN IF NOT EXISTS ai_tag_status text
+  `)
+  // event_tags classification columns from the schema baseline (the U28
+  // catalog predates classification and creates only event_id/tag_id).
+  await db.query(`
+    ALTER TABLE public.event_tags
+      ADD COLUMN IF NOT EXISTS confidence numeric(4,3) DEFAULT 1.0 NOT NULL,
+      ADD COLUMN IF NOT EXISTS is_manual_override boolean DEFAULT false NOT NULL,
+      ADD COLUMN IF NOT EXISTS created_at timestamptz DEFAULT now() NOT NULL
   `)
   await db.query(`
     CREATE UNIQUE INDEX IF NOT EXISTS events_source_id_source_url_uniq
@@ -276,6 +300,98 @@ export async function ensureIngestionSchema(db: DbService): Promise<void> {
     )
   `)
 
+  // Minimal stub for the auth.users FKs below (ai_feature_config.updated_by,
+  // admin_event_decisions.admin_user_id) — same convention as
+  // identity.integration.test.ts.
+  await db.query("CREATE SCHEMA IF NOT EXISTS auth")
+  await db.query("CREATE TABLE IF NOT EXISTS auth.users (id uuid PRIMARY KEY)")
+
+  // Classification trace rows written by tag-event — verbatim from the schema
+  // baseline, with prompt_version folded in from 20260601005000 (both of that
+  // file's duplicate ADD COLUMN blocks are identical). event_id is a bare uuid
+  // in the real schema (no FK), so queue-side deletes never cascade here.
+  await db.query(`
+    CREATE TABLE public.event_ai_traces (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      event_id uuid NOT NULL,
+      source_run_id uuid,
+      trigger_type text NOT NULL DEFAULT 'import',
+      provider text,
+      model text,
+      status text NOT NULL DEFAULT 'success',
+      input_title text NOT NULL,
+      input_description text,
+      available_tag_slugs jsonb NOT NULL DEFAULT '[]'::jsonb,
+      predicted_tags jsonb NOT NULL DEFAULT '[]'::jsonb,
+      predicted_fields jsonb,
+      reasoning_summary text,
+      fallback_reason text,
+      processing_ms integer,
+      prompt_version text,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      CONSTRAINT event_ai_traces_provider_check CHECK (
+        (provider IS NULL) OR (provider = ANY (ARRAY[
+          'openai'::text, 'ollama'::text, 'localai'::text
+        ]))
+      ),
+      CONSTRAINT event_ai_traces_status_check CHECK (status = ANY (ARRAY[
+        'success'::text, 'fallback'::text, 'error'::text
+      ])),
+      CONSTRAINT event_ai_traces_trigger_type_check CHECK (trigger_type = ANY (ARRAY[
+        'import'::text, 'reclassify'::text, 'manual-review'::text
+      ]))
+    )
+  `)
+  // Admin decisions feed memory-context's few-shot prompts — verbatim from
+  // 20260601021000 (its perf indexes trimmed; nothing behavioral).
+  await db.query(`
+    CREATE TABLE public.admin_event_decisions (
+      id bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+      event_id uuid NOT NULL REFERENCES public.events (id) ON DELETE CASCADE,
+      admin_user_id uuid REFERENCES auth.users (id) ON DELETE SET NULL,
+      decision_type text NOT NULL
+        CHECK (decision_type IN ('status_change', 'tag_edit', 'status_and_tags')),
+      old_status public.event_status,
+      new_status public.event_status,
+      old_tags jsonb,
+      new_tags jsonb,
+      reason text,
+      source_context jsonb,
+      created_at timestamptz NOT NULL DEFAULT now()
+    )
+  `)
+  // AI model allowlist + per-feature config. CREATE TABLEs verbatim from
+  // 20260601005000 (that file re-runs the same blocks twice; identical; seed
+  // INSERTs / RLS / GRANTs trimmed) EXCEPT the feature CHECK, which
+  // 20260601020000 replaces to also allow 'parent-tips' and the memory
+  // feature flags getMemoryFeatureFlag reads ('tag-memory', 'review-memory',
+  // 'source-auto-reject'). The gpt-5 statements in 05000 are data updates,
+  // not DDL — test seeds own their rows.
+  await db.query(`
+    CREATE TABLE public.approved_ai_models (
+      id text PRIMARY KEY,
+      provider text NOT NULL CHECK (provider IN ('openai', 'ollama', 'localai')),
+      display_name text NOT NULL,
+      description text NOT NULL DEFAULT '',
+      cost_tier text NOT NULL DEFAULT 'medium'
+        CHECK (cost_tier IN ('low', 'medium', 'high')),
+      is_enabled bool NOT NULL DEFAULT true
+    )
+  `)
+  await db.query(`
+    CREATE TABLE public.ai_feature_config (
+      feature text PRIMARY KEY
+        CONSTRAINT ai_feature_config_feature_check CHECK (feature IN (
+          'tagging'::text, 'event-review'::text, 'parent-tips'::text,
+          'tag-memory'::text, 'review-memory'::text, 'source-auto-reject'::text
+        )),
+      model_id text NOT NULL REFERENCES public.approved_ai_models (id),
+      enabled bool NOT NULL DEFAULT true,
+      updated_at timestamptz NOT NULL DEFAULT now(),
+      updated_by uuid REFERENCES auth.users (id)
+    )
+  `)
+
   await db.query("CREATE SCHEMA IF NOT EXISTS private")
   await db.query(`
     CREATE OR REPLACE FUNCTION public.invoke_process_tag_queue() RETURNS void
@@ -293,8 +409,10 @@ export async function ensureIngestionSchema(db: DbService): Promise<void> {
 
 export async function truncateIngestion(db: DbService): Promise<void> {
   await db.query(`TRUNCATE
-    public.admin_audit_log, public.event_llm_review_queue, public.event_tag_queue,
-    public.source_extraction_traces, public.source_scrape_queue, public.source_runs,
-    public.event_sources, public.events, public.cities
+    public.ai_feature_config, public.approved_ai_models, public.admin_event_decisions,
+    public.event_ai_traces, public.admin_audit_log, public.event_llm_review_queue,
+    public.event_tag_queue, public.source_extraction_traces, public.source_scrape_queue,
+    public.source_runs, public.event_sources, public.event_tags, public.tags,
+    public.events, public.cities
     CASCADE`)
 }
