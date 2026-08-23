@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 
 import {
   processReviewQueueBatch,
@@ -26,6 +26,7 @@ class FakeReviewQueueDb implements ReviewQueueDb {
   sourceCheckCalls: string[] = []
   traces: Array<{ status: string; eventId: string }> = []
   standaloneTraceInsertError: Error | null = null
+  applyEventDecisionError: Error | null = null
   updates = new Map<number, Record<string, unknown>>()
   releaseCalls: number[][] = []
 
@@ -80,6 +81,7 @@ class FakeReviewQueueDb implements ReviewQueueDb {
   async applyEventDecision(
     params: Parameters<ReviewQueueDb["applyEventDecision"]>[0]
   ): Promise<boolean> {
+    if (this.applyEventDecisionError) throw this.applyEventDecisionError
     const loadedEvent = this.events.get(params.event.id)
     if (!loadedEvent || loadedEvent.status !== "draft") return false
     this.updates.set(params.queueRow.id, { status: "succeeded" })
@@ -317,6 +319,28 @@ describe("processReviewQueueBatch", () => {
     expect(db.traces).toEqual([{ status: "succeeded", eventId: "event-1" }])
   })
 
+  it("retries an auto-reject apply failure without falling through to the LLM", async () => {
+    const db = new FakeReviewQueueDb()
+    db.claimedRows = [row(1, { source_id: "source-1" })]
+    db.events.set("event-1", event("event-1"))
+    db.featureFlags.set("source-auto-reject", true)
+    db.autoRejectedSources.add("source-1")
+    db.applyEventDecisionError = new Error("apply unavailable")
+    let reviewCalls = 0
+
+    const summary = await runBatch(db, {
+      reviewEvent: async () => {
+        reviewCalls += 1
+        return decision()
+      },
+    })
+
+    expect(reviewCalls).toBe(0)
+    expect(summary.retrying).toBe(1)
+    expect(summary.dead).toBe(0)
+    expect(db.updates.get(1)?.status).toBe("retrying")
+  })
+
   it("calls the LLM and skips the source lookup when source-auto-reject is disabled", async () => {
     const db = new FakeReviewQueueDb()
     db.claimedRows = [row(1, { source_id: "source-1" })]
@@ -334,6 +358,35 @@ describe("processReviewQueueBatch", () => {
     expect(summary.approved).toBe(1)
     expect(reviewCalls).toBe(1)
     expect(db.sourceCheckCalls).toEqual([])
+  })
+
+  it("does not retry a successful apply when post-apply telemetry throws", async () => {
+    const db = new FakeReviewQueueDb()
+    db.claimedRows = [row(1)]
+    db.events.set("event-1", event("event-1"))
+    const consoleWarn = vi.spyOn(console, "warn").mockImplementation((message) => {
+      if (String(message).includes("event_review_provider_failed")) {
+        throw new Error("telemetry unavailable")
+      }
+    })
+
+    try {
+      const summary = await runBatch(db, {
+        reviewEvent: async () =>
+          decision(LLM_EVENT_REVIEW_DECISION.NEEDS_ADMIN_REVIEW, {
+            status: LLM_EVENT_REVIEW_STATUS.FAILED,
+            modelDecision: null,
+            errorCode: "provider_error",
+            errorMessage: "provider unavailable",
+          }),
+      })
+
+      expect(summary).toMatchObject({ succeeded: 1, failed: 1, retrying: 0, dead: 0 })
+      expect(db.updates.get(1)?.status).toBe("succeeded")
+      expect(db.traces).toEqual([{ status: "failed", eventId: "event-1" }])
+    } finally {
+      consoleWarn.mockRestore()
+    }
   })
 
   it("records a failed trace and routes thrown LLM errors through retry then dead-letter", async () => {

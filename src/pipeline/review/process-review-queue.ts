@@ -273,53 +273,65 @@ async function maybeAutoRejectSource(
 ): Promise<EventReviewQueueRowResult | null> {
   if (!startedRow.source_id) return null
 
+  let shouldAutoReject: boolean
   try {
     // The source RPC is intentionally unreachable unless this flag is enabled.
     if (!(await isMemoryFeatureEnabled(db, "source-auto-reject"))) return null
-    if (!(await db.shouldAutoRejectSource(startedRow.source_id))) return null
+    shouldAutoReject = await db.shouldAutoRejectSource(startedRow.source_id)
+  } catch {
+    // Auto-reject lookup failures are non-fatal; continue to normal review.
+    return null
+  }
+  if (!shouldAutoReject) return null
 
-    const review: AppliedLlmEventReviewDecision = {
-      status: LLM_EVENT_REVIEW_STATUS.SUCCEEDED,
-      modelDecision: LLM_EVENT_REVIEW_DECISION.REJECT,
-      appliedDecision: LLM_EVENT_REVIEW_DECISION.REJECT,
-      confidence: 0.95,
-      reason: "Source has consistently high rejection rate; auto-rejected without LLM review.",
-      flags: ["source_auto_rejected"],
-      suggestedCategory: null,
-      normalizedTitle: null,
-      provider: null,
-      model: null,
-      promptVersion: dependencies.config.promptVersion,
-      rawResponse: null,
-      errorCode: null,
-      errorMessage: null,
-      processingMs: 0,
-    }
-    const applied = await db.applyEventDecision({ event, queueRow: startedRow, review })
-    if (!applied) {
-      return handleNonReviewableEvent(
-        db,
-        dependencies,
-        startedRow,
-        event,
-        "Event status changed while applying review decision."
-      )
-    }
+  const review: AppliedLlmEventReviewDecision = {
+    status: LLM_EVENT_REVIEW_STATUS.SUCCEEDED,
+    modelDecision: LLM_EVENT_REVIEW_DECISION.REJECT,
+    appliedDecision: LLM_EVENT_REVIEW_DECISION.REJECT,
+    confidence: 0.95,
+    reason: "Source has consistently high rejection rate; auto-rejected without LLM review.",
+    flags: ["source_auto_rejected"],
+    suggestedCategory: null,
+    normalizedTitle: null,
+    provider: null,
+    model: null,
+    promptVersion: dependencies.config.promptVersion,
+    rawResponse: null,
+    errorCode: null,
+    errorMessage: null,
+    processingMs: 0,
+  }
+  const applied = await db.applyEventDecision({ event, queueRow: startedRow, review })
+  if (!applied) {
+    return handleNonReviewableEvent(
+      db,
+      dependencies,
+      startedRow,
+      event,
+      "Event status changed while applying review decision."
+    )
+  }
 
+  runPostApplyTelemetry(() => {
     logEdgeEvent("log", "event_review_source_auto_rejected", {
       function: "process-event-review-queue",
       queue_id: startedRow.id,
       event_id: event.id,
       source_id: startedRow.source_id,
     })
-    return {
-      outcome: "succeeded",
-      appliedDecision: LLM_EVENT_REVIEW_DECISION.REJECT,
-      failed: false,
-    }
+  })
+  return {
+    outcome: "succeeded",
+    appliedDecision: LLM_EVENT_REVIEW_DECISION.REJECT,
+    failed: false,
+  }
+}
+
+function runPostApplyTelemetry(telemetry: () => void): void {
+  try {
+    telemetry()
   } catch {
-    // Auto-reject lookup failures are non-fatal; continue to normal review.
-    return null
+    // The transactional RPC already completed the event, trace, and queue row.
   }
 }
 
@@ -408,15 +420,20 @@ async function processReviewQueueRow(
       )
     }
 
-    logReviewSignals(dependencies, startedRow, event, review)
-    logEdgeEvent("log", "event_review_applied", {
-      function: "process-event-review-queue",
-      queue_id: startedRow.id,
-      event_id: event.id,
-      applied_decision: review.appliedDecision,
-      model_decision: review.modelDecision,
-      status: review.status,
-      confidence: review.confidence,
+    const appliedEvent = event
+    runPostApplyTelemetry(() => {
+      logReviewSignals(dependencies, startedRow, appliedEvent, review)
+    })
+    runPostApplyTelemetry(() => {
+      logEdgeEvent("log", "event_review_applied", {
+        function: "process-event-review-queue",
+        queue_id: startedRow.id,
+        event_id: appliedEvent.id,
+        applied_decision: review.appliedDecision,
+        model_decision: review.modelDecision,
+        status: review.status,
+        confidence: review.confidence,
+      })
     })
     return {
       outcome: "succeeded",

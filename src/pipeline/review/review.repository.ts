@@ -66,6 +66,8 @@ SET status = 'dead'::public.llm_event_review_queue_status,
     last_error = left($2, 1000),
     updated_at = now()
 WHERE id = $1::bigint
+  AND status = 'processing'::public.llm_event_review_queue_status
+  AND finished_at IS NULL
 `
 
 const SCHEDULE_REVIEW_QUEUE_RETRY_SQL = `
@@ -76,6 +78,8 @@ SET status = 'retrying'::public.llm_event_review_queue_status,
     last_error = left($3, 1000),
     updated_at = now()
 WHERE id = $1::bigint
+  AND status = 'processing'::public.llm_event_review_queue_status
+  AND finished_at IS NULL
 `
 
 const LOAD_REVIEW_EVENT_SQL = `

@@ -495,6 +495,25 @@ describe("ReviewQueueDb decisions", () => {
     expect((await queueState(queueId)).status).toBe("processing")
   })
 
+  it("does not overwrite an RPC-succeeded row with retry or dead outcomes", async () => {
+    const { eventId } = await seedEvent()
+    const { queueId, row } = await activateReview(eventId)
+    const reviewEvent = await repo.loadReviewEvent(eventId)
+
+    expect(
+      await repo.applyEventDecision({ event: reviewEvent!, queueRow: row, review: approveReview })
+    ).toBe(true)
+    const succeeded = await queueState(queueId)
+    expect(succeeded.status).toBe("succeeded")
+    expect(succeeded.finished_at).not.toBeNull()
+
+    await repo.scheduleReviewQueueRetry(queueId, "2026-09-02T03:04:05Z", "ambiguous failure")
+    expect(await queueState(queueId)).toEqual(succeeded)
+
+    await repo.markReviewQueueRowDead(queueId, "ambiguous failure")
+    expect(await queueState(queueId)).toEqual(succeeded)
+  })
+
   it("auto-rejects only sources above the production rejection threshold", async () => {
     const cityId = await seedCity()
     const sourceId = await seedSource(cityId)
