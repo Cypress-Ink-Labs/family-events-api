@@ -22,7 +22,18 @@ export interface ChatCompletionOptions {
   fetchImpl?: typeof fetch
   failureMessagePrefix?: string
   providerName?: string
+  signal?: AbortSignal
   timeoutMs?: number
+}
+
+export class OpenAiChatCompletionHttpError extends Error {
+  constructor(
+    message: string,
+    readonly status: number
+  ) {
+    super(message)
+    this.name = "OpenAiChatCompletionHttpError"
+  }
 }
 
 function readTokenCount(value: unknown): number | null {
@@ -42,6 +53,12 @@ export async function postOpenAiChatCompletion(
 ): Promise<ChatCompletionResult> {
   const fetchImpl = options.fetchImpl ?? fetch
   const startedAt = Date.now()
+  const timeoutSignal =
+    options.timeoutMs == null ? undefined : AbortSignal.timeout(options.timeoutMs)
+  const signal =
+    options.signal && timeoutSignal
+      ? AbortSignal.any([options.signal, timeoutSignal])
+      : (options.signal ?? timeoutSignal)
   const response = await fetchImpl(`${options.baseUrl.replace(/\/+$/, "")}/chat/completions`, {
     method: "POST",
     headers: {
@@ -49,14 +66,14 @@ export async function postOpenAiChatCompletion(
       "Content-Type": "application/json",
     },
     body: JSON.stringify(options.body),
-    signal: options.timeoutMs == null ? undefined : AbortSignal.timeout(options.timeoutMs),
+    signal,
   })
 
   if (!response.ok) {
-    const errorBody = await response.text().catch(() => "")
     const prefix =
       options.failureMessagePrefix ?? `${options.providerName ?? "provider"} call failed`
-    throw new Error(`${prefix} (${response.status}): ${errorBody.slice(0, 200)}`)
+    await response.body?.cancel().catch(() => undefined)
+    throw new OpenAiChatCompletionHttpError(`${prefix} (${response.status})`, response.status)
   }
 
   const raw = await response.json()
