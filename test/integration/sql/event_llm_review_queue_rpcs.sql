@@ -1,10 +1,18 @@
 -- event_llm_review_queue worker RPCs, extracted VERBATIM from
--- family-events-backend 20260601004000_llm_review_and_enrichment.sql (U29)
--- and 20260601022000_source_auto_reject_and_stats.sql.
--- GRANT/REVOKE/ALTER FUNCTION ... OWNER TO/COMMENT ON statements omitted: the
--- bare test database has no anon/authenticated/service_role roles and no
--- "postgres" superuser to reassign ownership to.
+-- family-events-backend migrations (U29). GRANT/REVOKE/ALTER FUNCTION ...
+-- OWNER TO/COMMENT ON statements omitted: the bare test database has no
+-- anon/authenticated/service_role roles and no "postgres" superuser to
+-- reassign ownership to.
+--
+-- Function sources (latest version wins):
+--   claim_event_llm_review_queue_batch: 20260601004000_llm_review_and_enrichment.sql
+--   mark_event_llm_review_queue_row_started: 20260601004000_llm_review_and_enrichment.sql
+--   release_unstarted_event_llm_review_rows: 20260601004000_llm_review_and_enrichment.sql
+--   reap_stuck_event_llm_review_rows: 20260601004000_llm_review_and_enrichment.sql
+--   apply_event_llm_review_decision: 20260601017000_event_status_enum_and_validate_checks.sql
+--   should_auto_reject_source: 20260601022000_source_auto_reject_and_stats.sql
 
+-- Source: 20260601004000_llm_review_and_enrichment.sql lines 280-305
 CREATE OR REPLACE FUNCTION private.claim_event_llm_review_queue_batch(
   p_limit integer DEFAULT 20
 )
@@ -32,6 +40,7 @@ BEGIN
 END;
 $$;
 
+-- Source: 20260601004000_llm_review_and_enrichment.sql lines 307-316
 CREATE OR REPLACE FUNCTION public.claim_event_llm_review_queue_batch(
   p_limit integer DEFAULT 20
 )
@@ -43,6 +52,7 @@ AS $$
   SELECT * FROM private.claim_event_llm_review_queue_batch(p_limit);
 $$;
 
+-- Source: 20260601004000_llm_review_and_enrichment.sql lines 318-340
 CREATE OR REPLACE FUNCTION private.mark_event_llm_review_queue_row_started(
   p_queue_id bigint
 )
@@ -67,6 +77,7 @@ BEGIN
 END;
 $$;
 
+-- Source: 20260601004000_llm_review_and_enrichment.sql lines 342-351
 CREATE OR REPLACE FUNCTION public.mark_event_llm_review_queue_row_started(
   p_queue_id bigint
 )
@@ -78,6 +89,7 @@ AS $$
   SELECT private.mark_event_llm_review_queue_row_started(p_queue_id);
 $$;
 
+-- Source: 20260601004000_llm_review_and_enrichment.sql lines 353-376
 CREATE OR REPLACE FUNCTION private.release_unstarted_event_llm_review_rows(
   p_claimed_ids bigint[]
 )
@@ -103,6 +115,7 @@ BEGIN
 END;
 $$;
 
+-- Source: 20260601004000_llm_review_and_enrichment.sql lines 378-387
 CREATE OR REPLACE FUNCTION public.release_unstarted_event_llm_review_rows(
   p_claimed_ids bigint[]
 )
@@ -114,6 +127,7 @@ AS $$
   SELECT private.release_unstarted_event_llm_review_rows(p_claimed_ids);
 $$;
 
+-- Source: 20260601004000_llm_review_and_enrichment.sql lines 389-412
 CREATE OR REPLACE FUNCTION private.reap_stuck_event_llm_review_rows()
 RETURNS integer
 LANGUAGE plpgsql
@@ -139,6 +153,7 @@ BEGIN
 END;
 $$;
 
+-- Source: 20260601004000_llm_review_and_enrichment.sql lines 414-421
 CREATE OR REPLACE FUNCTION public.reap_stuck_event_llm_review_rows()
 RETURNS integer
 LANGUAGE sql
@@ -148,46 +163,26 @@ AS $$
   SELECT private.reap_stuck_event_llm_review_rows();
 $$;
 
-CREATE OR REPLACE FUNCTION private.apply_event_llm_review_decision(
-  p_queue_id bigint,
-  p_event_id uuid,
-  p_source_id uuid,
-  p_source_run_id uuid,
-  p_provider text,
-  p_model text,
-  p_prompt_version text,
-  p_review_status public.llm_event_review_status,
-  p_model_decision public.llm_event_review_decision,
-  p_applied_decision public.llm_event_review_decision,
-  p_confidence numeric,
-  p_reason text,
-  p_flags text[],
-  p_suggested_category text,
-  p_normalized_title text,
-  p_raw_response jsonb,
-  p_error_code text,
-  p_error_message text,
-  p_input_snapshot jsonb,
-  p_processing_ms integer
-)
-RETURNS boolean
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path TO ''
-AS $$
+-- Source: 20260601017000_event_status_enum_and_validate_checks.sql (supersedes 20260601004000)
+CREATE OR REPLACE FUNCTION private.apply_event_llm_review_decision(p_queue_id bigint, p_event_id uuid, p_source_id uuid, p_source_run_id uuid, p_provider text, p_model text, p_prompt_version text, p_review_status llm_event_review_status, p_model_decision llm_event_review_decision, p_applied_decision llm_event_review_decision, p_confidence numeric, p_reason text, p_flags text[], p_suggested_category text, p_normalized_title text, p_raw_response jsonb, p_error_code text, p_error_message text, p_input_snapshot jsonb, p_processing_ms integer)
+ RETURNS boolean
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
 DECLARE
   v_event_id uuid;
-  v_next_event_status public.event_status;
+  v_next_event_status text;
   v_now timestamptz := now();
 BEGIN
   v_next_event_status := CASE
-    WHEN p_applied_decision = 'approve'::public.llm_event_review_decision THEN 'published'::public.event_status
-    WHEN p_applied_decision = 'reject'::public.llm_event_review_decision THEN 'rejected'::public.event_status
-    ELSE 'draft'::public.event_status
+    WHEN p_applied_decision = 'approve'::public.llm_event_review_decision THEN 'published'
+    WHEN p_applied_decision = 'reject'::public.llm_event_review_decision THEN 'rejected'
+    ELSE 'draft'
   END;
 
   UPDATE public.events
-  SET status = v_next_event_status,
+  SET status = v_next_event_status::public.event_status,
       llm_review_status = p_review_status,
       llm_review_decision = p_applied_decision,
       llm_review_confidence = p_confidence,
@@ -268,8 +263,9 @@ BEGIN
 
   RETURN true;
 END;
-$$;
+$function$;
 
+-- Source: 20260601004000_llm_review_and_enrichment.sql lines 1299-1348
 CREATE OR REPLACE FUNCTION public.apply_event_llm_review_decision(
   p_queue_id bigint,
   p_event_id uuid,
@@ -321,6 +317,7 @@ AS $$
   );
 $$;
 
+-- Source: 20260601022000_source_auto_reject_and_stats.sql lines 13-37
 CREATE OR REPLACE FUNCTION private.should_auto_reject_source(
   p_source_id uuid,
   p_threshold float DEFAULT 0.8,
@@ -347,6 +344,7 @@ AS $$
   );
 $$;
 
+-- Source: 20260601022000_source_auto_reject_and_stats.sql lines 45-57
 CREATE OR REPLACE FUNCTION public.should_auto_reject_source(
   p_source_id uuid,
   p_threshold float DEFAULT 0.8,
