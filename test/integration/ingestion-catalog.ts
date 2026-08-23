@@ -37,6 +37,8 @@ import { ensureCatalogSchema } from "./catalog.js"
  *   reap queue RPCs, run_due_source_scrapes, run_cleanup_stale_runs)
  * - event_tag_queue_rpcs.sql <- schema baseline (claim/mark-started/release/
  *   reap tag queue RPCs, U29)
+ * - event_embeddings_similarity.sql <- 20260601020000 (requires a pgvector-
+ *   capable server image: pgvector/pgvector)
  *
  * Deviation: public.invoke_process_tag_queue is a no-op stub here — the real
  * function fires net.http_post (pg_net) at the deployed process-tag-queue edge
@@ -50,10 +52,10 @@ export async function ensureIngestionSchema(db: DbService): Promise<void> {
 
   await db.query(`
     DROP TABLE IF EXISTS
-      public.ai_feature_config, public.approved_ai_models, public.admin_event_decisions,
-      public.event_ai_traces, public.admin_audit_log, public.event_llm_review_queue,
-      public.event_tag_queue, public.source_extraction_traces, public.source_scrape_queue,
-      public.source_runs, public.event_sources
+      public.event_embeddings, public.ai_feature_config, public.approved_ai_models,
+      public.admin_event_decisions, public.event_ai_traces, public.admin_audit_log,
+      public.event_llm_review_queue, public.event_tag_queue, public.source_extraction_traces,
+      public.source_scrape_queue, public.source_runs, public.event_sources
     CASCADE
   `)
   await db.query("DROP TYPE IF EXISTS public.source_extraction_mode CASCADE")
@@ -402,6 +404,7 @@ export async function ensureIngestionSchema(db: DbService): Promise<void> {
     "find_cross_source_event_candidates.sql",
     "source_scrape_queue_rpcs.sql",
     "event_tag_queue_rpcs.sql",
+    "event_embeddings_similarity.sql",
   ]) {
     await db.query(readFileSync(join(SQL_DIR, file), "utf8"))
   }
