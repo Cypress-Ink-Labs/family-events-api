@@ -429,6 +429,55 @@ describe("ReviewQueueDb decisions", () => {
     expect(await queueState(queueId)).toMatchObject({ status: "succeeded", last_error: null })
   })
 
+  it("rejects the event with one reject trace and suppresses tag enqueue", async () => {
+    const cityId = await seedCity()
+    const sourceId = await seedSource(cityId)
+    const sourceRunId = await seedSourceRun(sourceId)
+    const { eventId } = await seedEvent({ cityId, sourceId })
+    const queueId = await enqueueReview({ eventId, sourceId, sourceRunId })
+    await repo.claimReviewQueueBatch(1)
+    const started = await repo.markReviewQueueRowStarted(queueId)
+    const event = await repo.loadReviewEvent(eventId)
+    const rejectReview: AppliedLlmEventReviewDecision = {
+      ...approveReview,
+      modelDecision: "reject",
+      appliedDecision: "reject",
+      confidence: 0.97,
+      reason: "Listing is not a family event.",
+      flags: ["not_family_event"],
+      suggestedCategory: null,
+      normalizedTitle: null,
+      rawResponse: { decision: "reject", confidence: 0.97 },
+    }
+
+    expect(
+      await repo.applyEventDecision({ event: event!, queueRow: started, review: rejectReview })
+    ).toBe(true)
+
+    const storedEvents = await db.query<{ status: string; llm_review_decision: string | null }>(
+      `SELECT status::text, llm_review_decision::text
+       FROM public.events WHERE id = $1::uuid`,
+      [eventId]
+    )
+    const traces = await db.query<{
+      model_decision: string | null
+      applied_decision: string | null
+    }>(
+      `SELECT model_decision::text, applied_decision::text
+       FROM public.event_llm_review_traces WHERE event_id = $1::uuid`,
+      [eventId]
+    )
+    const tagRows = await db.query<{ count: number }>(
+      "SELECT count(*)::int AS count FROM public.event_tag_queue WHERE event_id = $1::uuid",
+      [eventId]
+    )
+
+    expect(storedEvents[0]).toEqual({ status: "rejected", llm_review_decision: "reject" })
+    expect(traces).toEqual([{ model_decision: "reject", applied_decision: "reject" }])
+    expect(tagRows[0]!.count).toBe(0)
+    expect(await queueState(queueId)).toMatchObject({ status: "succeeded", last_error: null })
+  })
+
   it("returns false without a trace or queue completion for a non-draft event", async () => {
     const { eventId } = await seedEvent({ status: "published", llmReviewStatus: "pending" })
     const { queueId, row } = await activateReview(eventId)
