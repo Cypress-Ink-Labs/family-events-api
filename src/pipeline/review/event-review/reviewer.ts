@@ -1,3 +1,4 @@
+import { OpenAiChatCompletionHttpError } from "../../llm-openai.js"
 import { resolveLlmReviewConfig } from "./config.js"
 import { normalizeReviewEventInput } from "./normalizer.js"
 import { buildReviewPrompt } from "./prompt.js"
@@ -156,15 +157,18 @@ export async function reviewEventWithLlm(
   } catch (error) {
     const elapsed = (deps?.now?.() ?? Date.now()) - startedAt
     const message = error instanceof Error ? error.message : String(error)
-    const errorCode = message.includes("timeout")
-      ? "provider_timeout"
-      : message.startsWith("provider_http_")
+    const errorCode =
+      error instanceof OpenAiChatCompletionHttpError
         ? "provider_http_error"
-        : message === "invalid_json"
-          ? "malformed_json"
-          : message.startsWith("invalid_") || message.startsWith("unexpected_key")
-            ? "schema_validation_error"
-            : "provider_error"
+        : message.includes("timeout")
+          ? "provider_timeout"
+          : message.startsWith("provider_http_")
+            ? "provider_http_error"
+            : message === "invalid_json"
+              ? "malformed_json"
+              : message.startsWith("invalid_") || message.startsWith("unexpected_key")
+                ? "schema_validation_error"
+                : "provider_error"
 
     return failedDecision(
       config,
