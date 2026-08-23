@@ -23,9 +23,8 @@ CREATE INDEX IF NOT EXISTS event_embeddings_embedding_hnsw_idx
   USING hnsw (embedding extensions.vector_cosine_ops)
   WITH (m = 16, ef_construction = 64);
 
--- Covering index for event_id lookups (upsert, join)
-CREATE INDEX IF NOT EXISTS event_embeddings_event_id_idx
-  ON public.event_embeddings (event_id);
+-- No separate event_id btree index: the UNIQUE (event_id) constraint above
+-- already creates one (deliberate trim vs the legacy migration).
 
 CREATE OR REPLACE FUNCTION private.find_similar_events(
   p_embedding    extensions.vector(1536),
