@@ -306,7 +306,6 @@ async function maybeAutoRejectSource(
       )
     }
 
-    await insertTrace(db, startedRow, event, review, "succeeded")
     logEdgeEvent("log", "event_review_source_auto_rejected", {
       function: "process-event-review-queue",
       queue_id: startedRow.id,
@@ -410,13 +409,6 @@ async function processReviewQueueRow(
     }
 
     logReviewSignals(dependencies, startedRow, event, review)
-    await insertTrace(
-      db,
-      startedRow,
-      event,
-      review,
-      review.status === LLM_EVENT_REVIEW_STATUS.FAILED ? "failed" : "succeeded"
-    )
     logEdgeEvent("log", "event_review_applied", {
       function: "process-event-review-queue",
       queue_id: startedRow.id,

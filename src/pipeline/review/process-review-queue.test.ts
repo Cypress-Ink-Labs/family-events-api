@@ -25,6 +25,7 @@ class FakeReviewQueueDb implements ReviewQueueDb {
   autoRejectedSources = new Set<string>()
   sourceCheckCalls: string[] = []
   traces: Array<{ status: string; eventId: string }> = []
+  standaloneTraceInsertError: Error | null = null
   updates = new Map<number, Record<string, unknown>>()
   releaseCalls: number[][] = []
 
@@ -72,6 +73,7 @@ class FakeReviewQueueDb implements ReviewQueueDb {
   async insertReviewTrace(
     params: Parameters<ReviewQueueDb["insertReviewTrace"]>[0]
   ): Promise<void> {
+    if (this.standaloneTraceInsertError) throw this.standaloneTraceInsertError
     this.traces.push({ status: params.status, eventId: params.eventId })
   }
 
@@ -81,6 +83,10 @@ class FakeReviewQueueDb implements ReviewQueueDb {
     const loadedEvent = this.events.get(params.event.id)
     if (!loadedEvent || loadedEvent.status !== "draft") return false
     this.updates.set(params.queueRow.id, { status: "succeeded" })
+    this.traces.push({
+      status: params.review.status === LLM_EVENT_REVIEW_STATUS.FAILED ? "failed" : "succeeded",
+      eventId: params.event.id,
+    })
     return true
   }
 
@@ -254,6 +260,21 @@ describe("processReviewQueueBatch", () => {
 
     expect(summary.succeeded).toBe(3)
     expect(db.releaseCalls).toEqual([[4]])
+  })
+
+  it("does not retry an already-applied decision when standalone trace insertion fails", async () => {
+    const db = new FakeReviewQueueDb()
+    db.claimedRows = [row(1)]
+    db.events.set("event-1", event("event-1"))
+    db.standaloneTraceInsertError = new Error("standalone trace insert should not run")
+
+    const summary = await runBatch(db, { reviewEvent: async () => decision() })
+
+    expect(summary.succeeded).toBe(1)
+    expect(summary.retrying).toBe(0)
+    expect(summary.dead).toBe(0)
+    expect(db.updates.get(1)?.status).toBe("succeeded")
+    expect(db.traces).toEqual([{ status: "succeeded", eventId: "event-1" }])
   })
 
   it("skips a non-reviewable event without calling the LLM", async () => {
