@@ -150,19 +150,61 @@ export async function ensureCatalogSchema(db: DbService): Promise<void> {
       UNIQUE (user_id, event_id)
     )
   `)
+  // U29: expanded to the latest legacy DDL (20260601006000 CREATE TABLE +
+  // 20260601011000/20260601011001 ALTERs) — the pexels_*/pixabay_* columns,
+  // download-tracking columns, and the (event_id, image_url) UNIQUE the
+  // upsert RPC's ON CONFLICT needs. Perf-only indexes trimmed.
   await db.query(`
     CREATE TABLE public.event_image_attributions (
       id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
       event_id uuid NOT NULL REFERENCES public.events (id) ON DELETE CASCADE,
-      provider text NOT NULL,
       image_url text NOT NULL,
+      provider text NOT NULL DEFAULT 'unsplash'
+        CONSTRAINT event_image_attributions_provider_check
+        CHECK (provider IN ('pexels', 'pixabay', 'unsplash')),
       matched_tag text,
       unsplash_photo_id text,
       unsplash_photographer_name text,
       unsplash_photographer_username text,
       unsplash_photographer_profile_url text,
       unsplash_photo_url text,
-      created_at timestamptz NOT NULL DEFAULT now()
+      unsplash_download_location text,
+      download_tracked_at timestamptz,
+      download_tracking_status text NOT NULL DEFAULT 'pending'
+        CHECK (download_tracking_status IN ('pending', 'succeeded', 'failed')),
+      download_tracking_attempts integer NOT NULL DEFAULT 0
+        CHECK (download_tracking_attempts >= 0),
+      download_tracking_last_error text,
+      download_tracking_next_attempt_at timestamptz NOT NULL DEFAULT now(),
+      pexels_photo_id text,
+      pexels_photographer_name text,
+      pexels_photographer_profile_url text,
+      pexels_photo_url text,
+      pixabay_photo_id text,
+      pixabay_photographer_name text,
+      pixabay_photographer_username text,
+      pixabay_photo_url text,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now(),
+      CONSTRAINT event_image_attributions_unique_image UNIQUE (event_id, image_url),
+      CONSTRAINT event_image_attributions_provider_fields_check CHECK (
+        (provider = 'unsplash' AND
+          unsplash_photo_id IS NOT NULL AND
+          unsplash_photographer_name IS NOT NULL AND
+          unsplash_photographer_username IS NOT NULL AND
+          unsplash_photographer_profile_url IS NOT NULL AND
+          unsplash_photo_url IS NOT NULL AND
+          unsplash_download_location IS NOT NULL)
+        OR (provider = 'pexels' AND
+          pexels_photo_id IS NOT NULL AND
+          pexels_photographer_name IS NOT NULL AND
+          pexels_photographer_profile_url IS NOT NULL AND
+          pexels_photo_url IS NOT NULL)
+        OR (provider = 'pixabay' AND
+          pixabay_photo_id IS NOT NULL AND
+          pixabay_photographer_name IS NOT NULL AND
+          pixabay_photo_url IS NOT NULL)
+      )
     )
   `)
   await db.query(`
