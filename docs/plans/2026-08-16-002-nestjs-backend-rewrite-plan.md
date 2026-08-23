@@ -1,7 +1,8 @@
 # NestJS backend rewrite plan (reconstructed) — units U20–U33
 
 **Status:** U20, U21, U22, U23, U24, U25, and U26 done; U27 foundation landed
-(topology + gate + failure pings); U28/U30 pure-logic ports landed; U28–U33 remaining.
+(topology + gate + failure pings); U28/U30 pure-logic ports landed; U29 pgvector
+infrastructure wired; U28–U33 remaining.
 **Supersedes:** old U13–U18 of `2026-08-14-001` (production-readiness plan), per the mid-session
 redirect: *everything server-side moves to NestJS*.
 
@@ -155,12 +156,21 @@ verbatim into `test/integration/sql/`; boot verified both ways (flag on: queue +
 schedules created; production without flag: nothing installed). LLM fallback extraction
 ported (`llm-config`/`llm-openai`, `deterministic_then_llm` semantics, 45s budget).
 
-### U29 — Classification + enrichment port
+### U29 — Classification + enrichment port 🟡 (pgvector infrastructure wired)
 Tag queue worker (batch 20, concurrency 4) + LLM tagging; review queue worker
 (concurrency 3, 110s budget, release-unstarted — plan 037) + memory-context bulk
 hydration (036); enrichment/backfill, embeddings (OpenAI), parent tips, geocode
 (Nominatim, degrade on 429), stock images (Unsplash/Pexels/Pixabay). LLM routing via
 `approved_ai_models` / `ai_feature_config`.
+
+pgvector infrastructure for event similarity: `event_embeddings` table, HNSW cosine
+index + event_id covering index, `private.find_similar_events` and
+`public.find_similar_events` RPCs — **wired into integration test catalog with full
+test suite** (`.github/workflows/ci.yml` switched to `pgvector/pgvector:pg17` image;
+`test/integration/sql/event_embeddings_similarity.sql` extracted verbatim from
+`20260601020000_event_embeddings_and_similarity.sql`; `ClassificationRepository.findSimilarEvents`
+integration tests cover threshold/limit/exclude/city filtering). Remaining: the
+repository implementation itself + LLM enrichment worker integration.
 
 ### U30 — Notifications port 🟡 (weekend window landed)
 `notification_queue` processing with fail-before-side-effects hydration semantics (032);
