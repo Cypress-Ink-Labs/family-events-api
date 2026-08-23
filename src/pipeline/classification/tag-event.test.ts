@@ -8,6 +8,7 @@ import {
   type AvailableTag,
   type CityLocationRow,
   type ClassificationOutput,
+  type ClassificationResult,
   type CurrentEvent,
   type TagAssignmentUpsert,
   type TagEventDb,
@@ -140,6 +141,50 @@ function buildDeps(db: TagEventDb, overrides: Partial<TagEventDeps> = {}): TagEv
   }
 }
 
+// ── Fixtures ─────────────────────────────────────────────────────────────────
+
+// Full ClassificationOutput so each test overrides only the fields its
+// scenario cares about; llmUsage defaults to null (keyword/unused path).
+function classifyResult(
+  overrides: Partial<ClassificationResult> = {},
+  llmUsage: ClassificationOutput["llmUsage"] = null
+): ClassificationOutput {
+  return {
+    classification: {
+      tags: [],
+      ageMin: null,
+      ageMax: null,
+      price: null,
+      isFree: false,
+      venueName: null,
+      provider: "openai",
+      reasoningSummary: "classified",
+      status: "success",
+      fallbackReason: null,
+      model: "gpt-4o-mini",
+      ...overrides,
+    },
+    llmUsage,
+  }
+}
+
+// Minimal persisted-event row; tests override only what their scenario reads.
+function eventRow(id: string, title: string, overrides: Partial<FakeEvent> = {}): FakeEvent {
+  return {
+    id,
+    title,
+    description: null,
+    price: null,
+    is_free: true,
+    venue_name: null,
+    address: null,
+    latitude: 30,
+    longitude: -90,
+    city_id: null,
+    ...overrides,
+  }
+}
+
 // ── processTagEvent ──────────────────────────────────────────────────────────
 
 describe("processTagEvent", () => {
@@ -159,18 +204,19 @@ describe("processTagEvent", () => {
       { id: "tag-outdoor", slug: "outdoor", name: "Outdoor" },
       { id: "tag-manual", slug: "manual", name: "Manual" },
     ]
-    db.events.set("evt-1", {
-      id: "evt-1",
-      title: "Existing park meetup",
-      description: "Old description",
-      price: 9,
-      is_free: false,
-      venue_name: "Existing Venue",
-      address: null,
-      latitude: null,
-      longitude: null,
-      city_id: "city-1",
-    })
+    db.events.set(
+      "evt-1",
+      eventRow("evt-1", "Existing park meetup", {
+        description: "Old description",
+        price: 9,
+        is_free: false,
+        venue_name: "Existing Venue",
+        // Starts null so the geocoded coordinates below are observably filled in.
+        latitude: null,
+        longitude: null,
+        city_id: "city-1",
+      })
+    )
     db.eventTags = [
       { event_id: "evt-1", tag_id: "tag-manual", confidence: 1, is_manual_override: true },
       { event_id: "evt-1", tag_id: "tag-old", confidence: 0.25, is_manual_override: false },
@@ -184,32 +230,29 @@ describe("processTagEvent", () => {
 
     const geocodeQueries: string[] = []
     const deps = buildDeps(db, {
-      classify: (): Promise<ClassificationOutput> =>
-        Promise.resolve({
-          classification: {
-            tags: [
-              { slug: "outdoor", confidence: 0.9, reason: "park" },
-              { slug: "free", confidence: 0.8, reason: "free" },
-            ],
-            ageMin: 3,
-            ageMax: 8,
-            price: 12,
-            isFree: true,
-            venueName: "New Venue",
-            provider: "openai",
-            reasoningSummary: "classified",
-            status: "success",
-            fallbackReason: null,
-            model: "gpt-4o-mini",
-          },
-          llmUsage: {
-            promptTokens: 10,
-            completionTokens: 5,
-            totalTokens: 15,
-            llmLatencyMs: 25,
-            finishReason: "stop",
-          },
-        }),
+      classify: () =>
+        Promise.resolve(
+          classifyResult(
+            {
+              tags: [
+                { slug: "outdoor", confidence: 0.9, reason: "park" },
+                { slug: "free", confidence: 0.8, reason: "free" },
+              ],
+              ageMin: 3,
+              ageMax: 8,
+              price: 12,
+              isFree: true,
+              venueName: "New Venue",
+            },
+            {
+              promptTokens: 10,
+              completionTokens: 5,
+              totalTokens: 15,
+              llmLatencyMs: 25,
+              finishReason: "stop",
+            }
+          )
+        ),
       geocode: (query: string) => {
         geocodeQueries.push(query)
         return Promise.resolve(null)
@@ -262,37 +305,24 @@ describe("processTagEvent", () => {
   it("normalizes fractional AI age ranges before persistence", async () => {
     const db = new FakeTagEventDb()
     db.tags = [{ id: "tag-storytime", slug: "storytime", name: "Storytime" }]
-    db.events.set("evt-fractional-age", {
-      id: "evt-fractional-age",
-      title: "Little Gym at the Library",
-      description: "For children 2.5 years to 5 years old.",
-      price: null,
-      is_free: true,
-      venue_name: null,
-      address: null,
-      latitude: 30,
-      longitude: -90,
-      city_id: null,
-    })
+    db.events.set(
+      "evt-fractional-age",
+      eventRow("evt-fractional-age", "Little Gym at the Library", {
+        description: "For children 2.5 years to 5 years old.",
+      })
+    )
 
     const deps = buildDeps(db, {
-      classify: (): Promise<ClassificationOutput> =>
-        Promise.resolve({
-          classification: {
+      classify: () =>
+        Promise.resolve(
+          classifyResult({
             tags: [{ slug: "storytime", confidence: 0.82, reason: "library" }],
             ageMin: 2.5,
             ageMax: 5,
-            price: null,
             isFree: true,
             venueName: "South Regional Library",
-            provider: "openai",
-            reasoningSummary: "classified",
-            status: "success",
-            fallbackReason: null,
-            model: "gpt-4o-mini",
-          },
-          llmUsage: null,
-        }),
+          })
+        ),
     })
 
     const body = await processTagEvent(
@@ -319,23 +349,15 @@ describe("processTagEvent", () => {
     const db = new FakeTagEventDb()
     db.tags = [{ id: "tag-storytime", slug: "storytime", name: "Storytime" }]
     const deps = buildDeps(db, {
-      classify: (): Promise<ClassificationOutput> =>
-        Promise.resolve({
-          classification: {
+      classify: () =>
+        Promise.resolve(
+          classifyResult({
             tags: [{ slug: "storytime", confidence: 0.7, reason: "keyword" }],
-            ageMin: null,
-            ageMax: null,
-            price: null,
-            isFree: false,
-            venueName: null,
-            provider: "openai",
-            reasoningSummary: "Keyword fallback classified this event.",
             status: "fallback",
+            reasoningSummary: "Keyword fallback classified this event.",
             fallbackReason: "openai classification failed (500)",
-            model: "gpt-4o-mini",
-          },
-          llmUsage: null,
-        }),
+          })
+        ),
     })
 
     const body = await processTagEvent(
@@ -353,37 +375,16 @@ describe("processTagEvent", () => {
   it("includes prompt_version in trace insert", async () => {
     const db = new FakeTagEventDb()
     db.tags = [{ id: "tag-outdoor", slug: "outdoor", name: "Outdoor" }]
-    db.events.set("evt-pv", {
-      id: "evt-pv",
-      title: "Park day",
-      description: "Outdoor fun",
-      price: null,
-      is_free: true,
-      venue_name: null,
-      address: null,
-      latitude: 30,
-      longitude: -90,
-      city_id: null,
-    })
+    db.events.set("evt-pv", eventRow("evt-pv", "Park day", { description: "Outdoor fun" }))
 
     const deps = buildDeps(db, {
-      classify: (): Promise<ClassificationOutput> =>
-        Promise.resolve({
-          classification: {
+      classify: () =>
+        Promise.resolve(
+          classifyResult({
             tags: [{ slug: "outdoor", confidence: 0.9, reason: "park" }],
-            ageMin: null,
-            ageMax: null,
-            price: null,
-            isFree: true,
-            venueName: null,
-            provider: "openai" as const,
-            reasoningSummary: null,
-            status: "success" as const,
-            fallbackReason: null,
             model: "gpt-4.1-nano",
-          },
-          llmUsage: null,
-        }),
+          })
+        ),
     })
 
     await processTagEvent({ event_id: "evt-pv", title: "Park day" }, deps)

@@ -69,51 +69,77 @@ async function queueRowById(id: number) {
   return rows[0]!
 }
 
+// ── RPC call helpers (one place per RPC keeps the SQL strings single-sourced) ─
+
+async function claimBatch(limit: number): Promise<number[]> {
+  const rows = await db.query<{ id: number }>(
+    "SELECT id::int AS id FROM public.claim_tag_queue_batch($1::int)",
+    [limit]
+  )
+  return rows.map((row) => row.id)
+}
+
+async function markStarted(
+  id: number
+): Promise<{ attempt_count: number; started_at: string | null }> {
+  const rows = await db.query<{ attempt_count: number; started_at: string | null }>(
+    "SELECT attempt_count, started_at FROM public.mark_tag_queue_row_started($1::bigint)",
+    [id]
+  )
+  return rows[0]!
+}
+
+async function releaseUnstarted(ids: number[]): Promise<number> {
+  const rows = await db.query<{ released: number }>(
+    "SELECT public.release_unstarted_tag_queue_rows($1::bigint[]) AS released",
+    [ids]
+  )
+  return Number(rows[0]?.released)
+}
+
+async function reapStuck(): Promise<number> {
+  const rows = await db.query<{ reaped: number }>(
+    "SELECT public.reap_stuck_tag_queue_rows() AS reaped"
+  )
+  return Number(rows[0]?.reaped)
+}
+
 describe("claim_tag_queue_batch (real SQL)", () => {
   it("claims oldest-first, marks processing with started_at cleared, and a further claim finds nothing", async () => {
     const second = await enqueue({ next_attempt_at: "2026-06-02T00:00:00Z" })
     const first = await enqueue({ next_attempt_at: "2026-06-01T00:00:00Z" })
 
-    const claimedFirst = await db.query<{ id: number }>(
-      "SELECT id::int AS id FROM public.claim_tag_queue_batch(1)"
-    )
-    expect(claimedFirst.map((row) => row.id)).toEqual([first])
+    expect(await claimBatch(1)).toEqual([first])
     const firstRow = await queueRowById(first)
     expect(firstRow.status).toBe("processing")
     expect(firstRow.started_at).toBeNull()
 
-    const claimedSecond = await db.query<{ id: number }>(
-      "SELECT id::int AS id FROM public.claim_tag_queue_batch(1)"
-    )
-    expect(claimedSecond.map((row) => row.id)).toEqual([second])
+    expect(await claimBatch(1)).toEqual([second])
 
-    expect(await db.query("SELECT id FROM public.claim_tag_queue_batch(1)")).toEqual([])
+    expect(await claimBatch(1)).toEqual([])
   })
 
   it("does not claim rows parked in the future", async () => {
     await enqueue({ next_attempt_at: "2199-01-01T00:00:00Z" })
-    expect(await db.query("SELECT id FROM public.claim_tag_queue_batch(5)")).toEqual([])
+    expect(await claimBatch(5)).toEqual([])
   })
 
   it("does not claim rows that are not pending", async () => {
     await enqueue({ status: "processing" })
     await enqueue({ status: "succeeded" })
     await enqueue({ status: "dead" })
-    expect(await db.query("SELECT id FROM public.claim_tag_queue_batch(5)")).toEqual([])
+    expect(await claimBatch(5)).toEqual([])
   })
 })
 
 describe("mark_tag_queue_row_started (real SQL)", () => {
   it("stamps started_at and increments attempt_count for a claimed row", async () => {
     const id = await enqueue()
-    await db.query("SELECT * FROM public.claim_tag_queue_batch(1)")
+    await claimBatch(1)
 
-    const [started] = await db.query<{ attempt_count: number; started_at: string | null }>(
-      "SELECT attempt_count, started_at FROM public.mark_tag_queue_row_started($1::bigint)",
-      [id]
-    )
-    expect(started?.attempt_count).toBe(1)
-    expect(started?.started_at).not.toBeNull()
+    const started = await markStarted(id)
+    expect(started.attempt_count).toBe(1)
+    expect(started.started_at).not.toBeNull()
 
     const row = await queueRowById(id)
     expect(row.attempt_count).toBe(1)
@@ -132,8 +158,8 @@ describe("mark_tag_queue_row_started (real SQL)", () => {
 
   it("does not double-stamp a row that was already marked started", async () => {
     const id = await enqueue()
-    await db.query("SELECT * FROM public.claim_tag_queue_batch(1)")
-    await db.query("SELECT * FROM public.mark_tag_queue_row_started($1::bigint)", [id])
+    await claimBatch(1)
+    await markStarted(id)
 
     const [again] = await db.query<{ id: number | null }>(
       "SELECT id::int AS id FROM public.mark_tag_queue_row_started($1::bigint)",
@@ -147,13 +173,9 @@ describe("mark_tag_queue_row_started (real SQL)", () => {
 describe("release_unstarted_tag_queue_rows (real SQL)", () => {
   it("returns unstarted claims to pending", async () => {
     const id = await enqueue()
-    await db.query("SELECT * FROM public.claim_tag_queue_batch(1)")
+    await claimBatch(1)
 
-    const [row] = await db.query<{ released: number }>(
-      "SELECT public.release_unstarted_tag_queue_rows($1::bigint[]) AS released",
-      [[id]]
-    )
-    expect(Number(row?.released)).toBe(1)
+    expect(await releaseUnstarted([id])).toBe(1)
     const queueRow = await queueRowById(id)
     expect(queueRow.status).toBe("pending")
     expect(queueRow.started_at).toBeNull()
@@ -161,14 +183,10 @@ describe("release_unstarted_tag_queue_rows (real SQL)", () => {
 
   it("does not release a row that was already marked started", async () => {
     const id = await enqueue()
-    await db.query("SELECT * FROM public.claim_tag_queue_batch(1)")
-    await db.query("SELECT * FROM public.mark_tag_queue_row_started($1::bigint)", [id])
+    await claimBatch(1)
+    await markStarted(id)
 
-    const [row] = await db.query<{ released: number }>(
-      "SELECT public.release_unstarted_tag_queue_rows($1::bigint[]) AS released",
-      [[id]]
-    )
-    expect(Number(row?.released)).toBe(0)
+    expect(await releaseUnstarted([id])).toBe(0)
     expect((await queueRowById(id)).status).toBe("processing")
   })
 })
@@ -177,10 +195,7 @@ describe("reap_stuck_tag_queue_rows (real SQL)", () => {
   it("reaps rows stuck in processing with started_at over 15 minutes old", async () => {
     const id = await enqueue({ status: "processing", started_at: "2026-06-01T00:00:00Z" })
 
-    const [row] = await db.query<{ reaped: number }>(
-      "SELECT public.reap_stuck_tag_queue_rows() AS reaped"
-    )
-    expect(Number(row?.reaped)).toBe(1)
+    expect(await reapStuck()).toBe(1)
     const queueRow = await queueRowById(id)
     expect(queueRow.status).toBe("pending")
     expect(queueRow.started_at).toBeNull()
@@ -194,20 +209,14 @@ describe("reap_stuck_tag_queue_rows (real SQL)", () => {
       next_attempt_at: new Date(Date.now() - 10 * 60_000).toISOString(),
     })
 
-    const [row] = await db.query<{ reaped: number }>(
-      "SELECT public.reap_stuck_tag_queue_rows() AS reaped"
-    )
-    expect(Number(row?.reaped)).toBe(1)
+    expect(await reapStuck()).toBe(1)
     expect((await queueRowById(id)).status).toBe("pending")
   })
 
   it("does not touch rows recently claimed and not yet stuck", async () => {
     const id = await enqueue({ status: "processing", started_at: null })
 
-    const [row] = await db.query<{ reaped: number }>(
-      "SELECT public.reap_stuck_tag_queue_rows() AS reaped"
-    )
-    expect(Number(row?.reaped)).toBe(0)
+    expect(await reapStuck()).toBe(0)
     expect((await queueRowById(id)).status).toBe("processing")
   })
 
@@ -218,7 +227,7 @@ describe("reap_stuck_tag_queue_rows (real SQL)", () => {
       last_error: "previous failure",
     })
 
-    await db.query("SELECT public.reap_stuck_tag_queue_rows()")
+    await reapStuck()
     expect((await queueRowById(id)).last_error).toBe("previous failure")
   })
 })
