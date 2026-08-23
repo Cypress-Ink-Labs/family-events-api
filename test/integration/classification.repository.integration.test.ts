@@ -9,6 +9,7 @@ import type {
   AdminDecisionRow,
   EventTagRow,
   ReviewAdminDecisionRow,
+  SimilarEventRow,
 } from "../../src/pipeline/memory-context.js"
 import type { DbService } from "../../src/db/db.service.js"
 
@@ -19,11 +20,6 @@ import { ensureIngestionSchema, truncateIngestion } from "./ingestion-catalog.js
 // implementation of the three classification seams (TagEventDb, TagQueueDb,
 // MemoryContextDb). Every case seeds real rows and re-queries actual DB state
 // after each call.
-//
-// Excluded from coverage: findSimilarEvents. The disposable integration
-// database has no pgvector extension (and the fixture deliberately avoids
-// embeddings), so the find_similar_events RPC cannot be installed here —
-// deviation documented on the PR.
 
 let db: DbService
 let repo: ClassificationRepository
@@ -168,6 +164,14 @@ async function seedFeatureConfig(
   await db.query(
     "INSERT INTO public.ai_feature_config (feature, model_id, enabled) VALUES ($1, $2, $3)",
     [feature, modelId, enabled]
+  )
+}
+
+async function seedEmbedding(eventId: string, embedding: string): Promise<void> {
+  await db.query(
+    `INSERT INTO public.event_embeddings (event_id, embedding)
+     VALUES ($1::uuid, $2::extensions.vector)`,
+    [eventId, embedding]
   )
 }
 
@@ -839,5 +843,149 @@ describe("MemoryContextDb.fetchStatusDecisionsForEvents", () => {
     expect([...times].sort((a, b) => b - a)).toEqual(times)
     expect(rows[0]!.reason).toBe("latest status change")
     expect(rows.every((row) => row.decision_type === "status_change")).toBe(true)
+  })
+})
+
+describe("MemoryContextDb.findSimilarEvents", () => {
+  // Hand-built 1536-dim literals along genuinely different directions (cosine
+  // distance between proportional vectors is always 0). The query sits on
+  // axis 0; its near-duplicate tilts one component onto axis 1 (~0.005 away),
+  // the orthogonal event sits on axis 1 (exactly 1), and the opposite event
+  // negates axis 0 (exactly 2).
+  const vec = (components: Array<[number, number]>): string => {
+    const dims = Array<number>(1536).fill(0)
+    for (const [index, value] of components) dims[index] = value
+    return `[${dims.join(",")}]`
+  }
+  const QUERY_EMBEDDING = vec([[0, 1]])
+
+  interface Scenario {
+    cityId: string
+    otherCityId: string
+    queryEventId: string
+    nearEventId: string
+    orthogonalEventId: string
+    oppositeEventId: string
+  }
+
+  async function seedSimilarityScenario(): Promise<Scenario> {
+    const cityId = await seedCity()
+    const otherCityId = await seedCity({ name: "Broussard" })
+    const queryEventId = await seedEvent({ title: "Query Event", city_id: cityId })
+    const nearEventId = await seedEvent({ title: "Near Duplicate", city_id: cityId })
+    const orthogonalEventId = await seedEvent({ title: "Orthogonal", city_id: otherCityId })
+    const oppositeEventId = await seedEvent({ title: "Opposite", city_id: cityId })
+
+    await seedEmbedding(queryEventId, QUERY_EMBEDDING)
+    await seedEmbedding(
+      nearEventId,
+      vec([
+        [0, 1],
+        [1, 0.1],
+      ])
+    )
+    await seedEmbedding(orthogonalEventId, vec([[1, 1]]))
+    await seedEmbedding(oppositeEventId, vec([[0, -1]]))
+    return { cityId, otherCityId, queryEventId, nearEventId, orthogonalEventId, oppositeEventId }
+  }
+
+  it("returns nearest events ordered by ascending cosine_distance with the SimilarEventRow shape", async () => {
+    const scenario = await seedSimilarityScenario()
+
+    const rows: SimilarEventRow[] = await repo.findSimilarEvents({
+      embedding: QUERY_EMBEDDING,
+      limit: 10,
+      threshold: 1.5,
+      excludeEventId: scenario.queryEventId,
+      cityId: null,
+    })
+
+    // The opposite-direction event (distance 2) exceeds the 1.5 threshold; the
+    // orthogonal (1) and near-duplicate (~0.005) events survive, nearest first.
+    expect(rows.map((row) => row.event_id)).toEqual([
+      scenario.nearEventId,
+      scenario.orthogonalEventId,
+    ])
+    expect(rows.map((row) => row.title)).toEqual(["Near Duplicate", "Orthogonal"])
+
+    const [near] = rows
+    expect(typeof near!.cosine_distance).toBe("number")
+    expect(near!.cosine_distance).toBeCloseTo(0.0049628, 4)
+    // status is the public.event_status enum; node-pg returns enum values as text.
+    expect(near!.status).toBe("draft")
+    expect(near!.source_id).toBeNull()
+    expect(near!.city_id).toBe(scenario.cityId)
+
+    expect(Object.keys(rows[0]!).sort()).toEqual([
+      "city_id",
+      "cosine_distance",
+      "event_id",
+      "source_id",
+      "status",
+      "title",
+    ])
+  })
+
+  it("includes the query event itself unless excludeEventId removes it", async () => {
+    const scenario = await seedSimilarityScenario()
+
+    const selfMatched = await repo.findSimilarEvents({
+      embedding: QUERY_EMBEDDING,
+      limit: 10,
+      threshold: 1.5,
+      excludeEventId: null,
+      cityId: null,
+    })
+    expect(selfMatched[0]!.event_id).toBe(scenario.queryEventId)
+    expect(selfMatched[0]!.cosine_distance).toBe(0)
+
+    const excluded = await repo.findSimilarEvents({
+      embedding: QUERY_EMBEDDING,
+      limit: 10,
+      threshold: 1.5,
+      excludeEventId: scenario.queryEventId,
+      cityId: null,
+    })
+    expect(excluded.map((row) => row.event_id)).not.toContain(scenario.queryEventId)
+  })
+
+  it("restricts results to events in the given city", async () => {
+    const scenario = await seedSimilarityScenario()
+
+    const rows = await repo.findSimilarEvents({
+      embedding: QUERY_EMBEDDING,
+      limit: 10,
+      threshold: 1.5,
+      excludeEventId: scenario.queryEventId,
+      cityId: scenario.otherCityId,
+    })
+
+    // Only the orthogonal event lives in Broussard.
+    expect(rows.map((row) => row.event_id)).toEqual([scenario.orthogonalEventId])
+    expect(rows[0]!.city_id).toBe(scenario.otherCityId)
+  })
+
+  it("passes threshold and limit through to the RPC", async () => {
+    const scenario = await seedSimilarityScenario()
+
+    // Strict `<`: a threshold under even the near-duplicate's ~0.005 distance
+    // empties the result once the zero-distance self match is excluded.
+    const tightThreshold = await repo.findSimilarEvents({
+      embedding: QUERY_EMBEDDING,
+      limit: 10,
+      threshold: 0.001,
+      excludeEventId: scenario.queryEventId,
+      cityId: null,
+    })
+    expect(tightThreshold).toEqual([])
+
+    const limited = await repo.findSimilarEvents({
+      embedding: QUERY_EMBEDDING,
+      limit: 1,
+      threshold: 1.5,
+      excludeEventId: scenario.queryEventId,
+      cityId: null,
+    })
+    expect(limited.map((row) => row.event_id)).toEqual([scenario.nearEventId])
   })
 })
