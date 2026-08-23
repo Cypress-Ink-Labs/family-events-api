@@ -5,13 +5,24 @@
 // For local/private dev a generic identifier is fine.
 //
 // Ported from family-events-backend supabase/functions/_shared/geocode.ts (U29).
-// Deviations: none beyond the env seam — this module has no env reads at all
-// (fetch, AbortSignal.timeout, and setTimeout are all native in Node here).
-// The module-level rate-limit queue below is per-process rather than
-// per-V8-isolate in this NestJS deployment (a long-lived process instead of
-// Supabase's per-invocation Deno isolates), so it enforces the 1 req/sec cap
-// more consistently than the legacy per-isolate limiter did. The 429/error
-// degrade-to-null behavior is preserved unchanged.
+// Deviations:
+// - Env seam only — this module has no env reads at all (fetch,
+//   AbortSignal.timeout, and setTimeout are all native in Node here). The
+//   module-level rate-limit queue below is per-process rather than
+//   per-V8-isolate in this NestJS deployment (a long-lived process instead of
+//   Supabase's per-invocation Deno isolates), so it enforces the 1 req/sec cap
+//   more consistently than the legacy per-isolate limiter did. The 429/error
+//   degrade-to-null behavior is preserved unchanged.
+// - CodeRabbit U29 review: Nominatim hit coordinates are validated before use —
+//   lat/lon must be non-blank finite numeric strings with latitude within
+//   [-90, 90] and longitude within [-180, 180]; invalid hits degrade to null
+//   like any other failure instead of coercing Number(null)/Number("") → 0 or
+//   accepting "Infinity"/out-of-range values (upstream trusted the type cast).
+// - CodeRabbit U29 review: buildGeocodeQuery escapes regex metacharacters in
+//   cityState before interpolating it into the word-boundary state-mention
+//   test (a metacharacter-containing state value previously threw SyntaxError
+//   or altered matching semantics). Boundary checks and case-insensitivity are
+//   unchanged.
 
 export interface GeocodeResult {
   latitude: number
@@ -20,8 +31,8 @@ export interface GeocodeResult {
 }
 
 interface NominatimHit {
-  lat: string
-  lon: string
+  lat?: unknown
+  lon?: unknown
 }
 
 const NOMINATIM_UA = "family-events-ui/1.0 (geocoder)"
@@ -43,6 +54,25 @@ let nominatimQueue: Promise<void> = Promise.resolve()
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+/**
+ * Parse a Nominatim coordinate string defensively: the response is only cast,
+ * not validated upstream, so lat/lon can be null, blank, non-numeric
+ * ("NaN"/"Infinity"), or out of range. Returns a finite number or null.
+ */
+function parseCoordinate(value: unknown): number | null {
+  if (typeof value !== "string") return null
+  const trimmed = value.trim()
+  if (!trimmed) return null
+  const parsed = Number(trimmed)
+  if (!Number.isFinite(parsed)) return null
+  return parsed
+}
+
+/** Escape regex metacharacters so interpolated literals match literally. */
+function escapeRegex(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
 }
 
 async function waitForNominatimSlot(): Promise<void> {
@@ -91,9 +121,11 @@ export async function geocodeViaNominatim(query: string): Promise<GeocodeResult 
     const first = hits?.[0]
     if (!first) return null
 
-    const lat = Number(first.lat)
-    const lng = Number(first.lon)
-    if (Number.isNaN(lat) || Number.isNaN(lng)) return null
+    const lat = parseCoordinate(first.lat)
+    const lng = parseCoordinate(first.lon)
+    if (lat === null || lng === null || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+      return null
+    }
 
     return { latitude: lat, longitude: lng, source: "nominatim" }
   } catch {
@@ -129,9 +161,11 @@ export function buildGeocodeQuery(parts: {
   const cityMentioned = parts.cityName != null && baseLower.includes(parts.cityName.toLowerCase())
   // Use word-boundary matching so a 2-letter state abbreviation (e.g. "LA")
   // is not falsely detected as a substring of a city name (e.g. "Lafayette").
+  // cityState is escaped first: it's external data, and unescaped metacharacters
+  // would throw SyntaxError ("[") or change semantics ("LA|TX" → alternation).
   const stateMentioned =
     parts.cityState != null &&
-    new RegExp(`(?<![a-zA-Z])${parts.cityState}(?![a-zA-Z])`, "i").test(base)
+    new RegExp(`(?<![a-zA-Z])${escapeRegex(parts.cityState)}(?![a-zA-Z])`, "i").test(base)
 
   // Also skip when address already contains a state abbreviation (e.g. ", LA" or ", TX, ")
   // even if city_id points to a different city — prevents contradictory locality queries.

@@ -467,4 +467,25 @@ describe("isMemoryFeatureEnabled", () => {
     const { db } = makeFakeMemoryContextDb({ flagError: new Error("db unavailable") })
     expect(await isMemoryFeatureEnabled(db, "source-auto-reject")).toBe(false)
   })
+
+  // CodeRabbit U29 review: the catch must log via logEdgeEvent like every
+  // other failure path in this module (upstream's catch was silent).
+  it("logs a warning with feature and error when the DB query throws", async () => {
+    const warnings: unknown[][] = []
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation((...args: unknown[]) => {
+      warnings.push(args)
+    })
+    try {
+      const { db } = makeFakeMemoryContextDb({ flagError: new Error("db unavailable") })
+      expect(await isMemoryFeatureEnabled(db, "tag-memory")).toBe(false)
+    } finally {
+      warnSpy.mockRestore()
+    }
+
+    expect(warnings.length).toBe(1)
+    const entry = JSON.parse(String(warnings[0]?.[0]))
+    expect(entry.message).toBe("memory-context: failed to read memory feature flag")
+    expect(entry.feature).toBe("tag-memory")
+    expect(entry.error).toBe("db unavailable")
+  })
 })

@@ -61,6 +61,17 @@ describe("computeTags", () => {
       expect.arrayContaining([expect.objectContaining({ slug: "playgroup" })])
     )
   })
+
+  // U29 CodeRabbit regression: keywords must not match as embedded substrings.
+  it("does not tag words that merely contain a keyword as a substring", () => {
+    expect(computeTags("Birthday Party", "Parking available onsite")).toEqual([])
+  })
+
+  it("still tags real keyword words after switching to token matching", () => {
+    const tags = computeTags("Party in the Park", "Arts and crafts tables")
+    expect(tags.some((t) => t.slug === "outdoor")).toBe(true)
+    expect(tags.some((t) => t.slug === "art")).toBe(true)
+  })
 })
 
 describe("extractAgeRangeFromText", () => {
@@ -139,6 +150,26 @@ describe("extractPriceFromText", () => {
       isFree: true,
     })
   })
+
+  // U29 CodeRabbit regression: \b matches after "-", so "-free" compounds must
+  // not report a paid event as free.
+  it("does not treat hyphenated '-free' compounds as free admission", () => {
+    expect(extractPriceFromText("", "gluten-free cooking class; admission $15")).toEqual({
+      price: 15,
+      isFree: false,
+    })
+    expect(extractPriceFromText("", "sugar-free treats, $3 entry")).toEqual({
+      price: 3,
+      isFree: false,
+    })
+  })
+
+  it("still detects standalone 'free' when a '-free' compound is present", () => {
+    expect(extractPriceFromText("", "Sugar-free snacks; admission is free")).toEqual({
+      price: null,
+      isFree: true,
+    })
+  })
 })
 
 describe("extractVenueFromText", () => {
@@ -175,5 +206,17 @@ describe("extractVenueFromText", () => {
   it("does not match time-based 'at' phrases as venue names", () => {
     expect(extractVenueFromText("", "We arrive at 5pm")).toEqual({ venueName: null })
     expect(extractVenueFromText("", "Registration at 9:30am")).toEqual({ venueName: null })
+  })
+
+  // U29 CodeRabbit regression: title-cased time words must not be captured.
+  it("does not capture title-cased time expressions after 'at'", () => {
+    expect(extractVenueFromText("", "Doors open at Noon.")).toEqual({ venueName: null })
+    expect(extractVenueFromText("", "Storytime begins at Midnight")).toEqual({ venueName: null })
+  })
+
+  it("skips time expressions but still finds a later 'at' venue", () => {
+    expect(extractVenueFromText("", "Doors open at Noon at Central Library")).toEqual({
+      venueName: "Central Library",
+    })
   })
 })

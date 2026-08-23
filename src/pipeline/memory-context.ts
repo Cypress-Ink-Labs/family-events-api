@@ -18,6 +18,10 @@
 //   `db.getMemoryFeatureFlag`, which returns the row or null (no match) and
 //   throws on a real DB error; the outer try/catch still collapses both
 //   "no row" and "query failed" to `false`, matching upstream exactly.
+// - CodeRabbit U29 review: that catch now logs a warn
+//   ("memory-context: failed to read memory feature flag", with feature +
+//   errorMessage) — upstream's catch was silent. The return-false fallback is
+//   unchanged, matching every other failure path in this module.
 
 import { errorMessage, logEdgeEvent } from "./logger.js"
 
@@ -141,7 +145,11 @@ export async function isMemoryFeatureEnabled(
     const row = await db.getMemoryFeatureFlag(feature)
     if (!row) return false
     return row.enabled === true
-  } catch {
+  } catch (error) {
+    logEdgeEvent("warn", "memory-context: failed to read memory feature flag", {
+      feature,
+      error: errorMessage(error),
+    })
     return false
   }
 }

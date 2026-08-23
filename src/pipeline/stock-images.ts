@@ -11,6 +11,16 @@
 //   context preservation — different from unsplash.ts's simpler version),
 //   Unsplash response types, and trackUnsplashDownload, matching upstream's
 //   actual (non-shared) structure exactly.
+// - CodeRabbit U29 review: when the title mentions a library,
+//   deriveTitleSearchTerm now guarantees the returned term retains the word
+//   "library" (it keeps the 4-word window ending at it instead of the leading
+//   window, which could silently drop the library context the hasLibrary
+//   branch exists to preserve).
+// - CodeRabbit U29 review: searchPexels/searchPixabay validate each candidate
+//   record's image URL and skip records with a missing/blank one (partial
+//   responses like `src: {}` or empty `largeImageURL`), returning null when
+//   none qualify — an unusable record no longer becomes a result that stops
+//   findFallbackImage's provider chain.
 //
 // Provider fallback chain:
 //   1. Pexels (200/hour → unlimited after approval) — primary
@@ -160,19 +170,23 @@ const NOISE_WORDS = new Set([
  * Strips common venue suffix patterns ("at West Regional Library",
  * "presented by BREC", "hosted by …"), punctuation, and noise words
  * (articles, frequency markers like "weekly", filler prepositions),
- * then takes the first four remaining words. Returns null when the
+ * then takes the first four remaining words. When the title mentions a
+ * "library", the returned term is guaranteed to retain that word (the
+ * 4-word window ending at it is kept instead), since library context is
+ * the whole point of preserving venue keywords. Returns null when the
  * result is too short to be useful.
  *
  * Examples:
  *   "Splash Park at East Side Recreation Center" → "splash park"
  *   "Free FIFA World Cup Watch Party" → "fifa world cup watch"
  *   "Community Day" → "community day" (short but still useful)
+ *   "Family Movie Night at LIBRARY" → "movie night at library"
  */
 export function deriveTitleSearchTerm(title: string): string | null {
   // Preserve venue keywords that provide essential activity context
   const hasLibrary = /\blibrary\b/i.test(title)
 
-  const normalized = title
+  const words = title
     // For library events, DON'T strip "at Library" — it's essential context.
     // For other events, strip all venue suffixes as before.
     .replace(
@@ -188,8 +202,20 @@ export function deriveTitleSearchTerm(title: string): string | null {
     .split(/\s+/)
     .filter(Boolean)
     .filter((w) => !NOISE_WORDS.has(w))
-    .slice(0, 4)
-    .join(" ")
+
+  let selected = words.slice(0, 4)
+  if (hasLibrary) {
+    // The leading window can still drop "library" ("Family Movie Night at
+    // LIBRARY" → "family movie night at"), defeating the library-context
+    // intent — keep the window that contains it instead. After punctuation
+    // stripping and lowercasing, the matched word is exactly "library".
+    const libraryIndex = words.indexOf("library")
+    if (libraryIndex >= selected.length) {
+      selected = words.slice(Math.max(0, libraryIndex - 3), libraryIndex + 1)
+    }
+  }
+
+  const normalized = selected.join(" ")
 
   // Require at least 4 characters (filters out single-char noise after stripping)
   return normalized.length >= 4 ? normalized : null
@@ -216,21 +242,31 @@ async function searchPexels(
     const photos = body.photos ?? []
     if (photos.length === 0) return null
 
-    // Pick randomly among results to avoid always getting the same photo
-    const photo = photos[Math.floor(Math.random() * photos.length)]
-    if (!photo) return null
+    // Pick randomly among results to avoid always getting the same photo.
+    // Each candidate is validated first: partial responses (e.g. `src: {}`)
+    // must not become results with unusable URLs, or they'd stop the
+    // provider chain here instead of letting it continue to the next
+    // candidate / provider.
+    const start = Math.floor(Math.random() * photos.length)
+    for (let offset = 0; offset < photos.length; offset++) {
+      const photo = photos[(start + offset) % photos.length]
+      if (!photo) continue
+      const imageUrl = firstString(photo.src?.large)
+      if (!imageUrl) continue
 
-    return {
-      url: photo.src.large,
-      matchedTag: query,
-      attribution: {
-        photoId: String(photo.id),
-        photographerName: photo.photographer,
-        photographerProfileUrl: photo.photographer_url,
-        photoUrl: photo.url,
-        provider: "pexels",
-      },
+      return {
+        url: imageUrl,
+        matchedTag: query,
+        attribution: {
+          photoId: String(photo.id),
+          photographerName: photo.photographer,
+          photographerProfileUrl: photo.photographer_url,
+          photoUrl: photo.url,
+          provider: "pexels",
+        },
+      }
     }
+    return null
   } catch {
     return null
   }
@@ -254,22 +290,30 @@ async function searchPixabay(
     const hits = body.hits ?? []
     if (hits.length === 0) return null
 
-    // Pick randomly among results
-    const hit = hits[Math.floor(Math.random() * hits.length)]
-    if (!hit) return null
+    // Pick randomly among results, validating each candidate: a hit with a
+    // missing/blank largeImageURL (partial response) is skipped so the
+    // provider chain continues instead of returning an unusable result.
+    const start = Math.floor(Math.random() * hits.length)
+    for (let offset = 0; offset < hits.length; offset++) {
+      const hit = hits[(start + offset) % hits.length]
+      if (!hit) continue
+      const imageUrl = firstString(hit.largeImageURL)
+      if (!imageUrl) continue
 
-    return {
-      url: hit.largeImageURL,
-      matchedTag: query,
-      attribution: {
-        photoId: String(hit.id),
-        photographerName: hit.user,
-        photographerUsername: String(hit.user_id),
-        photographerProfileUrl: hit.pageURL,
-        photoUrl: hit.pageURL,
-        provider: "pixabay",
-      },
+      return {
+        url: imageUrl,
+        matchedTag: query,
+        attribution: {
+          photoId: String(hit.id),
+          photographerName: hit.user,
+          photographerUsername: String(hit.user_id),
+          photographerProfileUrl: hit.pageURL,
+          photoUrl: hit.pageURL,
+          provider: "pixabay",
+        },
+      }
     }
+    return null
   } catch {
     return null
   }
