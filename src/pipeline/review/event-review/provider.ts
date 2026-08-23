@@ -16,7 +16,7 @@ export class OpenAiCompatibleReviewProvider implements LlmReviewProvider {
 
   async review(
     input: LlmReviewProviderInput,
-    signal: AbortSignal
+    _signal: AbortSignal
   ): Promise<LlmReviewProviderOutput> {
     const result = await postOpenAiChatCompletion({
       apiKey: this.config.apiKey,
