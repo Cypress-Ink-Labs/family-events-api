@@ -24,6 +24,7 @@ const CITY: City = {
 function makeService(opts?: { cities?: City[]; weatherFit?: string }): {
   service: ConsumerService
   listEvents: ReturnType<typeof vi.fn>
+  listMapEvents: ReturnType<typeof vi.fn>
   findSimilarEventsById: ReturnType<typeof vi.fn>
   listFavorites: ReturnType<typeof vi.fn>
   listCalendarEvents: ReturnType<typeof vi.fn>
@@ -33,6 +34,7 @@ function makeService(opts?: { cities?: City[]; weatherFit?: string }): {
   snapshot: ReturnType<typeof vi.fn>
 } {
   const listEvents = vi.fn(async () => [])
+  const listMapEvents = vi.fn(async () => [])
   const findSimilarEventsById = vi.fn(async () => [])
   const listFavorites = vi.fn(async () => [])
   const listCalendarEvents = vi.fn(async () => [])
@@ -47,7 +49,7 @@ function makeService(opts?: { cities?: City[]; weatherFit?: string }): {
     observedAt: "2026-08-16T12:00:00.000Z",
   }))
   const service = new ConsumerService(
-    { listEvents, findSimilarEventsById } as unknown as EventsRepository,
+    { listEvents, listMapEvents, findSimilarEventsById } as unknown as EventsRepository,
     { listCities: async () => opts?.cities ?? [CITY] } as unknown as ReferenceRepository,
     { planForRange } as unknown as PlanRepository,
     { snapshot } as unknown as WeatherService,
@@ -59,6 +61,7 @@ function makeService(opts?: { cities?: City[]; weatherFit?: string }): {
   return {
     service,
     listEvents,
+    listMapEvents,
     findSimilarEventsById,
     listFavorites,
     listCalendarEvents,
@@ -178,9 +181,9 @@ describe("ConsumerService.getEventDetail", () => {
 })
 
 describe("ConsumerService.listMapEvents", () => {
-  it("caps the query at 200 and returns only finite numeric coordinates", async () => {
-    const { service, listEvents } = makeService()
-    listEvents.mockResolvedValueOnce([
+  it("requests 200 coordinate-bearing events and returns only finite numeric coordinates", async () => {
+    const { service, listMapEvents } = makeService()
+    listMapEvents.mockResolvedValueOnce([
       {
         id: "event-1",
         title: "Mappable",
@@ -205,7 +208,7 @@ describe("ConsumerService.listMapEvents", () => {
         is_free: true,
       },
     ])
-    expect(listEvents).toHaveBeenCalledWith({ cityId: CITY.id, limit: 200 })
+    expect(listMapEvents).toHaveBeenCalledWith({ cityId: CITY.id, limit: 200 })
   })
 })
 

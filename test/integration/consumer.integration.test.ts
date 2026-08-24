@@ -259,6 +259,12 @@ describe("consumer read HTTP API", () => {
 
   it("does not leak related user data for an unpublished event", async () => {
     const draft = await insertEvent({ title: "Hidden draft", status: "draft" })
+    const neighbor = await insertEvent({ title: "Published neighbor" })
+    await Promise.all([seedEmbedding(draft), seedEmbedding(neighbor)])
+    await db.query("INSERT INTO public.ratings (user_id, event_id, score) VALUES ($1, $2, 5)", [
+      USER_READER,
+      draft,
+    ])
     await db.query(
       `INSERT INTO public.comments (user_id, event_id, body, is_approved)
        VALUES ($1, $2, 'Comment on hidden event', true)`,
@@ -312,6 +318,37 @@ describe("consumer read HTTP API", () => {
         },
       ],
     })
+  })
+
+  it("applies the map limit after excluding events without coordinates", async () => {
+    await db.query(
+      `INSERT INTO public.events
+       (title, start_datetime, timezone, city_id, latitude, longitude, is_free, status)
+       SELECT
+         'Unmapped ' || ordinal,
+         '2026-08-16T14:00:00+00:00'::timestamptz + ordinal * interval '1 second',
+         'America/Chicago', $1,
+         CASE WHEN ordinal <= 100 THEN NULL ELSE 91 END,
+         CASE WHEN ordinal <= 100 THEN NULL ELSE 181 END,
+         true, 'published'
+       FROM generate_series(1, 200) AS ordinal`,
+      [CITY]
+    )
+    const mapped = await insertEvent({
+      title: "Mapped after unmapped rows",
+      start: "2026-08-16T15:00:00+00:00",
+      latitude: 30.22,
+      longitude: -92.02,
+    })
+
+    const response = await request(app.getHttpServer())
+      .get("/v1/events/map")
+      .query({ city_id: CITY })
+      .expect(200)
+
+    expect(response.body.events).toEqual([
+      expect.objectContaining({ id: mapped, title: "Mapped after unmapped rows" }),
+    ])
   })
 
   it("rejects invalid map query parameters", async () => {

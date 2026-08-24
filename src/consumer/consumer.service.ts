@@ -173,7 +173,7 @@ export class ConsumerService {
   }
 
   async listMapEvents(cityId: string | null): Promise<MapEvent[]> {
-    const events = await this.eventsRepository.listEvents({ cityId, limit: MAP_LIMIT })
+    const events = await this.eventsRepository.listMapEvents({ cityId, limit: MAP_LIMIT })
     const mapped: MapEvent[] = []
     for (const event of events) {
       if (event.latitude === null || event.longitude === null) continue

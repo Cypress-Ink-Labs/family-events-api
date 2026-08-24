@@ -58,6 +58,21 @@ export interface ListEventsInput {
   dateTo?: string | null
 }
 
+export interface ListMapEventsInput {
+  cityId?: string | null
+  limit?: number
+}
+
+export interface MappableEvent {
+  id: string
+  title: string
+  latitude: string
+  longitude: string
+  start_datetime: string
+  venue_name: string | null
+  is_free: boolean
+}
+
 export interface SearchEventsInput {
   keyword?: string | null
   cityId?: string | null

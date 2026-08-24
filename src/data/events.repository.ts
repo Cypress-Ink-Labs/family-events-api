@@ -4,6 +4,8 @@ import { DbService } from "../db/db.service.js"
 import type {
   EnrichedEvent,
   ListEventsInput,
+  ListMapEventsInput,
+  MappableEvent,
   SearchedEvent,
   SearchEventsInput,
   SimilarEvent,
@@ -35,6 +37,19 @@ FROM public.events_enriched(
   p_limit                => $9::int
 )
 WHERE status = $2::text
+`
+
+const MAP_SQL = `
+SELECT id, title, latitude, longitude, start_datetime, venue_name, is_free
+FROM public.events
+WHERE status = 'published'::public.event_status
+  AND ($1::uuid IS NULL OR city_id = $1::uuid)
+  AND latitude IS NOT NULL
+  AND longitude IS NOT NULL
+  AND latitude BETWEEN -90 AND 90
+  AND longitude BETWEEN -180 AND 180
+ORDER BY start_datetime ASC, id ASC
+LIMIT LEAST(GREATEST(COALESCE($2::int, 200), 1), 500)
 `
 
 const SEARCH_SQL = `
@@ -86,6 +101,10 @@ export class EventsRepository {
       input.after?.id ?? null,
       input.limit ?? 24,
     ])
+  }
+
+  async listMapEvents(input: ListMapEventsInput = {}): Promise<MappableEvent[]> {
+    return this.db.query<MappableEvent>(MAP_SQL, [input.cityId ?? null, input.limit ?? 200])
   }
 
   async searchEvents(input: SearchEventsInput = {}): Promise<SearchedEvent[]> {

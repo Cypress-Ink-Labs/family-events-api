@@ -54,6 +54,19 @@ describe("EventsRepository.listEvents", () => {
   })
 })
 
+describe("EventsRepository.listMapEvents", () => {
+  it("filters usable coordinates before applying the map limit", async () => {
+    const { db, query } = makeDb()
+    await new EventsRepository(db).listMapEvents({ cityId: "city-1", limit: 200 })
+    const [sql, params] = query.mock.calls[0]!
+    expect(sql.indexOf("latitude IS NOT NULL")).toBeLessThan(sql.indexOf("LIMIT"))
+    expect(sql.indexOf("longitude IS NOT NULL")).toBeLessThan(sql.indexOf("LIMIT"))
+    expect(sql).toContain("latitude BETWEEN -90 AND 90")
+    expect(sql).toContain("longitude BETWEEN -180 AND 180")
+    expect(params).toEqual(["city-1", 200])
+  })
+})
+
 describe("EventsRepository.searchEvents", () => {
   it("calls search_events with named parameters and the app's defaults", async () => {
     const { db, query } = makeDb()
