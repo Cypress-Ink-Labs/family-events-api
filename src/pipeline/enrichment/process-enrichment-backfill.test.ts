@@ -533,6 +533,46 @@ describe("runEnrichmentTick — city-context cache", () => {
 
     expect(db.calls.filter((c) => c.type === "getCityContext")).toHaveLength(1)
   })
+
+  it("preserves `this = db` on every forwarded call, so a real implementation using native private class fields doesn't throw", async () => {
+    // A stand-in for a repository like Task 8's, which reads state through a
+    // native private field (`#`) inside a method. `Object.create(db)`
+    // delegation calls forwarded methods with `this` bound to the wrapper
+    // object, not `db` itself — private-field access then throws because the
+    // wrapper was never constructed by this class. The Proxy-based
+    // `withCityContextCache` binds every forwarded method to the real `db`
+    // instance, so this must not throw.
+    class PrivateFieldEnrichmentDb extends FakeEnrichmentDb {
+      #marker = "private-ok"
+
+      override async updateEventEnrichment(
+        eventId: string,
+        latitude: number | null,
+        longitude: number | null,
+        images: string[] | null
+      ): Promise<void> {
+        if (this.#marker !== "private-ok") throw new Error("unreachable")
+        return super.updateEventEnrichment(eventId, latitude, longitude, images)
+      }
+    }
+
+    const db = new PrivateFieldEnrichmentDb()
+    db.legacyRows = [candidate({ eventId: "a", needsCoords: true, address: "1 A St" })]
+    const geo: GeocodeResult = { latitude: 1, longitude: 2, source: "nominatim" }
+    const geocode = vi.fn(async () => geo)
+
+    const summary = await runEnrichmentTick(db, baseDeps({ geocode }))
+
+    expect(summary.errors).toBe(0)
+    expect(summary.coordsSet).toBe(1)
+    expect(db.calls).toContainEqual({
+      type: "updateEventEnrichment",
+      eventId: "a",
+      latitude: 1,
+      longitude: 2,
+      images: null,
+    })
+  })
 })
 
 describe("runEnrichmentTick — tracking pass", () => {
@@ -680,6 +720,28 @@ describe("runEnrichmentTick — parent-tips pass", () => {
       baseDeps({ parentTipsEnv: openAiEnv(), fetchImpl: fakeFetchFail() })
     )
 
+    expect(summary.parentTips).toEqual({ enabled: true, generated: 0, errors: 2 })
+    expect(db.calls).toContainEqual({ type: "markEnrichmentAttempt", eventId: "pt-1" })
+    expect(db.calls).toContainEqual({ type: "markEnrichmentAttempt", eventId: "pt-2" })
+  })
+
+  it("logs and continues (never crashes the tick) when markEnrichmentAttempt itself fails, matching legacy parent-tips-pass.ts:76-93", async () => {
+    const db = new FakeEnrichmentDb()
+    db.parentTipsFeatureConfig = { modelId: "gpt-4.1-nano", provider: "openai", enabled: true }
+    db.parentTipsRows = [
+      parentTipsCandidate({ eventId: "pt-1" }),
+      parentTipsCandidate({ eventId: "pt-2" }),
+    ]
+    db.markEnrichmentAttemptError = new Error("db unavailable")
+
+    const summary = await runEnrichmentTick(
+      db,
+      baseDeps({ parentTipsEnv: openAiEnv(), fetchImpl: fakeFetchFail() })
+    )
+
+    // The whole tick summary must survive: both rows still counted as
+    // errors, and both mark-attempt calls were still attempted (and
+    // recorded) even though every one of them threw.
     expect(summary.parentTips).toEqual({ enabled: true, generated: 0, errors: 2 })
     expect(db.calls).toContainEqual({ type: "markEnrichmentAttempt", eventId: "pt-1" })
     expect(db.calls).toContainEqual({ type: "markEnrichmentAttempt", eventId: "pt-2" })

@@ -38,6 +38,7 @@
 
 import { buildGeocodeQuery, geocodeViaNominatim } from "../geocode.js"
 import type { EnvReader } from "../llm-config.js"
+import { errorMessage, logEdgeEvent } from "../logger.js"
 import {
   findFallbackImage,
   type StockImageProviderKeys,
@@ -193,7 +194,14 @@ export interface EnrichmentTickDependencies {
   attributionBackfillBatch?: number
   /** Legacy `list_pending_unsplash_download_tracking` p_limit = 25 (index.ts:404). */
   trackingBatch?: number
-  /** Legacy BUDGET_MS = 110_000. */
+  /**
+   * Plan deviation #4's invented safety-net default (110_000ms) — there is no
+   * `BUDGET_MS` constant anywhere in legacy `backfill-event-enrichment`
+   * (that name belongs to the unrelated `backfill-embeddings` function).
+   * Legacy relies solely on capping `DEFAULT_BATCH` to stay under the
+   * Supabase edge platform's wall-clock limit; see `runEnrichmentTick`'s
+   * JSDoc for the full rationale.
+   */
   budgetMs?: number
   now?: () => number
 }
@@ -452,21 +460,35 @@ export interface EnrichmentTickSummary {
  * context the same way, keyed on `city_id`, across every row of one
  * invocation (index.ts:127-133, `cityCache`).
  *
- * Implemented via `Object.create` (prototype delegation) rather than object
- * spread: `db` is typically a class instance whose methods live on its
- * prototype, not as own enumerable properties, so `{ ...db }` would silently
- * drop every method but the cached override.
+ * Implemented via `Proxy` rather than `Object.create` delegation:
+ * `Object.create(db)` makes every forwarded method run with `this = wrapped`
+ * (the proxy-free prototype child), not `this = db` — which throws on any
+ * real `EnrichmentDb` implementation that reads a native private class field
+ * (`#foo`) inside a method, since private fields are only reachable through
+ * the exact instance that declared them. The `get` trap below returns every
+ * method pre-bound to the real `db` instance, so `this` is preserved for all
+ * forwarded calls; only `getCityContext` is swapped for the caching closure
+ * (which itself calls `db.getCityContext(cityId)` as a normal method call,
+ * so `this` is `db` there too).
  */
 function withCityContextCache(db: EnrichmentDb): EnrichmentDb {
   const cache = new Map<string, { name: string; state: string | null } | null>()
-  const wrapped = Object.create(db) as EnrichmentDb
-  wrapped.getCityContext = async (cityId: string) => {
+  const cachedGetCityContext = async (
+    cityId: string
+  ): Promise<{ name: string; state: string | null } | null> => {
     if (cache.has(cityId)) return cache.get(cityId) ?? null
     const result = await db.getCityContext(cityId)
     cache.set(cityId, result)
     return result
   }
-  return wrapped
+
+  return new Proxy(db, {
+    get(target, prop, receiver) {
+      if (prop === "getCityContext") return cachedGetCityContext
+      const value = Reflect.get(target, prop, receiver)
+      return typeof value === "function" ? value.bind(target) : value
+    },
+  })
 }
 
 /**
@@ -594,9 +616,21 @@ async function runParentTipsPass(
       summary.generated += 1
     } else {
       // Legacy: non-503 failure → count error, mark attempt, continue
-      // (parent-tips-pass.ts:76-94).
+      // (parent-tips-pass.ts:76-94). The mark-attempt call itself is
+      // guarded the same way legacy guards it (parent-tips-pass.ts:80-93):
+      // a failure there logs a warning and the loop continues — it must
+      // never crash the whole tick.
       summary.errors += 1
-      await db.markEnrichmentAttempt(row.eventId)
+      try {
+        await db.markEnrichmentAttempt(row.eventId)
+      } catch (markErr) {
+        logEdgeEvent("warn", "parent-tips mark attempt failed", {
+          function: "backfill-event-enrichment",
+          stage: "parent-tips",
+          eventId: row.eventId,
+          error: errorMessage(markErr),
+        })
+      }
     }
   }
 
