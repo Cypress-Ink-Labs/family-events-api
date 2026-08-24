@@ -39,6 +39,15 @@ import { ensureCatalogSchema } from "./catalog.js"
  *   reap tag queue RPCs, U29)
  * - event_embeddings_similarity.sql <- 20260601020000 (requires a pgvector-
  *   capable server image: pgvector/pgvector)
+ * - event_enrichment_rpcs.sql (U29) <- geocoding/image/parent-tips claim +
+ *   write RPCs: list_events_needing_enrichment, backfill_image_enrichment_in_scope,
+ *   update_event_enrichment, mark_event_enrichment_attempt,
+ *   upsert_event_image_attribution_with_enrichment,
+ *   list_pending_unsplash_download_tracking, mark_unsplash_download_tracking_result,
+ *   list_events_needing_attribution_backfill, list_events_needing_parent_tips,
+ *   update_event_parent_tips — from 20260601004000/20260601006000. Does NOT
+ *   include list_events_needing_embeddings (Task 2; needs the pgvector fixture
+ *   layer above).
  *
  * Deviation: public.invoke_process_tag_queue is a no-op stub here — the real
  * function fires net.http_post (pg_net) at the deployed process-tag-queue edge
@@ -124,6 +133,19 @@ export async function ensureIngestionSchema(db: DbService): Promise<void> {
       ADD COLUMN IF NOT EXISTS admin_locked_fields text[] DEFAULT '{}'::text[] NOT NULL,
       ADD COLUMN IF NOT EXISTS ai_tag_model text,
       ADD COLUMN IF NOT EXISTS ai_tag_status text
+  `)
+  // U29 enrichment RPC columns: last_enrichment_attempt_at (20260601004000,
+  // the livelock-avoidance queue-rotation timestamp bumped by
+  // update_event_enrichment / mark_event_enrichment_attempt /
+  // update_event_parent_tips) and the parent_tips_* provenance columns
+  // (20260601006000; parent_tips/parent_tips_generated_at already exist in
+  // the U23 catalog).
+  await db.query(`
+    ALTER TABLE public.events
+      ADD COLUMN IF NOT EXISTS last_enrichment_attempt_at timestamptz,
+      ADD COLUMN IF NOT EXISTS parent_tips_provider text,
+      ADD COLUMN IF NOT EXISTS parent_tips_model text,
+      ADD COLUMN IF NOT EXISTS parent_tips_prompt_version text
   `)
   // event_tags classification columns from the schema baseline (the U28
   // catalog predates classification and creates only event_id/tag_id).
@@ -447,6 +469,7 @@ export async function ensureIngestionSchema(db: DbService): Promise<void> {
     "event_tag_queue_rpcs.sql",
     "event_embeddings_similarity.sql",
     "event_llm_review_queue_rpcs.sql",
+    "event_enrichment_rpcs.sql",
   ]) {
     await db.query(readFileSync(join(SQL_DIR, file), "utf8"))
   }

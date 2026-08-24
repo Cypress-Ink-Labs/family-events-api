@@ -36,6 +36,73 @@ export class OpenAiChatCompletionHttpError extends Error {
   }
 }
 
+export interface EmbeddingRequestOptions {
+  baseUrl: string
+  apiKey: string
+  model: string
+  input: string
+  dimensions: number
+  timeoutMs?: number
+  fetchImpl?: typeof fetch
+}
+
+export class OpenAiEmbeddingHttpError extends Error {
+  constructor(
+    message: string,
+    readonly status: number
+  ) {
+    super(message)
+    this.name = "OpenAiEmbeddingHttpError"
+  }
+}
+
+interface OpenAiEmbeddingApiResponse {
+  data?: Array<{ embedding?: number[] }>
+}
+
+/**
+ * POST /embeddings. Ported from family-events-backend
+ * supabase/functions/embed-event/handler.ts `generateEmbedding` (U29): the
+ * non-2xx branch throws with the upstream body truncated to 200 chars, and
+ * the response vector is validated against `options.dimensions` before it is
+ * returned — both exactly as legacy did.
+ */
+export async function postOpenAiEmbedding(options: EmbeddingRequestOptions): Promise<number[]> {
+  const fetchImpl = options.fetchImpl ?? fetch
+  const timeoutMs = options.timeoutMs ?? 30_000
+
+  const response = await fetchImpl(`${options.baseUrl.replace(/\/+$/, "")}/embeddings`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${options.apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: options.model,
+      input: options.input,
+      dimensions: options.dimensions,
+    }),
+    signal: AbortSignal.timeout(timeoutMs),
+  })
+
+  if (!response.ok) {
+    const errorBody = await response.text().catch(() => "")
+    throw new OpenAiEmbeddingHttpError(
+      `OpenAI embeddings failed (${response.status}): ${errorBody.slice(0, 200)}`,
+      response.status
+    )
+  }
+
+  const raw = (await response.json()) as OpenAiEmbeddingApiResponse
+  const vector = raw.data?.[0]?.embedding
+
+  if (!Array.isArray(vector) || vector.length !== options.dimensions) {
+    throw new Error(`OpenAI returned unexpected embedding dimensions: ${vector?.length ?? "null"}`)
+  }
+
+  return vector
+}
+
 function readTokenCount(value: unknown): number | null {
   return Number.isFinite(value) ? Number(value) : null
 }
