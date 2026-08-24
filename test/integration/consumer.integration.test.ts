@@ -246,7 +246,14 @@ describe("consumer read HTTP API", () => {
       signed_in: true,
     })
     expect(response.body.comments).toEqual([
-      expect.objectContaining({ user_id: USER_OTHER, body: "Approved comment" }),
+      {
+        id: expect.any(String),
+        body: "Approved comment",
+        created_at: expect.any(String),
+        updated_at: expect.any(String),
+        display_name: "Other",
+        avatar_url: null,
+      },
     ])
   })
 

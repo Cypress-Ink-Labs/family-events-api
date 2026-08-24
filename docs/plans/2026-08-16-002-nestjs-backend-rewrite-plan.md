@@ -105,6 +105,7 @@ semantics and integration test coverage. Remaining: read-side repositories for e
 sources, queues, notifications.
 
 ### U24 — Consumer read API ✅ (done)
+
 The live app's seven consumed reads are covered by `GET /v1/cities`, `GET /v1/events`
 (explore/search with `(start_datetime, id)` keyset cursors and page size 24),
 `GET /v1/events/map` (published, coordinate-bearing events; max 200),

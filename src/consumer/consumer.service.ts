@@ -13,6 +13,7 @@ import type {
   EnrichedEvent,
   EventComment,
   PlannedEvent,
+  PublicEventComment,
   SimilarEvent,
   Tag,
 } from "../data/types.js"
@@ -38,7 +39,7 @@ export interface PlanPage {
 export interface EventDetail {
   event: EnrichedEvent | null
   similar: SimilarEvent[]
-  comments: EventComment[]
+  comments: PublicEventComment[]
   my_rating: number | null
   signed_in: boolean
 }
@@ -51,6 +52,17 @@ export interface MapEvent {
   start_datetime: string
   venue_name: string | null
   is_free: boolean
+}
+
+function toPublicEventComment(comment: EventComment): PublicEventComment {
+  return {
+    id: comment.id,
+    body: comment.body,
+    created_at: comment.created_at,
+    updated_at: comment.updated_at,
+    display_name: comment.display_name,
+    avatar_url: comment.avatar_url,
+  }
 }
 
 @Injectable()
@@ -154,7 +166,7 @@ export class ConsumerService {
     return {
       event,
       similar,
-      comments,
+      comments: comments.map(toPublicEventComment),
       my_rating: rating?.score ?? null,
       signed_in: userKey !== null,
     }

@@ -1230,22 +1230,8 @@
             "type": "string",
             "format": "uuid"
           },
-          "user_id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "event_id": {
-            "type": "string",
-            "format": "uuid"
-          },
           "body": {
             "type": "string"
-          },
-          "is_approved": {
-            "type": "boolean"
-          },
-          "is_flagged": {
-            "type": "boolean"
           },
           "created_at": {
             "type": "string",
@@ -1266,11 +1252,7 @@
         },
         "required": [
           "id",
-          "user_id",
-          "event_id",
           "body",
-          "is_approved",
-          "is_flagged",
           "created_at",
           "updated_at",
           "display_name",

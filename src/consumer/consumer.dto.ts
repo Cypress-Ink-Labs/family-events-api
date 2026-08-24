@@ -4,8 +4,8 @@ import type {
   CalendarEvent,
   City,
   EnrichedEvent,
-  EventComment,
   PlannedEvent,
+  PublicEventComment,
   SimilarEvent,
   Tag,
 } from "../data/types.js"
@@ -164,24 +164,12 @@ export class SimilarEventDto implements SimilarEvent {
   title!: string
 }
 
-export class EventCommentDto implements EventComment {
+export class EventCommentDto implements PublicEventComment {
   @ApiProperty({ format: "uuid" })
   id!: string
 
-  @ApiProperty({ format: "uuid" })
-  user_id!: string
-
-  @ApiProperty({ format: "uuid" })
-  event_id!: string
-
   @ApiProperty()
   body!: string
-
-  @ApiProperty()
-  is_approved!: boolean
-
-  @ApiProperty()
-  is_flagged!: boolean
 
   @ApiProperty({ format: "date-time" })
   created_at!: string

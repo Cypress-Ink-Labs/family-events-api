@@ -123,13 +123,35 @@ describe("ConsumerService.getEventDetail", () => {
       makeService()
     listEvents.mockResolvedValueOnce([event])
     findSimilarEventsById.mockResolvedValueOnce([{ event_id: "similar-1", title: "Puppets" }])
-    listEventComments.mockResolvedValueOnce([{ id: "comment-1", body: "Fun" }])
+    listEventComments.mockResolvedValueOnce([
+      {
+        id: "comment-1",
+        user_id: "private-user-id",
+        event_id: event.id,
+        body: "Fun",
+        is_approved: true,
+        is_flagged: false,
+        created_at: "2026-08-16T16:00:00Z",
+        updated_at: "2026-08-16T17:00:00Z",
+        display_name: "A parent",
+        avatar_url: null,
+      },
+    ])
     getUserEventRating.mockResolvedValueOnce({ score: 5 })
 
     await expect(service.getEventDetail(event.id, "user-1")).resolves.toEqual({
       event,
       similar: [{ event_id: "similar-1", title: "Puppets" }],
-      comments: [{ id: "comment-1", body: "Fun" }],
+      comments: [
+        {
+          id: "comment-1",
+          body: "Fun",
+          created_at: "2026-08-16T16:00:00Z",
+          updated_at: "2026-08-16T17:00:00Z",
+          display_name: "A parent",
+          avatar_url: null,
+        },
+      ],
       my_rating: 5,
       signed_in: true,
     })

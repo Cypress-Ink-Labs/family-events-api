@@ -169,6 +169,16 @@ export interface EventComment {
   avatar_url: string | null
 }
 
+/** Public detail-page projection; moderation and ownership fields stay server-side. */
+export interface PublicEventComment {
+  id: string
+  body: string
+  created_at: string
+  updated_at: string
+  display_name: string | null
+  avatar_url: string | null
+}
+
 export interface CommunityEventInput {
   title: string
   description?: string | null
