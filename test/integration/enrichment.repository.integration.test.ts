@@ -612,4 +612,38 @@ describe("runEnrichmentTick against EnrichmentRepository", () => {
       stoppedEarly: false,
     })
   })
+
+  it("marks a pending attribution through the tracking pass when both Unsplash keys are supplied", async () => {
+    const eventId = await seedEvent({ latitude: 30, longitude: -92, images: [] })
+    const imageUrl = "https://images.unsplash.com/photo-tracking-pass"
+    const attributionId = await repo.upsertUnsplashAttributionWithEnrichment({
+      eventId,
+      latitude: 30,
+      longitude: -92,
+      images: [imageUrl],
+      imageUrl,
+      unsplashPhotoId: "tracking-pass-1",
+      photographerName: "Tracking Photographer",
+      photographerUsername: "tracking",
+      photographerProfileUrl: "https://unsplash.com/@tracking",
+      photoUrl: imageUrl,
+      downloadLocation: "https://api.unsplash.com/photos/tracking-pass-1/download",
+      matchedTag: "family-fun",
+    })
+    expect(attributionId).not.toBeNull()
+
+    const summary = await runEnrichmentTick(repo, {
+      providerKeys: { unsplash: "test-unsplash-key" },
+      unsplashAccessKey: "test-unsplash-key",
+      trackDownload: async () => ({ ok: true, error: null }),
+    })
+
+    expect(summary.tracking).toEqual({ processed: 1, succeeded: 1, failed: 0 })
+    const [attribution] = await attributionsForEvent(eventId)
+    expect(attribution).toMatchObject({
+      id: attributionId,
+      download_tracking_status: "succeeded",
+    })
+    expect(attribution?.download_tracked_at).not.toBeNull()
+  })
 })
