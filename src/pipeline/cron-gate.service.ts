@@ -4,13 +4,27 @@ import { DbService } from "../db/db.service.js"
 import type { FamilySchedule } from "./families.js"
 import { FailurePingService } from "./failure-ping.service.js"
 
+export interface CronGateState {
+  legacyEnabled: boolean
+  nestEnabled: boolean
+}
+
+export function nestGateLabel(legacyLabel: string): string {
+  return `nestjs:${legacyLabel}`
+}
+
 /**
- * Kill-switch and run-history parity with the legacy Railway cron runner (U27).
+ * Atomic ownership handoff and run-history parity with the legacy Railway
+ * cron runner (U27/U33).
  *
- * - Gate: private.cron_enabled, keyed by the LEGACY service label a schedule
- *   replaces, so the existing admin UI toggles keep working through cutover.
- *   A missing row means enabled (COALESCE(..., true) — same as
- *   private.is_cron_enabled).
+ * - Handoff gate: private.cron_enabled is the LEGACY owner's enable bit,
+ *   keyed by the Railway service label a schedule replaces. A missing row
+ *   means legacy-enabled. Nest therefore waits while it is true and begins
+ *   only after the same atomic database update disables the legacy owner.
+ * - Operational gate: `nestjs:<legacy label>` independently controls Nest.
+ *   Missing means enabled. Nest runs only when legacy=false AND Nest=true,
+ *   which permits a no-writer pause and an ordered rollback without dual
+ *   writers while the registered worker continues consuming scheduled jobs.
  * - History: private.railway_cron_runs, same table the admin drill-down reads.
  *   http_status stays NULL: there is no HTTP hop anymore, the worker runs
  *   in-process.
@@ -27,12 +41,16 @@ export class CronGateService {
     @Optional() private readonly failurePing?: FailurePingService
   ) {}
 
-  async isEnabled(legacyLabel: string): Promise<boolean> {
-    const rows = await this.db.query<{ enabled: boolean }>(
-      "SELECT COALESCE((SELECT enabled FROM private.cron_enabled WHERE label = $1), true) AS enabled",
-      [legacyLabel]
+  async getGateState(legacyLabel: string): Promise<CronGateState> {
+    const rows = await this.db.query<CronGateState>(
+      `SELECT
+         COALESCE((SELECT enabled FROM private.cron_enabled WHERE label = $1), true)
+           AS "legacyEnabled",
+         COALESCE((SELECT enabled FROM private.cron_enabled WHERE label = $2), true)
+           AS "nestEnabled"`,
+      [legacyLabel, nestGateLabel(legacyLabel)]
     )
-    return rows[0]?.enabled ?? true
+    return rows[0] ?? { legacyEnabled: true, nestEnabled: true }
   }
 
   async recordRun(
@@ -48,13 +66,18 @@ export class CronGateService {
   }
 
   /**
-   * Run one scheduled tick with legacy runner semantics:
-   * skip silently when the kill switch is off; otherwise time the run,
-   * record the outcome, and rethrow failures so pg-boss retry policy applies.
+   * Run one scheduled Nest tick only after the legacy owner is disabled.
+   * Successful/failed Nest executions retain the legacy run-history label,
+   * and failures rethrow so pg-boss retry policy applies.
    */
   async runGated(schedule: FamilySchedule, fn: () => Promise<string | void>): Promise<void> {
-    if (!(await this.isEnabled(schedule.replaces))) {
-      this.logger.log(`${schedule.replaces} disabled by kill switch; skipping ${schedule.key}`)
+    const state = await this.getGateState(schedule.replaces)
+    if (state.legacyEnabled) {
+      this.logger.log(`${schedule.replaces} still owns schedule; skipping Nest ${schedule.key}`)
+      return
+    }
+    if (!state.nestEnabled) {
+      this.logger.log(`${nestGateLabel(schedule.replaces)} paused; skipping Nest ${schedule.key}`)
       return
     }
     const startedAtMs = Date.now()
