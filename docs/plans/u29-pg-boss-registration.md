@@ -19,8 +19,19 @@ NestJS pg-boss host without violating the pre-U33 single-writer rule.
   `process-review-queue`.
 - Production defaults stay fail-closed. A family registers no queue, DLQ,
   worker, or schedule unless its exact `CUTOVER_*` value is `"true"`.
+- Registration is only ownership preparation. While the matching legacy
+  `private.cron_enabled` label is true (or absent), Nest skips execution. The
+  atomic `true` to `false` database update stops the legacy runner and starts
+  Nest on the next tick, so both writers never run from the same gate state.
+- Each schedule also has a namespaced Nest operational label,
+  `nestjs:<legacy-label>`, in the same table. Missing means enabled. Nest runs
+  only when the legacy label is false and the namespaced label is true.
 - No new packages, public API routes, schema changes, deployments, or changes
   to the legacy/app repositories are part of this worktree.
+- pg-boss always fetches one job per callback. Family concurrency maps to
+  `localConcurrency`, which spawns independent single-job workers; one thrown
+  handler therefore retries only its own job rather than a successful sibling
+  fetched in the same batch.
 
 ## Scheduling decision
 
@@ -86,3 +97,23 @@ the executable sources take precedence over that stale description.
 - Full real-Postgres integration suite via `pnpm test:integration`.
 - `pnpm openapi` followed by a clean `openapi.json` diff.
 - Atomic `U29:` commits, no push or deployment.
+
+## U33 handoff and stop procedure
+
+For each family, set `CUTOVER_<FAMILY>=true` and restart the API first. Confirm
+the pg-boss queue, worker, and schedule exist while the Nest handler still
+skips because the legacy label remains enabled. Leave the namespaced
+`nestjs:<legacy-label>` row absent (enabled by default), or explicitly set it
+to true. Then atomically set the matching legacy
+`private.cron_enabled.enabled` value to `false`; the legacy runner stops and
+Nest begins on its next scheduled delivery. Verify
+`private.railway_cron_runs` before removing the legacy Railway service.
+
+An operational pause sets `nestjs:<legacy-label>=false` while leaving the
+legacy label false. The worker keeps consuming scheduled pg-boss deliveries
+and completes them as skipped, so no replay backlog accumulates. Resume by
+setting the namespaced label true. For rollback, set the namespaced Nest label
+false first, verify Nest has stopped, and only then set the legacy label true;
+this ordering permits a no-writer gap but never dual writers. These labels can
+be managed through the existing `admin_set_cron_enabled` upsert because it
+accepts arbitrary labels.

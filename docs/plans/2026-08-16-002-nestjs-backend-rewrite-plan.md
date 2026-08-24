@@ -126,16 +126,21 @@ definition (byte-identical from `20260724020000`, grants stripped), 8-factor sco
 
 ### U27 — Pipeline foundation ✅ (done)
 pg-boss queue topology mirroring the 8 cron services — **landed with parity tests**.
-Kill-switch parity (`private.cron_enabled` per legacy label, missing-row-means-enabled)
-and run-history writes (`private.railway_cron_runs` continuity for the admin UI) —
-**landed as `CronGateService.runGated` with unit + real-Postgres integration tests**.
+Atomic ownership handoff (`private.cron_enabled` per legacy label,
+missing-row-means-legacy-enabled) and run-history writes
+(`private.railway_cron_runs` continuity for the admin UI) — **landed as
+`CronGateService.runGated` with unit + real-Postgres integration tests**. A CUTOVER flag
+prepares pg-boss ownership; Nest execution stays blocked until the atomic legacy-label
+disable starts the new owner. Independent `nestjs:<legacy-label>` rows provide Nest pause
+control without re-enabling legacy or accumulating unconsumed pg-boss jobs.
 U3 Telegram failure pings — **landed via `FailurePingService`** (posts to Telegram Bot
 API with legacy HTML format, 500-char error slice, kind labels `run failed`/
 `dead-lettered`/`function crashed`, 10s timeout, bot-token redaction; missing env is
 silent skip). Per-stage `CUTOVER` gating — **landed with U28's `ScrapeQueueService`**:
 `JobsService` gained keyed multi-schedules, dead-letter queue registration, and work
-batch sizes; each family registers behind its own `CUTOVER_<FAMILY>` creation-time
-gate, so U33 can flip stages independently.
+concurrency with isolated single-job settlement (`batchSize: 1` plus
+`localConcurrency`); each family registers behind its own `CUTOVER_<FAMILY>`
+creation-time gate, so U33 can flip stages independently.
 
 ### U28 — Ingestion port ✅ (done)
 Landed across four stacked PRs (shared utils → parsers → import path → worker):
@@ -212,8 +217,10 @@ var list; U27 introduced `TELEGRAM_BOT_TOKEN` + `TELEGRAM_FAILURE_CHAT_ID`; U26
 introduced `OPENWEATHER_API_KEY` as optional configuration).
 
 ### U33 — Staged cutover + decommission (operator-gated)
-Per-stage: enable pg-boss queue → disable matching Railway cron via `private.cron_enabled`
-→ verify run history + outcomes → remove cron service from IaC. Per-family consumer
+Per-stage: enable pg-boss queue (Nest remains gated) → disable matching Railway cron via
+`private.cron_enabled` (Nest begins) → verify run history + outcomes → remove cron service
+from IaC. Pause Nest with `nestjs:<legacy-label>=false` while leaving legacy disabled;
+rollback sets that Nest label false before re-enabling legacy. Per-family consumer
 cutover via `CUTOVER_<FAMILY>`/`CUTOVER_FAMILIES`. Coordinates with operator-gated
 U7 (FK retype), U11 (production cutover), U18 (old-pipeline decommission). Old
 pipeline remains the single writer for any stage/family not yet flipped.
