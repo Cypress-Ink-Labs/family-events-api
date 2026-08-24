@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto"
+import { readFileSync } from "node:fs"
+import { join } from "node:path"
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest"
 
@@ -13,12 +15,24 @@ import { ensureIngestionSchema, truncateIngestion } from "./ingestion-catalog.js
 // (test/integration/sql/event_enrichment_rpcs.sql). This file is a
 // correctness smoke test of the SQL itself; the repository arrives in a
 // later task.
+//
+// list_events_needing_embeddings (Task 2) LEFT JOINs public.event_embeddings,
+// which requires the pgvector extension. ensureIngestionSchema already
+// installs that table/extension via event_embeddings_similarity.sql, but the
+// new RPC itself stays out of the shared base schema and is layered on here
+// instead (test/integration/sql/list_events_needing_embeddings.sql).
 
 let db: DbService
 
 beforeAll(async () => {
   db = createIntegrationDb()
   await ensureIngestionSchema(db)
+  await db.query(
+    readFileSync(
+      join(process.cwd(), "test", "integration", "sql", "list_events_needing_embeddings.sql"),
+      "utf8"
+    )
+  )
 })
 
 afterAll(async () => {
@@ -63,6 +77,7 @@ async function seedEvent(
     age_min: number | null
     age_max: number | null
     is_outdoor: boolean | null
+    created_at: string | null
   }> = {}
 ): Promise<string> {
   const cityId = overrides.city_id ?? (await seedCity())
@@ -71,10 +86,12 @@ async function seedEvent(
     `INSERT INTO public.events
        (id, city_id, title, description, venue_name, address, start_datetime,
         status, latitude, longitude, images, admin_locked_fields, is_featured,
-        last_enrichment_attempt_at, llm_review_decision, parent_tips, age_min, age_max, is_outdoor)
+        last_enrichment_attempt_at, llm_review_decision, parent_tips, age_min, age_max, is_outdoor,
+        created_at)
      VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, COALESCE($7::timestamptz, now()),
              $8::public.event_status, $9, $10, COALESCE($11::jsonb, '[]'::jsonb), COALESCE($12::text[], '{}'::text[]), $13,
-             $14::timestamptz, $15::public.llm_event_review_decision, $16::jsonb, $17, $18, $19)`,
+             $14::timestamptz, $15::public.llm_event_review_decision, $16::jsonb, $17, $18, $19,
+             COALESCE($20::timestamptz, now()))`,
     [
       eventId,
       cityId,
@@ -95,9 +112,18 @@ async function seedEvent(
       overrides.age_min ?? null,
       overrides.age_max ?? null,
       overrides.is_outdoor ?? null,
+      overrides.created_at ?? null,
     ]
   )
   return eventId
+}
+
+async function seedEmbedding(eventId: string, embedding: string): Promise<void> {
+  await db.query(
+    `INSERT INTO public.event_embeddings (event_id, embedding)
+     VALUES ($1::uuid, $2::extensions.vector)`,
+    [eventId, embedding]
+  )
 }
 
 async function seedTag(slug: string = `tag-${randomUUID().slice(0, 8)}`): Promise<string> {
@@ -307,6 +333,19 @@ interface ParentTipsCandidateRow {
 async function listNeedingParentTips(limit = 10): Promise<ParentTipsCandidateRow[]> {
   return db.query<ParentTipsCandidateRow>(
     "SELECT * FROM public.list_events_needing_parent_tips($1::int)",
+    [limit]
+  )
+}
+
+interface EmbeddingCandidateRow {
+  id: string
+  title: string
+  description: string | null
+}
+
+async function listNeedingEmbeddings(limit = 50): Promise<EmbeddingCandidateRow[]> {
+  return db.query<EmbeddingCandidateRow>(
+    "SELECT * FROM public.list_events_needing_embeddings($1::int)",
     [limit]
   )
 }
@@ -821,5 +860,47 @@ describe("update_event_parent_tips (real SQL)", () => {
     expect(row.parent_tips_model).toBe("gpt-5")
     expect(row.parent_tips_prompt_version).toBe("v1")
     expect(row.last_enrichment_attempt_at).not.toBeNull()
+  })
+})
+
+// ── list_events_needing_embeddings ───────────────────────────────────────
+
+describe("list_events_needing_embeddings (real SQL)", () => {
+  // Content is irrelevant to this RPC (it only checks for row presence via
+  // the LEFT JOIN), so a zero vector is fine.
+  const ZERO_EMBEDDING = `[${Array<number>(1536).fill(0).join(",")}]`
+
+  it("excludes events that already have an embedding row", async () => {
+    const embedded = await seedEvent({ title: "Already Embedded" })
+    await seedEmbedding(embedded, ZERO_EMBEDDING)
+    const unembedded = await seedEvent({ title: "Needs Embedding" })
+
+    const rows = await listNeedingEmbeddings()
+    const ids = rows.map((r) => r.id)
+    expect(ids).toContain(unembedded)
+    expect(ids).not.toContain(embedded)
+  })
+
+  it("orders candidates by created_at ascending", async () => {
+    const newer = await seedEvent({
+      title: "Newer",
+      created_at: "2026-06-05T00:00:00Z",
+    })
+    const older = await seedEvent({
+      title: "Older",
+      created_at: "2026-06-01T00:00:00Z",
+    })
+
+    const rows = await listNeedingEmbeddings()
+    const ids = rows.map((r) => r.id)
+    expect(ids.indexOf(older)).toBeLessThan(ids.indexOf(newer))
+  })
+
+  it("clamps p_limit up to 1 when given a non-positive limit", async () => {
+    await seedEvent({ title: "First candidate", created_at: "2026-06-01T00:00:00Z" })
+    await seedEvent({ title: "Second candidate", created_at: "2026-06-02T00:00:00Z" })
+
+    const rows = await listNeedingEmbeddings(0)
+    expect(rows).toHaveLength(1)
   })
 })
