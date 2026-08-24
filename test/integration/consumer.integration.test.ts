@@ -333,6 +333,55 @@ describe("consumer read HTTP API", () => {
     await request(app.getHttpServer()).get("/v1/events").query({ cursor: "%%%" }).expect(400)
   })
 
+  it("requires a provisioned Clerk identity for favorite and calendar page reads", async () => {
+    for (const path of ["/v1/me/favorites", "/v1/me/calendar"]) {
+      await request(app.getHttpServer()).get(path).expect(401)
+      await request(app.getHttpServer())
+        .get(path)
+        .set("Authorization", "Bearer unmapped-token")
+        .expect(403)
+    }
+  })
+
+  it("returns only the mapped user's favorite and calendar rows", async () => {
+    const mine = await insertEvent({ title: "Mine" })
+    const other = await insertEvent({ title: "Other user's event" })
+    const draft = await insertEvent({ title: "Hidden favorite", status: "draft" })
+    await db.query(
+      `INSERT INTO public.favorites (user_id, event_id) VALUES
+       ($1, $2), ($1, $3), ($4, $5)`,
+      [USER_READER, mine, draft, USER_OTHER, other]
+    )
+    await db.query(
+      `INSERT INTO public.user_calendar_events (user_id, event_id, notes) VALUES
+       ($1, $2, 'bring snacks'), ($3, $4, 'private note')`,
+      [USER_READER, mine, USER_OTHER, other]
+    )
+
+    const server = request(app.getHttpServer())
+    const favorites = await server
+      .get("/v1/me/favorites")
+      .set("Authorization", "Bearer mapped-token")
+      .expect(200)
+    expect(favorites.body).toEqual({
+      events: [expect.objectContaining({ id: mine, title: "Mine", is_favorited: true })],
+    })
+
+    const calendar = await server
+      .get("/v1/me/calendar")
+      .set("Authorization", "Bearer mapped-token")
+      .expect(200)
+    expect(calendar.body).toEqual({
+      entries: [
+        expect.objectContaining({
+          event_id: mine,
+          title: "Mine",
+          notes: "bring snacks",
+        }),
+      ],
+    })
+  })
+
   it("requires a provisioned authenticated identity for writes", async () => {
     const eventId = await insertEvent({ title: "Protected" })
 

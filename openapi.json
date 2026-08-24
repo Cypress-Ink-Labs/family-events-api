@@ -358,6 +358,72 @@
         ]
       }
     },
+    "/v1/me/favorites": {
+      "get": {
+        "operationId": "ConsumerAccountReadController_listFavorites",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FavoriteEventsDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "A valid Clerk bearer token is required"
+          },
+          "403": {
+            "description": "The Clerk user is not provisioned"
+          }
+        },
+        "security": [
+          {
+            "clerk": []
+          }
+        ],
+        "summary": "List the current user's favorite events",
+        "tags": [
+          "consumer"
+        ]
+      }
+    },
+    "/v1/me/calendar": {
+      "get": {
+        "operationId": "ConsumerAccountReadController_listCalendar",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CalendarEventsDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "A valid Clerk bearer token is required"
+          },
+          "403": {
+            "description": "The Clerk user is not provisioned"
+          }
+        },
+        "security": [
+          {
+            "clerk": []
+          }
+        ],
+        "summary": "List the current user's calendar entries",
+        "tags": [
+          "consumer"
+        ]
+      }
+    },
     "/v1/plan": {
       "get": {
         "operationId": "PlanController_getPlan",
@@ -1275,6 +1341,119 @@
           "name",
           "slug",
           "color"
+        ]
+      },
+      "FavoriteEventsDto": {
+        "type": "object",
+        "properties": {
+          "events": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EnrichedEventDto"
+            }
+          }
+        },
+        "required": [
+          "events"
+        ]
+      },
+      "CalendarEventDto": {
+        "type": "object",
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "added_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "notes": {
+            "type": "string",
+            "nullable": true
+          },
+          "title": {
+            "type": "string"
+          },
+          "start_datetime": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "end_datetime": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "venue_name": {
+            "type": "string",
+            "nullable": true
+          },
+          "address": {
+            "type": "string",
+            "nullable": true
+          },
+          "city_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "is_free": {
+            "type": "boolean"
+          },
+          "price": {
+            "type": "string",
+            "nullable": true
+          },
+          "images": {
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": true
+              },
+              {
+                "type": "array",
+                "items": {}
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              }
+            ],
+            "nullable": true
+          }
+        },
+        "required": [
+          "event_id",
+          "added_at",
+          "notes",
+          "title",
+          "start_datetime",
+          "end_datetime",
+          "venue_name",
+          "address",
+          "city_id",
+          "is_free",
+          "price",
+          "images"
+        ]
+      },
+      "CalendarEventsDto": {
+        "type": "object",
+        "properties": {
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CalendarEventDto"
+            }
+          }
+        },
+        "required": [
+          "entries"
         ]
       },
       "PlannedEventDto": {

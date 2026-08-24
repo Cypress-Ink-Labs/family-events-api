@@ -1,11 +1,14 @@
 import { Injectable } from "@nestjs/common"
 
+import { CalendarRepository } from "../data/calendar.repository.js"
 import { CommentsRepository } from "../data/comments.repository.js"
 import { EventsRepository } from "../data/events.repository.js"
+import { FavoritesRepository } from "../data/favorites.repository.js"
 import { PlanRepository } from "../data/plan.repository.js"
 import { RatingsRepository } from "../data/ratings.repository.js"
 import { ReferenceRepository } from "../data/reference.repository.js"
 import type {
+  CalendarEvent,
   City,
   EnrichedEvent,
   EventComment,
@@ -57,6 +60,8 @@ export class ConsumerService {
     private readonly referenceRepository: ReferenceRepository,
     private readonly planRepository: PlanRepository,
     private readonly weather: WeatherService,
+    private readonly favorites: FavoritesRepository,
+    private readonly calendar: CalendarRepository,
     private readonly ratings: RatingsRepository,
     private readonly comments: CommentsRepository
   ) {}
@@ -174,6 +179,20 @@ export class ConsumerService {
       })
     }
     return mapped
+  }
+
+  async listFavoriteEvents(userKey: string): Promise<EnrichedEvent[]> {
+    const favorites = await this.favorites.listFavorites(userKey)
+    if (favorites.length === 0) return []
+    return this.eventsRepository.listEvents({
+      eventIds: favorites.map((favorite) => favorite.event_id),
+      userKey,
+      limit: favorites.length,
+    })
+  }
+
+  listCalendarEvents(userKey: string): Promise<CalendarEvent[]> {
+    return this.calendar.listCalendarEvents(userKey)
   }
 
   async planForToday(input: PlanQuery, userKey: string): Promise<PlanPage> {

@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
 
+import type { CalendarRepository } from "../data/calendar.repository.js"
 import type { CommentsRepository } from "../data/comments.repository.js"
 import type { EventsRepository } from "../data/events.repository.js"
+import type { FavoritesRepository } from "../data/favorites.repository.js"
 import type { PlanRepository } from "../data/plan.repository.js"
 import type { RatingsRepository } from "../data/ratings.repository.js"
 import type { ReferenceRepository } from "../data/reference.repository.js"
@@ -23,6 +25,8 @@ function makeService(opts?: { cities?: City[]; weatherFit?: string }): {
   service: ConsumerService
   listEvents: ReturnType<typeof vi.fn>
   findSimilarEventsById: ReturnType<typeof vi.fn>
+  listFavorites: ReturnType<typeof vi.fn>
+  listCalendarEvents: ReturnType<typeof vi.fn>
   listEventComments: ReturnType<typeof vi.fn>
   getUserEventRating: ReturnType<typeof vi.fn>
   planForRange: ReturnType<typeof vi.fn>
@@ -30,6 +34,8 @@ function makeService(opts?: { cities?: City[]; weatherFit?: string }): {
 } {
   const listEvents = vi.fn(async () => [])
   const findSimilarEventsById = vi.fn(async () => [])
+  const listFavorites = vi.fn(async () => [])
+  const listCalendarEvents = vi.fn(async () => [])
   const listEventComments = vi.fn(async () => [])
   const getUserEventRating = vi.fn(async () => null)
   const planForRange = vi.fn(async () => [])
@@ -45,6 +51,8 @@ function makeService(opts?: { cities?: City[]; weatherFit?: string }): {
     { listCities: async () => opts?.cities ?? [CITY] } as unknown as ReferenceRepository,
     { planForRange } as unknown as PlanRepository,
     { snapshot } as unknown as WeatherService,
+    { listFavorites } as unknown as FavoritesRepository,
+    { listCalendarEvents } as unknown as CalendarRepository,
     { getUserEventRating } as unknown as RatingsRepository,
     { listEventComments } as unknown as CommentsRepository
   )
@@ -52,6 +60,8 @@ function makeService(opts?: { cities?: City[]; weatherFit?: string }): {
     service,
     listEvents,
     findSimilarEventsById,
+    listFavorites,
+    listCalendarEvents,
     listEventComments,
     getUserEventRating,
     planForRange,
@@ -174,5 +184,42 @@ describe("ConsumerService.listMapEvents", () => {
       },
     ])
     expect(listEvents).toHaveBeenCalledWith({ cityId: CITY.id, limit: 200 })
+  })
+})
+
+describe("ConsumerService.listFavoriteEvents", () => {
+  it("hydrates only the caller's favorite ids with caller personalization", async () => {
+    const { service, listFavorites, listEvents } = makeService()
+    listFavorites.mockResolvedValueOnce([{ event_id: "event-2" }, { event_id: "event-1" }])
+    listEvents.mockResolvedValueOnce([{ id: "event-1" }, { id: "event-2" }])
+
+    await expect(service.listFavoriteEvents("user-1")).resolves.toEqual([
+      { id: "event-1" },
+      { id: "event-2" },
+    ])
+    expect(listFavorites).toHaveBeenCalledWith("user-1")
+    expect(listEvents).toHaveBeenCalledWith({
+      eventIds: ["event-2", "event-1"],
+      userKey: "user-1",
+      limit: 2,
+    })
+  })
+
+  it("does not issue an event query when the caller has no favorites", async () => {
+    const { service, listEvents } = makeService()
+    await expect(service.listFavoriteEvents("user-1")).resolves.toEqual([])
+    expect(listEvents).not.toHaveBeenCalled()
+  })
+})
+
+describe("ConsumerService.listCalendarEvents", () => {
+  it("delegates the owner-scoped calendar read with the mapped key", async () => {
+    const { service, listCalendarEvents } = makeService()
+    listCalendarEvents.mockResolvedValueOnce([{ event_id: "event-1", title: "Storytime" }])
+
+    await expect(service.listCalendarEvents("user-1")).resolves.toEqual([
+      { event_id: "event-1", title: "Storytime" },
+    ])
+    expect(listCalendarEvents).toHaveBeenCalledWith("user-1")
   })
 })

@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional, type ApiPropertyOptions } from "@nestjs/swagger"
 
 import type {
+  CalendarEvent,
   City,
   EnrichedEvent,
   EventComment,
@@ -243,6 +244,54 @@ export class MapEventsDto {
 export class MapQueryDto {
   @ApiPropertyOptional({ format: "uuid" })
   city_id?: string
+}
+
+export class FavoriteEventsDto {
+  @ApiProperty({ type: [EnrichedEventDto] })
+  events!: EnrichedEventDto[]
+}
+
+export class CalendarEventDto implements CalendarEvent {
+  @ApiProperty({ format: "uuid" })
+  event_id!: string
+
+  @ApiProperty({ format: "date-time" })
+  added_at!: string
+
+  @ApiProperty({ type: String, nullable: true })
+  notes!: string | null
+
+  @ApiProperty()
+  title!: string
+
+  @ApiProperty({ format: "date-time" })
+  start_datetime!: string
+
+  @ApiProperty({ type: String, format: "date-time", nullable: true })
+  end_datetime!: string | null
+
+  @ApiProperty({ type: String, nullable: true })
+  venue_name!: string | null
+
+  @ApiProperty({ type: String, nullable: true })
+  address!: string | null
+
+  @ApiProperty({ type: String, format: "uuid", nullable: true })
+  city_id!: string | null
+
+  @ApiProperty()
+  is_free!: boolean
+
+  @ApiProperty({ type: String, nullable: true })
+  price!: string | null
+
+  @ApiProperty(JSON_VALUE_PROPERTY)
+  images!: Json
+}
+
+export class CalendarEventsDto {
+  @ApiProperty({ type: [CalendarEventDto] })
+  entries!: CalendarEventDto[]
 }
 
 export class PlannedEventDto implements PlannedEvent {
