@@ -1,10 +1,9 @@
 # NestJS backend rewrite plan (reconstructed) — units U20–U33
 
 **Status:** U20, U21, U22, U23, U24, U25, and U26 done; U27 foundation landed
-(topology + gate + failure pings); U28/U30 pure-logic ports landed; U29 pgvector
-infrastructure, review queue worker, ReviewRepository, and the enrichment slice
-(workers + EnrichmentRepository) landed; pg-boss registration/scheduling still
-open; U28–U33 remaining.
+(topology + gate + failure pings); U28/U30 pure-logic ports landed; U29 complete
+(classification, review, enrichment, pgvector, and pg-boss registration); the
+U24 read-API tail and U30–U33 remain.
 **Supersedes:** old U13–U18 of `2026-08-14-001` (production-readiness plan), per the mid-session
 redirect: *everything server-side moves to NestJS*.
 
@@ -158,7 +157,7 @@ verbatim into `test/integration/sql/`; boot verified both ways (flag on: queue +
 schedules created; production without flag: nothing installed). LLM fallback extraction
 ported (`llm-config`/`llm-openai`, `deterministic_then_llm` semantics, 45s budget).
 
-### U29 — Classification + enrichment port 🟡 (pgvector infrastructure, review queue, and enrichment slice landed)
+### U29 — Classification + enrichment port ✅ (done)
 Tag queue worker (batch 20, concurrency 4) + LLM tagging; review queue worker
 (concurrency 3, 110s budget, release-unstarted — plan 037) + memory-context bulk
 hydration (036); enrichment/backfill, embeddings (OpenAI), parent tips, geocode
@@ -178,9 +177,18 @@ attribution backfill, parent-tips passes), parent-tips generation port, and
 `EnrichmentRepository` (implements `EnrichmentDb`/`EmbeddingsBackfillDb`, registered
 in `PipelineModule`) covering the enrichment/embeddings/parent-tips seams end to end,
 backed by `test/integration/sql/event_enrichment_rpcs.sql` and
-`list_events_needing_embeddings.sql`. Remaining: pg-boss queue registration and
-scheduling for the enrichment worker (deliberately out of scope for this slice per
-the plan's Global Constraints).
+`list_events_needing_embeddings.sql`.
+
+The final registration slice installs `TagQueueService` and `ReviewQueueService`
+behind the production-fail-closed `CUTOVER_TAG`/`CUTOVER_REVIEW` creation-time gates.
+The tag family owns the parity `process-tag-queue` and `backfill-enrichment` schedules;
+the review family owns `process-review-queue`. Both use the existing queue/DLQ retry
+topology and `CronGateService` history/kill-switch path. Enrichment supplies the same
+`UNSPLASH_ACCESS_KEY` to search, download tracking, and attribution backfill.
+`backfill-embeddings` deliberately remains manual: deployed legacy IaC and repository
+history contain no scheduler, while tag-event already embeds routine writes inline.
+Boot tests pin both flag directions so safe production defaults install no ownership
+before U33.
 
 ### U30 — Notifications port 🟡 (weekend window landed)
 `notification_queue` processing with fail-before-side-effects hydration semantics (032);

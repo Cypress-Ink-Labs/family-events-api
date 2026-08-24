@@ -1,6 +1,6 @@
 # U29 pg-boss Registration Plan
 
-**Status:** implementation pending
+**Status:** complete
 
 **Goal:** install the already-ported tag, review, and enrichment workers in the
 NestJS pg-boss host without violating the pre-U33 single-writer rule.
@@ -32,6 +32,12 @@ the legacy repository has no cron service or caller that schedules
 schedule. Tagging already embeds each event inline when `OPENAI_API_KEY` is
 configured. Adding a periodic sweep without an authoritative cadence would
 create new production behavior rather than porting the old topology.
+
+This was verified against `.railway/railway.ts`,
+`infra/railway-cron-drift/cron-services.json`, `config/deploy.config.json`, and
+repository history. `supabase/docs/SEMANTIC_SEARCH.md` calls the function a
+cron, but the deployed IaC and history contain no corresponding scheduler, so
+the executable sources take precedence over that stale description.
 
 ## Implementation slices
 
