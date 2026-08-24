@@ -835,8 +835,14 @@ export async function runEnrichmentTick(
       if (outcome.coordsSet) summary.coordsSet += 1
       if (outcome.imagesSet) summary.imagesSet += 1
       if (outcome.attempted) summary.attemptsMarked += 1
-    } catch {
+    } catch (rowErr) {
       summary.errors += 1
+      logEdgeEvent("warn", "enrichment row failed", {
+        function: "backfill-event-enrichment",
+        stage: "main-batch",
+        eventId: candidate.eventId,
+        error: errorMessage(rowErr),
+      })
     }
   }
 

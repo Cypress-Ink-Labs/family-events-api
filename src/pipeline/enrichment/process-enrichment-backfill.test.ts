@@ -536,6 +536,46 @@ describe("enrichOne — row-level errors", () => {
   })
 })
 
+describe("runEnrichmentTick — main-batch row errors", () => {
+  it("logs row context and continues after enrichOne throws", async () => {
+    const db = new FakeEnrichmentDb()
+    db.legacyRows = [
+      candidate({ eventId: "bad", needsImages: true, tags: ["bad"] }),
+      candidate({ eventId: "good", needsImages: true, tags: ["good"] }),
+    ]
+    const findImage = vi.fn(async (tags: string[]) => {
+      if (tags[0] === "bad") throw new Error("image provider unavailable")
+      return null
+    })
+    const warnings: unknown[][] = []
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation((...args: unknown[]) => {
+      warnings.push(args)
+    })
+
+    let summary
+    try {
+      summary = await runEnrichmentTick(db, baseDeps({ findImage }))
+    } finally {
+      warnSpy.mockRestore()
+    }
+
+    expect(summary.errors).toBe(1)
+    expect(summary.attemptsMarked).toBe(1)
+    expect(db.calls).toContainEqual({ type: "markEnrichmentAttempt", eventId: "good" })
+    expect(warnings).toHaveLength(1)
+    expect(JSON.parse(String(warnings[0]?.[0]))).toEqual(
+      expect.objectContaining({
+        level: "warn",
+        message: "enrichment row failed",
+        function: "backfill-event-enrichment",
+        stage: "main-batch",
+        eventId: "bad",
+        error: "image provider unavailable",
+      })
+    )
+  })
+})
+
 describe("runEnrichmentTick — city-context cache", () => {
   it("calls getCityContext at most once per cityId per tick across multiple candidates", async () => {
     const db = new FakeEnrichmentDb()
