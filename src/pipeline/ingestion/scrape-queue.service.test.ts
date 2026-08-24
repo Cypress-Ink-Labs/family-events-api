@@ -17,7 +17,7 @@ interface RegisteredQueue {
   hasHandler: boolean
   options: { deadLetter?: string; retryLimit?: number }
   schedules: QueueSchedule[]
-  batchSize: number
+  localConcurrency: number
 }
 
 class FakeJobs {
@@ -28,14 +28,14 @@ class FakeJobs {
     name: string,
     handler: unknown,
     options: { name?: string; deadLetter?: string } = {},
-    config: { schedules?: QueueSchedule[]; batchSize?: number } = {}
+    config: { schedules?: QueueSchedule[]; localConcurrency?: number } = {}
   ): void {
     this.registered.push({
       name,
       hasHandler: handler !== null,
       options,
       schedules: config.schedules ?? [],
-      batchSize: config.batchSize ?? 1,
+      localConcurrency: config.localConcurrency ?? 1,
     })
   }
 
@@ -132,7 +132,7 @@ describe("ScrapeQueueService registration", () => {
     expect(scrape?.hasHandler).toBe(true)
     expect(scrape?.options.deadLetter).toBe("scrape.dlq")
     expect(scrape?.options.retryLimit).toBe(3)
-    expect(scrape?.batchSize).toBe(2)
+    expect(scrape?.localConcurrency).toBe(2)
     expect(scrape?.schedules).toEqual([
       { cron: "0 * * * *", data: { task: "scrape-due-sources" }, key: "scrape-due-sources" },
       { cron: "*/30 * * * *", data: { task: "cleanup-stale-runs" }, key: "cleanup-stale-runs" },

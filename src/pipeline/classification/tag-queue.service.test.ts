@@ -17,7 +17,7 @@ interface RegisteredQueue {
   hasHandler: boolean
   options: { deadLetter?: string; retryLimit?: number }
   schedules: QueueSchedule[]
-  batchSize: number
+  localConcurrency: number
 }
 
 class FakeJobs {
@@ -28,14 +28,14 @@ class FakeJobs {
     name: string,
     handler: unknown,
     options: { name?: string; deadLetter?: string; retryLimit?: number } = {},
-    config: { schedules?: QueueSchedule[]; batchSize?: number } = {}
+    config: { schedules?: QueueSchedule[]; localConcurrency?: number } = {}
   ): void {
     this.registered.push({
       name,
       hasHandler: handler !== null,
       options,
       schedules: config.schedules ?? [],
-      batchSize: config.batchSize ?? 1,
+      localConcurrency: config.localConcurrency ?? 1,
     })
   }
 
@@ -149,7 +149,7 @@ describe("TagQueueService registration", () => {
     expect(jobs.registered[1]).toMatchObject({
       hasHandler: true,
       options: { deadLetter: "tag.dlq", retryLimit: 3 },
-      batchSize: 2,
+      localConcurrency: 2,
       schedules: [
         { cron: "*/5 * * * *", data: { task: "process-tag-queue" }, key: "process-tag-queue" },
         {

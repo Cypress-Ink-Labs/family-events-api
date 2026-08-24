@@ -50,7 +50,7 @@ export class ReviewQueueService implements OnModuleInit {
           data: { task: schedule.task },
           key: schedule.key,
         })),
-        batchSize: family.concurrency,
+        localConcurrency: family.concurrency,
       }
     )
     this.logger.log("review family registered (queue, dlq, schedules)")
