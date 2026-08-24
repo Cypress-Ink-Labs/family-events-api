@@ -45,7 +45,11 @@ import {
   type StockProvider,
 } from "../stock-images.js"
 import { lookupUnsplashPhotoFromUrl, trackUnsplashDownload } from "../unsplash.js"
-import type { ParentTipsDb } from "./generate-parent-tips.js"
+import {
+  generateParentTipsForEvent,
+  resolveParentTipsAiConfig,
+  type ParentTipsDb,
+} from "./generate-parent-tips.js"
 
 // Cap batch so per-tick wall stays under 90s with headroom under the 150s
 // edge wall (index.ts:23-27).
@@ -79,6 +83,25 @@ export interface UnsplashAttributionUpsert {
   photoUrl: string
   downloadLocation: string
   matchedTag: string | null
+}
+
+/**
+ * Attribution recovered by URL lookup for an event that already has an
+ * Unsplash image but is missing its attribution row (`enrichOne`'s RPC path
+ * never ran for it — e.g. seeded before attribution tracking existed).
+ * Unlike `UnsplashAttributionUpsert` this carries no lat/lng/images: the
+ * event's enrichment fields are untouched, only the attribution row is
+ * backfilled. Ported from legacy's client-side upsert (index.ts:469-485).
+ */
+export interface UnsplashAttributionBackfillUpsert {
+  eventId: string
+  imageUrl: string
+  unsplashPhotoId: string
+  photographerName: string
+  photographerUsername: string
+  photographerProfileUrl: string
+  photoUrl: string
+  downloadLocation: string
 }
 
 export interface ProviderImageAttributionUpsert {
@@ -130,6 +153,13 @@ export interface EnrichmentDb extends ParentTipsDb {
   listEventsNeedingAttributionBackfill(
     limit: number
   ): Promise<Array<{ eventId: string; imageUrl: string }>>
+  /**
+   * Direct upsert into event_image_attributions ON CONFLICT (event_id,
+   * image_url) — legacy did this client-side (index.ts:469-485), also
+   * setting download_tracking_status='pending' + a next-attempt timestamp
+   * server-side so the tracking pass claims the row on a later tick.
+   */
+  upsertUnsplashAttributionBackfill(params: UnsplashAttributionBackfillUpsert): Promise<void>
 }
 
 /**
@@ -140,6 +170,14 @@ export interface EnrichmentDb extends ParentTipsDb {
  */
 export interface EnrichmentTickDependencies {
   providerKeys: StockImageProviderKeys
+  /**
+   * Legacy derives a single `unsplashAccessKey = providerKeys.unsplash ?? ""`
+   * local var and reuses it for `enrichOne`'s download-tracking call *and*
+   * both Task 7 aux passes (index.ts:535, 615-623). This dependency shape
+   * splits that into a dedicated field for the aux passes (`enrichOne` reads
+   * `providerKeys.unsplash` directly, see above) — production callers must
+   * supply the same key in both places.
+   */
   unsplashAccessKey?: string
   parentTipsEnv?: EnvReader
   geocode?: typeof geocodeViaNominatim
@@ -390,4 +428,244 @@ export async function enrichOne(
   }
 
   return { coordsSet: gotCoords, imagesSet: gotImages, provider: imageSource, attempted: false }
+}
+
+export interface EnrichmentTickSummary {
+  claimed: number
+  coordsSet: number
+  imagesSet: number
+  attemptsMarked: number
+  errors: number
+  tracking: { processed: number; succeeded: number; failed: number }
+  attributionBackfill: { processed: number; upserted: number; errors: number }
+  parentTips: { enabled: boolean; generated: number; errors: number }
+  durationMs: number
+  stoppedEarly: boolean
+}
+
+/**
+ * Wrap `db` so `getCityContext` is memoized per `cityId` for the lifetime of
+ * one tick. `enrichOne` (Task 6) always calls `db.getCityContext` directly —
+ * its signature has no cache-map parameter (see the file-header deviation
+ * note) — so per-tick memoization has to live here, one layer up, wrapping
+ * the db instance passed into each `enrichOne` call. Legacy cached city
+ * context the same way, keyed on `city_id`, across every row of one
+ * invocation (index.ts:127-133, `cityCache`).
+ *
+ * Implemented via `Object.create` (prototype delegation) rather than object
+ * spread: `db` is typically a class instance whose methods live on its
+ * prototype, not as own enumerable properties, so `{ ...db }` would silently
+ * drop every method but the cached override.
+ */
+function withCityContextCache(db: EnrichmentDb): EnrichmentDb {
+  const cache = new Map<string, { name: string; state: string | null } | null>()
+  const wrapped = Object.create(db) as EnrichmentDb
+  wrapped.getCityContext = async (cityId: string) => {
+    if (cache.has(cityId)) return cache.get(cityId) ?? null
+    const result = await db.getCityContext(cityId)
+    cache.set(cityId, result)
+    return result
+  }
+  return wrapped
+}
+
+/**
+ * Ported from legacy `runPendingUnsplashTrackingPass` (index.ts:390-423): no
+ * key configured means the pass is a no-op (legacy's early `return summary`
+ * before the RPC call).
+ */
+async function runTrackingPass(
+  db: EnrichmentDb,
+  deps: EnrichmentTickDependencies
+): Promise<EnrichmentTickSummary["tracking"]> {
+  const summary = { processed: 0, succeeded: 0, failed: 0 }
+  const unsplashAccessKey = deps.unsplashAccessKey ?? ""
+  if (!unsplashAccessKey) return summary
+
+  const trackDownload = deps.trackDownload ?? trackUnsplashDownload
+  const rows = await db.listPendingUnsplashTracking(deps.trackingBatch ?? 25)
+  summary.processed = rows.length
+
+  for (const row of rows) {
+    const result = await trackDownload(row.downloadLocation, unsplashAccessKey)
+    await db.markUnsplashTrackingResult(row.attributionId, result.ok, result.error ?? undefined)
+    if (result.ok) summary.succeeded += 1
+    else summary.failed += 1
+  }
+
+  return summary
+}
+
+/**
+ * Ported from legacy `runUnsplashAttributionBackfillPass` (index.ts:439-499).
+ *
+ * Deviation: legacy's per-row outcome has three buckets — `backfilled`,
+ * `skipped` (null lookup, index.ts:464-467), and `errors` (thrown/upsert
+ * failure). `EnrichmentTickSummary.attributionBackfill` (this port's Produces
+ * shape) has no `skipped` field, so a null lookup is folded into `errors`
+ * here — the row still gets nothing written either way, only the bucket
+ * label differs from legacy.
+ */
+async function runAttributionBackfillPass(
+  db: EnrichmentDb,
+  deps: EnrichmentTickDependencies
+): Promise<EnrichmentTickSummary["attributionBackfill"]> {
+  const summary = { processed: 0, upserted: 0, errors: 0 }
+  const unsplashAccessKey = deps.unsplashAccessKey ?? ""
+  if (!unsplashAccessKey) return summary
+
+  const lookupPhoto = deps.lookupPhoto ?? lookupUnsplashPhotoFromUrl
+  const rows = await db.listEventsNeedingAttributionBackfill(deps.attributionBackfillBatch ?? 10)
+  summary.processed = rows.length
+
+  for (const row of rows) {
+    try {
+      const attribution = await lookupPhoto(row.imageUrl, unsplashAccessKey)
+      if (!attribution) {
+        // Legacy: "skipped" (index.ts:465-466) — see deviation note above.
+        summary.errors += 1
+        continue
+      }
+      await db.upsertUnsplashAttributionBackfill({
+        eventId: row.eventId,
+        imageUrl: row.imageUrl,
+        unsplashPhotoId: attribution.photoId,
+        photographerName: attribution.photographerName,
+        photographerUsername: attribution.photographerUsername,
+        photographerProfileUrl: attribution.photographerProfileUrl,
+        photoUrl: attribution.photoUrl,
+        downloadLocation: attribution.downloadLocation,
+      })
+      summary.upserted += 1
+    } catch {
+      summary.errors += 1
+    }
+  }
+
+  return summary
+}
+
+/**
+ * Ported from legacy `parent-tips-pass.ts:23-110`, restructured for the
+ * in-process config the CONTROLLER RULING P2 (binding, replaces the task
+ * brief's literal "break after first row" wording) mandates:
+ *
+ * Legacy resolved the AI config *inside* another edge function
+ * (`generate-parent-tips`) reached over HTTP, so the only way for this pass
+ * to discover "not configured" was to invoke it for one row, read back a 503,
+ * count it as one error, and `break` (parent-tips-pass.ts:71-75) — leaving
+ * the rest of the claimed batch untouched until config changed.
+ *
+ * In-process, `resolveParentTipsAiConfig` is a pure function of the DB
+ * feature row + env — this pass calls it exactly once per tick, before
+ * touching `listEventsNeedingParentTips` at all. When
+ * `configured === false` there is nothing a per-row probe could learn that
+ * the config resolution didn't already know, so probing would be artificial:
+ * report `{ enabled: true, generated: 0, errors: 1 }` and skip the list/
+ * generate calls entirely.
+ */
+async function runParentTipsPass(
+  db: EnrichmentDb,
+  deps: EnrichmentTickDependencies
+): Promise<EnrichmentTickSummary["parentTips"]> {
+  const summary: EnrichmentTickSummary["parentTips"] = {
+    enabled: false,
+    generated: 0,
+    errors: 0,
+  }
+
+  const dbConfig = await db.loadParentTipsFeatureConfig()
+  if (!dbConfig || !dbConfig.enabled) return summary
+  summary.enabled = true
+
+  const config = resolveParentTipsAiConfig(dbConfig, deps.parentTipsEnv)
+  if (!config.configured) {
+    // CONTROLLER RULING P2 — see the function-level doc comment above.
+    summary.errors = 1
+    return summary
+  }
+
+  const rows = await db.listEventsNeedingParentTips(deps.parentTipsBatch ?? 8)
+  for (const row of rows) {
+    const result = await generateParentTipsForEvent(db, row, config, {
+      fetchImpl: deps.fetchImpl,
+    })
+    if (result.status === "generated") {
+      summary.generated += 1
+    } else {
+      // Legacy: non-503 failure → count error, mark attempt, continue
+      // (parent-tips-pass.ts:76-94).
+      summary.errors += 1
+      await db.markEnrichmentAttempt(row.eventId)
+    }
+  }
+
+  return summary
+}
+
+/**
+ * One backfill tick: claim a batch, enrich each candidate (coords/images),
+ * then run the three auxiliary passes in legacy's exact order (main batch →
+ * tracking → attribution backfill → parent-tips, index.ts:585-630).
+ *
+ * Deviation #4 (plan, binding): legacy has no runtime wall-clock budget
+ * check at all — it relies solely on capping `DEFAULT_BATCH` to stay under
+ * the Supabase edge platform's 150s wall (index.ts:23-27 comment). This port
+ * doesn't run under that same platform guarantee, so a graceful
+ * `budgetMs` (default 110_000) check runs between rows of the main batch:
+ * once elapsed time reaches the budget, the remaining claimed rows are
+ * skipped with no DB writes ("releaseless" — they simply stay claimed for
+ * the next tick to re-list), all three aux passes are skipped for this tick,
+ * and `stoppedEarly` is set so callers/observability can tell a tick was cut
+ * short rather than completing normally with a small batch.
+ */
+export async function runEnrichmentTick(
+  db: EnrichmentDb,
+  deps: EnrichmentTickDependencies
+): Promise<EnrichmentTickSummary> {
+  const now = deps.now ?? Date.now
+  const startedAt = now()
+  const budgetMs = deps.budgetMs ?? 110_000
+
+  const summary: EnrichmentTickSummary = {
+    claimed: 0,
+    coordsSet: 0,
+    imagesSet: 0,
+    attemptsMarked: 0,
+    errors: 0,
+    tracking: { processed: 0, succeeded: 0, failed: 0 },
+    attributionBackfill: { processed: 0, upserted: 0, errors: 0 },
+    parentTips: { enabled: false, generated: 0, errors: 0 },
+    durationMs: 0,
+    stoppedEarly: false,
+  }
+
+  const candidates = await claimEnrichmentBatch(db, deps.batchSize ?? DEFAULT_ENRICHMENT_BATCH)
+  summary.claimed = candidates.length
+
+  const cityCachedDb = withCityContextCache(db)
+
+  for (const candidate of candidates) {
+    if (now() - startedAt >= budgetMs) {
+      summary.stoppedEarly = true
+      break
+    }
+    try {
+      const outcome = await enrichOne(cityCachedDb, candidate, deps)
+      if (outcome.coordsSet) summary.coordsSet += 1
+      if (outcome.imagesSet) summary.imagesSet += 1
+      if (outcome.attempted) summary.attemptsMarked += 1
+    } catch {
+      summary.errors += 1
+    }
+  }
+
+  if (!summary.stoppedEarly) {
+    summary.tracking = await runTrackingPass(db, deps)
+    summary.attributionBackfill = await runAttributionBackfillPass(db, deps)
+    summary.parentTips = await runParentTipsPass(db, deps)
+  }
+
+  summary.durationMs = now() - startedAt
+  return summary
 }

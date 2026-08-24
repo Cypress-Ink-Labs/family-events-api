@@ -1,15 +1,19 @@
 import { describe, expect, it, vi } from "vitest"
 
 import { buildGeocodeQuery, type GeocodeResult } from "../geocode.js"
+import type { EnvReader } from "../llm-config.js"
+import type { UnsplashAttributionMetadata } from "../unsplash.js"
 import type { StockImageResult } from "../stock-images.js"
 import type { ParentTip, ParentTipsCandidate } from "./generate-parent-tips.js"
 import {
   claimEnrichmentBatch,
   enrichOne,
+  runEnrichmentTick,
   type EnrichmentCandidate,
   type EnrichmentDb,
   type EnrichmentTickDependencies,
   type ProviderImageAttributionUpsert,
+  type UnsplashAttributionBackfillUpsert,
   type UnsplashAttributionUpsert,
 } from "./process-enrichment-backfill.js"
 
@@ -48,6 +52,12 @@ type CallRecord =
   | { type: "upsertProviderImageAttribution"; params: ProviderImageAttributionUpsert }
   | { type: "markUnsplashTrackingResult"; attributionId: string; success: boolean; error?: string }
   | { type: "markEnrichmentAttempt"; eventId: string }
+  | { type: "listPendingUnsplashTracking"; limit: number }
+  | { type: "listEventsNeedingAttributionBackfill"; limit: number }
+  | { type: "upsertUnsplashAttributionBackfill"; params: UnsplashAttributionBackfillUpsert }
+  | { type: "loadParentTipsFeatureConfig" }
+  | { type: "listEventsNeedingParentTips"; limit: number }
+  | { type: "updateEventParentTips"; eventId: string }
 
 class FakeEnrichmentDb implements EnrichmentDb {
   calls: CallRecord[] = []
@@ -56,6 +66,20 @@ class FakeEnrichmentDb implements EnrichmentDb {
   cityContexts = new Map<string, { name: string; state: string | null } | null>()
   nextAttributionId: string | null = "attribution-1"
   markEnrichmentAttemptError: Error | null = null
+  pendingTrackingRows: Array<{
+    attributionId: string
+    eventId: string
+    imageUrl: string
+    downloadLocation: string
+    attempts: number
+  }> = []
+  attributionBackfillRows: Array<{ eventId: string; imageUrl: string }> = []
+  parentTipsFeatureConfig: {
+    modelId: string | null
+    provider: string | null
+    enabled: boolean
+  } | null = null
+  parentTipsRows: ParentTipsCandidate[] = []
 
   async listEventsNeedingEnrichment(limit: number): Promise<EnrichmentCandidate[]> {
     this.calls.push({ type: "listEventsNeedingEnrichment", limit })
@@ -92,7 +116,7 @@ class FakeEnrichmentDb implements EnrichmentDb {
     this.calls.push({ type: "upsertProviderImageAttribution", params })
   }
 
-  async listPendingUnsplashTracking(): Promise<
+  async listPendingUnsplashTracking(limit: number): Promise<
     Array<{
       attributionId: string
       eventId: string
@@ -101,7 +125,8 @@ class FakeEnrichmentDb implements EnrichmentDb {
       attempts: number
     }>
   > {
-    return []
+    this.calls.push({ type: "listPendingUnsplashTracking", limit })
+    return this.pendingTrackingRows.slice(0, limit)
   }
 
   async markUnsplashTrackingResult(
@@ -112,10 +137,17 @@ class FakeEnrichmentDb implements EnrichmentDb {
     this.calls.push({ type: "markUnsplashTrackingResult", attributionId, success, error })
   }
 
-  async listEventsNeedingAttributionBackfill(): Promise<
-    Array<{ eventId: string; imageUrl: string }>
-  > {
-    return []
+  async listEventsNeedingAttributionBackfill(
+    limit: number
+  ): Promise<Array<{ eventId: string; imageUrl: string }>> {
+    this.calls.push({ type: "listEventsNeedingAttributionBackfill", limit })
+    return this.attributionBackfillRows.slice(0, limit)
+  }
+
+  async upsertUnsplashAttributionBackfill(
+    params: UnsplashAttributionBackfillUpsert
+  ): Promise<void> {
+    this.calls.push({ type: "upsertUnsplashAttributionBackfill", params })
   }
 
   async markEnrichmentAttempt(eventId: string): Promise<void> {
@@ -128,21 +160,23 @@ class FakeEnrichmentDb implements EnrichmentDb {
     provider: string | null
     enabled: boolean
   } | null> {
-    return null
+    this.calls.push({ type: "loadParentTipsFeatureConfig" })
+    return this.parentTipsFeatureConfig
   }
 
-  async listEventsNeedingParentTips(): Promise<ParentTipsCandidate[]> {
-    return []
+  async listEventsNeedingParentTips(limit: number): Promise<ParentTipsCandidate[]> {
+    this.calls.push({ type: "listEventsNeedingParentTips", limit })
+    return this.parentTipsRows.slice(0, limit)
   }
 
   async updateEventParentTips(
-    _eventId: string,
+    eventId: string,
     _tips: ParentTip[],
     _provider: string,
     _model: string,
     _promptVersion: string
   ): Promise<void> {
-    // no-op
+    this.calls.push({ type: "updateEventParentTips", eventId })
   }
 }
 
@@ -168,6 +202,62 @@ function baseDeps(overrides: Partial<EnrichmentTickDependencies> = {}): Enrichme
     providerKeys: {},
     ...overrides,
   }
+}
+
+function parentTipsCandidate(overrides: Partial<ParentTipsCandidate> = {}): ParentTipsCandidate {
+  return {
+    eventId: "pt-1",
+    title: "Storytime",
+    description: null,
+    ageMin: null,
+    ageMax: null,
+    isOutdoor: null,
+    venueName: null,
+    startDatetime: null,
+    tags: [],
+    ...overrides,
+  }
+}
+
+function unsplashAttribution(
+  overrides: Partial<UnsplashAttributionMetadata> = {}
+): UnsplashAttributionMetadata {
+  return {
+    photoId: "photo-9",
+    photographerName: "Grace Hopper",
+    photographerUsername: "grace",
+    photographerProfileUrl: "https://example.com/grace",
+    photoUrl: "https://example.com/photo-9",
+    downloadLocation: "https://api.example.com/download-9",
+    ...overrides,
+  }
+}
+
+// No API key configured for any provider -> resolveSharedLlmConfig's
+// `configured` check fails regardless of the DB feature row.
+const noopEnv: EnvReader = { get: () => undefined }
+
+// AI_API_KEY present -> resolveSharedLlmConfig's `configured` check passes
+// for an openai-provider DB row.
+function openAiEnv(apiKey = "test-key"): EnvReader {
+  return { get: () => apiKey }
+}
+
+function fakeFetchOk(tips: Array<{ category: string; text: string }>): typeof fetch {
+  return vi.fn(
+    async () =>
+      new Response(
+        JSON.stringify({
+          choices: [{ message: { content: JSON.stringify({ tips }) }, finish_reason: "stop" }],
+          usage: {},
+        }),
+        { status: 200 }
+      )
+  ) as unknown as typeof fetch
+}
+
+function fakeFetchFail(status = 500): typeof fetch {
+  return vi.fn(async () => new Response("boom", { status })) as unknown as typeof fetch
 }
 
 describe("claimEnrichmentBatch", () => {
@@ -426,5 +516,266 @@ describe("enrichOne — row-level errors", () => {
       { type: "markEnrichmentAttempt", eventId: "bad" },
       { type: "markEnrichmentAttempt", eventId: "good" },
     ])
+  })
+})
+
+describe("runEnrichmentTick — city-context cache", () => {
+  it("calls getCityContext at most once per cityId per tick across multiple candidates", async () => {
+    const db = new FakeEnrichmentDb()
+    db.cityContexts.set("city-1", { name: "Lafayette", state: "LA" })
+    db.legacyRows = [
+      candidate({ eventId: "a", needsCoords: true, cityId: "city-1", address: "1 A St" }),
+      candidate({ eventId: "b", needsCoords: true, cityId: "city-1", address: "2 B St" }),
+    ]
+    const geocode = vi.fn(async () => null)
+
+    await runEnrichmentTick(db, baseDeps({ geocode }))
+
+    expect(db.calls.filter((c) => c.type === "getCityContext")).toHaveLength(1)
+  })
+})
+
+describe("runEnrichmentTick — tracking pass", () => {
+  it("marks success/failure per stubbed trackDownload and skips entirely when no key is configured", async () => {
+    const db = new FakeEnrichmentDb()
+    db.pendingTrackingRows = [
+      {
+        attributionId: "attr-1",
+        eventId: "e1",
+        imageUrl: "u1",
+        downloadLocation: "https://dl-1",
+        attempts: 0,
+      },
+      {
+        attributionId: "attr-2",
+        eventId: "e2",
+        imageUrl: "u2",
+        downloadLocation: "https://dl-2",
+        attempts: 0,
+      },
+    ]
+    const trackDownload = vi.fn(async (downloadLocation: string) => ({
+      ok: downloadLocation === "https://dl-1",
+      error: downloadLocation === "https://dl-1" ? null : "boom",
+    }))
+
+    const summary = await runEnrichmentTick(
+      db,
+      baseDeps({ unsplashAccessKey: "key", trackDownload })
+    )
+
+    expect(summary.tracking).toEqual({ processed: 2, succeeded: 1, failed: 1 })
+    expect(db.calls).toContainEqual({
+      type: "markUnsplashTrackingResult",
+      attributionId: "attr-1",
+      success: true,
+      error: undefined,
+    })
+    expect(db.calls).toContainEqual({
+      type: "markUnsplashTrackingResult",
+      attributionId: "attr-2",
+      success: false,
+      error: "boom",
+    })
+  })
+
+  it("skips the pass entirely (no list call) when no unsplash key is configured", async () => {
+    const db = new FakeEnrichmentDb()
+    db.pendingTrackingRows = [
+      {
+        attributionId: "attr-1",
+        eventId: "e1",
+        imageUrl: "u1",
+        downloadLocation: "https://dl-1",
+        attempts: 0,
+      },
+    ]
+
+    const summary = await runEnrichmentTick(db, baseDeps())
+
+    expect(summary.tracking).toEqual({ processed: 0, succeeded: 0, failed: 0 })
+    expect(db.calls.some((c) => c.type === "listPendingUnsplashTracking")).toBe(false)
+  })
+})
+
+describe("runEnrichmentTick — attribution backfill pass", () => {
+  it("upserts from stubbed lookupPhoto and counts a null lookup as an error", async () => {
+    const db = new FakeEnrichmentDb()
+    db.attributionBackfillRows = [
+      { eventId: "e1", imageUrl: "https://img-1" },
+      { eventId: "e2", imageUrl: "https://img-2" },
+    ]
+    const attribution = unsplashAttribution()
+    const lookupPhoto = vi.fn(async (imageUrl: string) =>
+      imageUrl === "https://img-1" ? attribution : null
+    )
+
+    const summary = await runEnrichmentTick(db, baseDeps({ unsplashAccessKey: "key", lookupPhoto }))
+
+    expect(summary.attributionBackfill).toEqual({ processed: 2, upserted: 1, errors: 1 })
+    expect(db.calls).toContainEqual({
+      type: "upsertUnsplashAttributionBackfill",
+      params: {
+        eventId: "e1",
+        imageUrl: "https://img-1",
+        unsplashPhotoId: attribution.photoId,
+        photographerName: attribution.photographerName,
+        photographerUsername: attribution.photographerUsername,
+        photographerProfileUrl: attribution.photographerProfileUrl,
+        photoUrl: attribution.photoUrl,
+        downloadLocation: attribution.downloadLocation,
+      },
+    })
+    expect(db.calls.filter((c) => c.type === "upsertUnsplashAttributionBackfill")).toHaveLength(1)
+  })
+})
+
+describe("runEnrichmentTick — parent-tips pass", () => {
+  it("reports {enabled:false} and makes zero list calls when the feature row is missing", async () => {
+    const db = new FakeEnrichmentDb()
+    db.parentTipsFeatureConfig = null
+
+    const summary = await runEnrichmentTick(db, baseDeps())
+
+    expect(summary.parentTips).toEqual({ enabled: false, generated: 0, errors: 0 })
+    expect(db.calls.some((c) => c.type === "listEventsNeedingParentTips")).toBe(false)
+  })
+
+  it("reports {enabled:false} and makes zero list calls when the feature row is disabled", async () => {
+    const db = new FakeEnrichmentDb()
+    db.parentTipsFeatureConfig = { modelId: "gpt-4.1-nano", provider: "openai", enabled: false }
+
+    const summary = await runEnrichmentTick(db, baseDeps())
+
+    expect(summary.parentTips).toEqual({ enabled: false, generated: 0, errors: 0 })
+    expect(db.calls.some((c) => c.type === "listEventsNeedingParentTips")).toBe(false)
+  })
+
+  it("CONTROLLER RULING P2: enabled-but-not-configured makes zero generate attempts, errors:1, generated:0", async () => {
+    const db = new FakeEnrichmentDb()
+    db.parentTipsFeatureConfig = { modelId: "gpt-4.1-nano", provider: "openai", enabled: true }
+    db.parentTipsRows = [
+      parentTipsCandidate({ eventId: "pt-1" }),
+      parentTipsCandidate({ eventId: "pt-2" }),
+      parentTipsCandidate({ eventId: "pt-3" }),
+    ]
+
+    const summary = await runEnrichmentTick(db, baseDeps({ parentTipsEnv: noopEnv }))
+
+    expect(summary.parentTips).toEqual({ enabled: true, generated: 0, errors: 1 })
+    expect(db.calls.some((c) => c.type === "listEventsNeedingParentTips")).toBe(false)
+    expect(db.calls.some((c) => c.type === "updateEventParentTips")).toBe(false)
+  })
+
+  it("marks the attempt and continues past a per-row generation failure", async () => {
+    const db = new FakeEnrichmentDb()
+    db.parentTipsFeatureConfig = { modelId: "gpt-4.1-nano", provider: "openai", enabled: true }
+    db.parentTipsRows = [
+      parentTipsCandidate({ eventId: "pt-1" }),
+      parentTipsCandidate({ eventId: "pt-2" }),
+    ]
+
+    const summary = await runEnrichmentTick(
+      db,
+      baseDeps({ parentTipsEnv: openAiEnv(), fetchImpl: fakeFetchFail() })
+    )
+
+    expect(summary.parentTips).toEqual({ enabled: true, generated: 0, errors: 2 })
+    expect(db.calls).toContainEqual({ type: "markEnrichmentAttempt", eventId: "pt-1" })
+    expect(db.calls).toContainEqual({ type: "markEnrichmentAttempt", eventId: "pt-2" })
+  })
+
+  it("counts a generated tip and persists it via updateEventParentTips on success", async () => {
+    const db = new FakeEnrichmentDb()
+    db.parentTipsFeatureConfig = { modelId: "gpt-4.1-nano", provider: "openai", enabled: true }
+    db.parentTipsRows = [parentTipsCandidate({ eventId: "pt-1" })]
+
+    const summary = await runEnrichmentTick(
+      db,
+      baseDeps({
+        parentTipsEnv: openAiEnv(),
+        fetchImpl: fakeFetchOk([{ category: "arrival", text: "Arrive 15 minutes early." }]),
+      })
+    )
+
+    expect(summary.parentTips).toEqual({ enabled: true, generated: 1, errors: 0 })
+    expect(db.calls).toContainEqual({ type: "updateEventParentTips", eventId: "pt-1" })
+    expect(db.calls.some((c) => c.type === "markEnrichmentAttempt")).toBe(false)
+  })
+})
+
+describe("runEnrichmentTick — budget", () => {
+  it("stops mid-main-batch when the budget is exhausted, skipping remaining rows and all aux passes", async () => {
+    const db = new FakeEnrichmentDb()
+    db.legacyRows = [
+      candidate({ eventId: "a", needsCoords: true, address: "1 A St" }),
+      candidate({ eventId: "b", needsCoords: true, address: "1 B St" }),
+    ]
+    // Aux-pass fixtures that would produce visible calls if (incorrectly) run.
+    db.pendingTrackingRows = [
+      {
+        attributionId: "attr-1",
+        eventId: "e1",
+        imageUrl: "u1",
+        downloadLocation: "https://dl-1",
+        attempts: 0,
+      },
+    ]
+    db.attributionBackfillRows = [{ eventId: "e1", imageUrl: "https://img-1" }]
+    db.parentTipsFeatureConfig = { modelId: "gpt-4.1-nano", provider: "openai", enabled: true }
+
+    const geocode = vi.fn(async () => ({ latitude: 1, longitude: 2, source: "nominatim" as const }))
+    const clockValues = [0, 10, 150, 200]
+    let clockIndex = 0
+    const now = () => clockValues[Math.min(clockIndex++, clockValues.length - 1)] ?? 0
+
+    const summary = await runEnrichmentTick(
+      db,
+      baseDeps({ geocode, now, budgetMs: 100, unsplashAccessKey: "key" })
+    )
+
+    expect(summary.stoppedEarly).toBe(true)
+    expect(summary.claimed).toBe(2)
+    expect(summary.coordsSet).toBe(1)
+    expect(db.calls.some((c) => "eventId" in c && c.eventId === "b")).toBe(false)
+    expect(db.calls.some((c) => c.type === "listPendingUnsplashTracking")).toBe(false)
+    expect(db.calls.some((c) => c.type === "listEventsNeedingAttributionBackfill")).toBe(false)
+    expect(db.calls.some((c) => c.type === "loadParentTipsFeatureConfig")).toBe(false)
+    expect(summary.tracking).toEqual({ processed: 0, succeeded: 0, failed: 0 })
+    expect(summary.attributionBackfill).toEqual({ processed: 0, upserted: 0, errors: 0 })
+    expect(summary.parentTips).toEqual({ enabled: false, generated: 0, errors: 0 })
+  })
+})
+
+describe("runEnrichmentTick — pass order", () => {
+  it("runs main batch -> tracking -> attribution backfill -> parent-tips, matching legacy index.ts:501-678", async () => {
+    const db = new FakeEnrichmentDb()
+    db.legacyRows = [candidate({ eventId: "a", needsCoords: true, address: "1 A St" })]
+    db.pendingTrackingRows = [
+      {
+        attributionId: "attr-1",
+        eventId: "e1",
+        imageUrl: "u1",
+        downloadLocation: "https://dl-1",
+        attempts: 0,
+      },
+    ]
+    db.attributionBackfillRows = [{ eventId: "e1", imageUrl: "https://img-1" }]
+    db.parentTipsFeatureConfig = { modelId: "gpt-4.1-nano", provider: "openai", enabled: false }
+    const geocode = vi.fn(async () => null)
+    const trackDownload = vi.fn(async () => ({ ok: true, error: null }))
+
+    await runEnrichmentTick(db, baseDeps({ geocode, trackDownload, unsplashAccessKey: "key" }))
+
+    const typeOrder = db.calls.map((c) => c.type)
+    const mainBatchIndex = typeOrder.indexOf("markEnrichmentAttempt")
+    const trackingIndex = typeOrder.indexOf("listPendingUnsplashTracking")
+    const attributionIndex = typeOrder.indexOf("listEventsNeedingAttributionBackfill")
+    const parentTipsIndex = typeOrder.indexOf("loadParentTipsFeatureConfig")
+
+    expect(mainBatchIndex).toBeGreaterThanOrEqual(0)
+    expect(trackingIndex).toBeGreaterThan(mainBatchIndex)
+    expect(attributionIndex).toBeGreaterThan(trackingIndex)
+    expect(parentTipsIndex).toBeGreaterThan(attributionIndex)
   })
 })
