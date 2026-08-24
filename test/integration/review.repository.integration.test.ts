@@ -41,6 +41,29 @@ beforeEach(async () => {
   await truncateIngestion(db)
 })
 
+describe("ReviewRepository.loadEventReviewFeatureConfig", () => {
+  it("joins the event-review feature to its approved provider", async () => {
+    await db.query(
+      `INSERT INTO public.approved_ai_models (id, provider, display_name)
+       VALUES ('gpt-5.4-nano', 'openai', 'GPT-5.4 nano')`
+    )
+    await db.query(
+      `INSERT INTO public.ai_feature_config (feature, model_id, enabled)
+       VALUES ('event-review', 'gpt-5.4-nano', true)`
+    )
+
+    expect(await repo.loadEventReviewFeatureConfig()).toEqual({
+      model: "gpt-5.4-nano",
+      provider: "openai",
+      enabled: true,
+    })
+  })
+
+  it("returns null when event review is unconfigured", async () => {
+    expect(await repo.loadEventReviewFeatureConfig()).toBeNull()
+  })
+})
+
 async function seedCity(): Promise<string> {
   const id = randomUUID()
   await db.query(
