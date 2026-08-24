@@ -148,8 +148,8 @@ describe("U23 data layer (integration, real RPCs)", () => {
     it("hydrates specific event ids regardless of paging (favorites page path)", async () => {
       const a = await insertEvent({ title: "A" })
       const b = await insertEvent({ title: "B" })
-      await insertEvent({ title: "C" })
-      const rows = await events.listEvents({ eventIds: [a, b] })
+      const draft = await insertEvent({ title: "Draft", status: "draft" })
+      const rows = await events.listEvents({ eventIds: [a, b, draft] })
       expect(rows.map((row) => row.id).toSorted()).toEqual([a, b].toSorted())
     })
   })

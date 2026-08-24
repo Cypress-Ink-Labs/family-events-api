@@ -12,7 +12,7 @@ import { ConsumerModule } from "../../src/consumer/consumer.module.js"
 import { DataModule } from "../../src/data/data.module.js"
 import { DbModule } from "../../src/db/db.module.js"
 import { DbService } from "../../src/db/db.service.js"
-import { ensureCatalogSchema, truncateCatalog } from "./catalog.js"
+import { ensureCatalogSchema, ensureConsumerSimilaritySchema, truncateCatalog } from "./catalog.js"
 import { integrationDatabaseUrl } from "./db.js"
 
 vi.mock("@clerk/backend", () => ({
@@ -31,6 +31,7 @@ const TAG_FREE = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"
 const TAG_OUTDOOR = "ffffffff-ffff-4fff-8fff-ffffffffffff"
 const USER_READER = "99999999-9999-4999-8999-999999999999"
 const USER_OTHER = "88888888-8888-4888-8888-888888888888"
+const SIMILAR_VECTOR = `[1,${Array<number>(1535).fill(0).join(",")}]`
 
 describe("consumer read HTTP API", () => {
   let app: INestApplication
@@ -60,6 +61,7 @@ describe("consumer read HTTP API", () => {
     await app.init()
     db = app.get(DbService)
     await ensureCatalogSchema(db)
+    await ensureConsumerSimilaritySchema(db)
     await db.query("CREATE SCHEMA IF NOT EXISTS auth")
     await db.query("CREATE TABLE IF NOT EXISTS auth.users (id uuid PRIMARY KEY)")
     await db.query(`CREATE TABLE IF NOT EXISTS public.clerk_user_mapping (
@@ -114,15 +116,39 @@ describe("consumer read HTTP API", () => {
     title: string
     description?: string
     start?: string
+    cityId?: string
+    latitude?: number | null
+    longitude?: number | null
+    status?: "draft" | "published"
+    isFree?: boolean
   }): Promise<string> {
     const id = randomUUID()
     await db.query(
       `INSERT INTO public.events (
-         id, title, description, start_datetime, timezone, city_id, is_free, status
-       ) VALUES ($1, $2, $3, $4, 'America/Chicago', $5, true, 'published')`,
-      [id, input.title, input.description ?? null, input.start ?? "2026-08-16T15:00:00+00:00", CITY]
+         id, title, description, start_datetime, timezone, city_id,
+         latitude, longitude, is_free, status
+       ) VALUES ($1, $2, $3, $4, 'America/Chicago', $5, $6, $7, $8, $9)`,
+      [
+        id,
+        input.title,
+        input.description ?? null,
+        input.start ?? "2026-08-16T15:00:00+00:00",
+        input.cityId ?? CITY,
+        input.latitude ?? null,
+        input.longitude ?? null,
+        input.isFree ?? true,
+        input.status ?? "published",
+      ]
     )
     return id
+  }
+
+  async function seedEmbedding(eventId: string): Promise<void> {
+    await db.query(
+      `INSERT INTO public.event_embeddings (event_id, embedding)
+       VALUES ($1::uuid, $2::extensions.vector)`,
+      [eventId, SIMILAR_VECTOR]
+    )
   }
 
   it("paginates events and accepts the returned next_cursor", async () => {
@@ -192,6 +218,101 @@ describe("consumer read HTTP API", () => {
 
     expect(response.body.is_favorited).toBe(true)
     expect(response.body.is_in_calendar).toBe(false)
+  })
+
+  it("returns the app's composite detail contract", async () => {
+    const id = await insertEvent({ title: "Composite detail" })
+    const similar = await insertEvent({ title: "Similar event" })
+    await Promise.all([seedEmbedding(id), seedEmbedding(similar)])
+    await db.query(
+      `INSERT INTO public.comments (user_id, event_id, body, is_approved)
+       VALUES ($1, $2, 'Approved comment', true), ($3, $2, 'Hidden comment', false)`,
+      [USER_OTHER, id, USER_READER]
+    )
+    await db.query("INSERT INTO public.ratings (user_id, event_id, score) VALUES ($1, $2, 5)", [
+      USER_READER,
+      id,
+    ])
+
+    const response = await request(app.getHttpServer())
+      .get(`/v1/events/${id}/detail`)
+      .set("Authorization", "Bearer mapped-token")
+      .expect(200)
+
+    expect(response.body).toMatchObject({
+      event: { id, title: "Composite detail" },
+      similar: [{ event_id: similar, title: "Similar event" }],
+      my_rating: 5,
+      signed_in: true,
+    })
+    expect(response.body.comments).toEqual([
+      expect.objectContaining({ user_id: USER_OTHER, body: "Approved comment" }),
+    ])
+  })
+
+  it("does not leak related user data for an unpublished event", async () => {
+    const draft = await insertEvent({ title: "Hidden draft", status: "draft" })
+    await db.query(
+      `INSERT INTO public.comments (user_id, event_id, body, is_approved)
+       VALUES ($1, $2, 'Comment on hidden event', true)`,
+      [USER_OTHER, draft]
+    )
+
+    const response = await request(app.getHttpServer())
+      .get(`/v1/events/${draft}/detail`)
+      .set("Authorization", "Bearer mapped-token")
+      .expect(200)
+
+    expect(response.body).toEqual({
+      event: null,
+      similar: [],
+      comments: [],
+      my_rating: null,
+      signed_in: true,
+    })
+  })
+
+  it("returns up to 200 finite-coordinate map events for the requested city", async () => {
+    const mapped = await insertEvent({
+      title: "Mapped",
+      latitude: 30.22,
+      longitude: -92.02,
+      isFree: false,
+    })
+    await insertEvent({ title: "No coordinates" })
+    await insertEvent({
+      title: "Other city",
+      cityId: OTHER_CITY,
+      latitude: 30.45,
+      longitude: -91.19,
+    })
+
+    const response = await request(app.getHttpServer())
+      .get("/v1/events/map")
+      .query({ city_id: CITY })
+      .expect(200)
+
+    expect(response.body).toEqual({
+      events: [
+        {
+          id: mapped,
+          title: "Mapped",
+          latitude: 30.22,
+          longitude: -92.02,
+          start_datetime: "2026-08-16 15:00:00+00",
+          venue_name: null,
+          is_free: false,
+        },
+      ],
+    })
+  })
+
+  it("rejects invalid map query parameters", async () => {
+    await request(app.getHttpServer())
+      .get("/v1/events/map")
+      .query({ city_id: "not-a-uuid" })
+      .expect(400)
+    await request(app.getHttpServer()).get("/v1/events/map").query({ limit: 999 }).expect(400)
   })
 
   it("returns active cities and tags ordered by slug", async () => {

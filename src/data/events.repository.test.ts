@@ -46,6 +46,12 @@ describe("EventsRepository.listEvents", () => {
     expect(query.mock.calls[0]?.[0]).not.toContain("SELECT *")
     expect(query.mock.calls[0]?.[0]).not.toContain("search_vector")
   })
+
+  it("re-applies the requested status after event-id hydration", async () => {
+    const { db, query } = makeDb()
+    await new EventsRepository(db).listEvents({ eventIds: ["event-1"] })
+    expect(query.mock.calls[0]?.[0]).toContain("WHERE status = $2::text")
+  })
 })
 
 describe("EventsRepository.searchEvents", () => {

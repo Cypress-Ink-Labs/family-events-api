@@ -34,6 +34,7 @@ FROM public.events_enriched(
   p_after_id             => $8::uuid,
   p_limit                => $9::int
 )
+WHERE status = $2::text
 `
 
 const SEARCH_SQL = `
