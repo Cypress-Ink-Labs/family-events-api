@@ -6,13 +6,14 @@ import { EventsRepository } from "../../src/data/events.repository.js"
 import { ReferenceRepository } from "../../src/data/reference.repository.js"
 import type { DbService } from "../../src/db/db.service.js"
 import { createIntegrationDb } from "./db.js"
-import { ensureCatalogSchema, truncateCatalog } from "./catalog.js"
+import { ensureCatalogSchema, ensureConsumerSimilaritySchema, truncateCatalog } from "./catalog.js"
 
 const CITY = "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
 const OTHER_CITY = "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
 const TAG_FREE = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"
 const TAG_OUTDOOR = "ffffffff-ffff-4fff-8fff-ffffffffffff"
 const USER = "99999999-9999-4999-8999-999999999999"
+const SIMILAR_VECTOR = `[1,${Array<number>(1535).fill(0).join(",")}]`
 
 describe("U23 data layer (integration, real RPCs)", () => {
   let db: DbService
@@ -22,6 +23,7 @@ describe("U23 data layer (integration, real RPCs)", () => {
   beforeAll(async () => {
     db = createIntegrationDb()
     await ensureCatalogSchema(db)
+    await ensureConsumerSimilaritySchema(db)
     events = new EventsRepository(db)
     reference = new ReferenceRepository(db)
   })
@@ -181,6 +183,35 @@ describe("U23 data layer (integration, real RPCs)", () => {
       await insertEvent({ title: "One", tagIds: [TAG_OUTDOOR] })
       const rows = await events.searchEvents({ tagSlugs: ["free", "outdoor"] })
       expect(rows.map((row) => row.id)).toEqual([both])
+    })
+  })
+
+  describe("findSimilarEventsById", () => {
+    async function seedEmbedding(eventId: string): Promise<void> {
+      await db.query(
+        `INSERT INTO public.event_embeddings (event_id, embedding)
+         VALUES ($1::uuid, $2::extensions.vector)`,
+        [eventId, SIMILAR_VECTOR]
+      )
+    }
+
+    it("returns only published neighbors for a published source", async () => {
+      const source = await insertEvent({ title: "Source" })
+      const published = await insertEvent({ title: "Published neighbor" })
+      const draft = await insertEvent({ title: "Draft neighbor", status: "draft" })
+      await Promise.all([seedEmbedding(source), seedEmbedding(published), seedEmbedding(draft)])
+
+      await expect(events.findSimilarEventsById(source, { limit: 4 })).resolves.toEqual([
+        { event_id: published, title: "Published neighbor" },
+      ])
+    })
+
+    it("returns no neighbors when the source event is unpublished", async () => {
+      const source = await insertEvent({ title: "Draft source", status: "draft" })
+      const published = await insertEvent({ title: "Published neighbor" })
+      await Promise.all([seedEmbedding(source), seedEmbedding(published)])
+
+      await expect(events.findSimilarEventsById(source, { limit: 4 })).resolves.toEqual([])
     })
   })
 

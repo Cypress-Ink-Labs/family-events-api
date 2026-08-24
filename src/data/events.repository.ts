@@ -1,7 +1,14 @@
 import { Injectable } from "@nestjs/common"
 
 import { DbService } from "../db/db.service.js"
-import type { EnrichedEvent, ListEventsInput, SearchEventsInput, SearchedEvent } from "./types.js"
+import type {
+  EnrichedEvent,
+  ListEventsInput,
+  SearchedEvent,
+  SearchEventsInput,
+  SimilarEvent,
+  SimilarEventsInput,
+} from "./types.js"
 
 // Consumer event reads (U23): a port of family-events-app src/server/events.ts.
 // The repositories call the same deployed RPCs with the same named parameters,
@@ -53,6 +60,15 @@ FROM public.search_events(
 )
 `
 
+const SIMILAR_BY_ID_SQL = `
+SELECT event_id::text, title
+FROM public.find_similar_events_by_id(
+  p_event_id => $1::uuid,
+  p_limit    => $2::int,
+  p_city_id  => $3::uuid
+)
+`
+
 @Injectable()
 export class EventsRepository {
   constructor(private readonly db: DbService) {}
@@ -88,6 +104,17 @@ export class EventsRepository {
       input.lat ?? null,
       input.lng ?? null,
       input.radiusKm ?? null,
+    ])
+  }
+
+  async findSimilarEventsById(
+    eventId: string,
+    input: SimilarEventsInput = {}
+  ): Promise<SimilarEvent[]> {
+    return this.db.query<SimilarEvent>(SIMILAR_BY_ID_SQL, [
+      eventId,
+      input.limit ?? 5,
+      input.cityId ?? null,
     ])
   }
 }

@@ -98,6 +98,17 @@ export interface SearchedEvent {
   is_featured: boolean
 }
 
+/** Consumer detail contract: the app renders only the linked event id and title. */
+export interface SimilarEvent {
+  event_id: string
+  title: string
+}
+
+export interface SimilarEventsInput {
+  limit?: number
+  cityId?: string | null
+}
+
 export interface City {
   id: string
   name: string

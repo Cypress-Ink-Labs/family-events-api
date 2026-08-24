@@ -75,6 +75,22 @@ describe("EventsRepository.searchEvents", () => {
   })
 })
 
+describe("EventsRepository.findSimilarEventsById", () => {
+  it("calls the consumer similarity RPC with parameterized inputs", async () => {
+    const { db, query } = makeDb()
+
+    await new EventsRepository(db).findSimilarEventsById("event-1", {
+      limit: 4,
+      cityId: "city-1",
+    })
+
+    const [sql, params] = query.mock.calls[0]!
+    expect(sql).toContain("public.find_similar_events_by_id(")
+    expect(sql).not.toContain("SELECT *")
+    expect(params).toEqual(["event-1", 4, "city-1"])
+  })
+})
+
 describe("binding order (sentinel values)", () => {
   // Every input field gets a distinct sentinel so a swapped positional bind
   // fails loudly, without asserting SQL text.
