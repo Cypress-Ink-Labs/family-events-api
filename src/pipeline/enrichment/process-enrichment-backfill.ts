@@ -580,10 +580,20 @@ async function runTrackingPass(
 
   for (const row of rows) {
     if (deadline.exceeded()) return { summary, stoppedEarly: true }
-    const result = await trackDownload(row.downloadLocation, unsplashAccessKey)
-    await db.markUnsplashTrackingResult(row.attributionId, result.ok, result.error ?? undefined)
-    if (result.ok) summary.succeeded += 1
-    else summary.failed += 1
+    try {
+      const result = await trackDownload(row.downloadLocation, unsplashAccessKey)
+      await db.markUnsplashTrackingResult(row.attributionId, result.ok, result.error ?? undefined)
+      if (result.ok) summary.succeeded += 1
+      else summary.failed += 1
+    } catch (rowErr) {
+      summary.failed += 1
+      logEdgeEvent("warn", "unsplash tracking row failed", {
+        function: "backfill-event-enrichment",
+        stage: "tracking",
+        attributionId: row.attributionId,
+        error: errorMessage(rowErr),
+      })
+    }
   }
 
   return { summary, stoppedEarly: false }
@@ -632,8 +642,14 @@ async function runAttributionBackfillPass(
         downloadLocation: attribution.downloadLocation,
       })
       summary.upserted += 1
-    } catch {
+    } catch (rowErr) {
       summary.errors += 1
+      logEdgeEvent("warn", "attribution backfill row failed", {
+        function: "backfill-event-enrichment",
+        stage: "attribution-backfill",
+        eventId: row.eventId,
+        error: errorMessage(rowErr),
+      })
     }
   }
 

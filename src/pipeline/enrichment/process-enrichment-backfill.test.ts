@@ -82,6 +82,7 @@ class FakeEnrichmentDb implements EnrichmentDb {
   parentTipsRows: ParentTipsCandidate[] = []
   parentTipsFeatureConfigError: Error | null = null
   listEventsNeedingParentTipsError: Error | null = null
+  markUnsplashTrackingResultErrors = new Set<string>()
 
   async listEventsNeedingEnrichment(limit: number): Promise<EnrichmentCandidate[]> {
     this.calls.push({ type: "listEventsNeedingEnrichment", limit })
@@ -137,6 +138,9 @@ class FakeEnrichmentDb implements EnrichmentDb {
     error?: string
   ): Promise<void> {
     this.calls.push({ type: "markUnsplashTrackingResult", attributionId, success, error })
+    if (this.markUnsplashTrackingResultErrors.has(attributionId)) {
+      throw new Error("attribution row missing")
+    }
   }
 
   async listEventsNeedingAttributionBackfill(
@@ -758,6 +762,63 @@ describe("runEnrichmentTick — tracking pass", () => {
     expect(summary.tracking).toEqual({ processed: 0, succeeded: 0, failed: 0 })
     expect(db.calls.some((c) => c.type === "listPendingUnsplashTracking")).toBe(false)
   })
+
+  it("logs a failed mark and continues with the remaining tracking rows", async () => {
+    const db = new FakeEnrichmentDb()
+    db.pendingTrackingRows = [
+      {
+        attributionId: "attr-missing",
+        eventId: "e1",
+        imageUrl: "u1",
+        downloadLocation: "https://dl-1",
+        attempts: 0,
+      },
+      {
+        attributionId: "attr-good",
+        eventId: "e2",
+        imageUrl: "u2",
+        downloadLocation: "https://dl-2",
+        attempts: 0,
+      },
+    ]
+    db.markUnsplashTrackingResultErrors.add("attr-missing")
+    const warnings: unknown[][] = []
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation((...args: unknown[]) => {
+      warnings.push(args)
+    })
+
+    let summary
+    try {
+      summary = await runEnrichmentTick(
+        db,
+        baseDeps({
+          unsplashAccessKey: "key",
+          trackDownload: async () => ({ ok: true, error: null }),
+        })
+      )
+    } finally {
+      warnSpy.mockRestore()
+    }
+
+    expect(summary.tracking).toEqual({ processed: 2, succeeded: 1, failed: 1 })
+    expect(db.calls).toContainEqual({
+      type: "markUnsplashTrackingResult",
+      attributionId: "attr-good",
+      success: true,
+      error: undefined,
+    })
+    expect(warnings).toHaveLength(1)
+    expect(JSON.parse(String(warnings[0]?.[0]))).toEqual(
+      expect.objectContaining({
+        level: "warn",
+        message: "unsplash tracking row failed",
+        function: "backfill-event-enrichment",
+        stage: "tracking",
+        attributionId: "attr-missing",
+        error: "attribution row missing",
+      })
+    )
+  })
 })
 
 describe("runEnrichmentTick — attribution backfill pass", () => {
@@ -794,6 +855,48 @@ describe("runEnrichmentTick — attribution backfill pass", () => {
       },
     })
     expect(db.calls.filter((c) => c.type === "upsertUnsplashAttributionBackfill")).toHaveLength(1)
+  })
+
+  it("logs row context when attribution lookup fails", async () => {
+    const db = new FakeEnrichmentDb()
+    db.attributionBackfillRows = [{ eventId: "e1", imageUrl: "https://img-1" }]
+    const warnings: unknown[][] = []
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation((...args: unknown[]) => {
+      warnings.push(args)
+    })
+
+    let summary
+    try {
+      summary = await runEnrichmentTick(
+        db,
+        baseDeps({
+          unsplashAccessKey: "key",
+          lookupPhoto: async () => {
+            throw new Error("unsplash unavailable")
+          },
+        })
+      )
+    } finally {
+      warnSpy.mockRestore()
+    }
+
+    expect(summary.attributionBackfill).toEqual({
+      processed: 1,
+      upserted: 0,
+      skipped: 0,
+      errors: 1,
+    })
+    expect(warnings).toHaveLength(1)
+    expect(JSON.parse(String(warnings[0]?.[0]))).toEqual(
+      expect.objectContaining({
+        level: "warn",
+        message: "attribution backfill row failed",
+        function: "backfill-event-enrichment",
+        stage: "attribution-backfill",
+        eventId: "e1",
+        error: "unsplash unavailable",
+      })
+    )
   })
 })
 
