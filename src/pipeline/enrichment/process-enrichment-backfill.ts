@@ -36,7 +36,7 @@
 //   `findImage` still defaults to `../stock-images.js`'s multi-provider
 //   `findFallbackImage`, matching legacy's actual `enrichOne` import exactly.
 
-import { buildGeocodeQuery, geocodeViaNominatim } from "../geocode.js"
+import { buildGeocodeQuery, geocodeViaNominatim, type GeocodeResult } from "../geocode.js"
 import type { EnvReader } from "../llm-config.js"
 import { errorMessage, logEdgeEvent } from "../logger.js"
 import {
@@ -49,6 +49,7 @@ import { lookupUnsplashPhotoFromUrl, trackUnsplashDownload } from "../unsplash.j
 import {
   generateParentTipsForEvent,
   resolveParentTipsAiConfig,
+  type ParentTipsCandidate,
   type ParentTipsDb,
 } from "./generate-parent-tips.js"
 
@@ -238,7 +239,12 @@ export async function claimEnrichmentBatch(
     seen.add(row.eventId)
     rows.push(row)
   }
-  return rows
+  // Finding F5: each half-claim independently applies `Math.max(1, floor(n/2))`,
+  // so a small `batchSize` (e.g. 1) can produce two half-claims of 1 row each
+  // that dedupe to 2 distinct rows — more than `batchSize`. Cap after dedupe
+  // so `batchSize` is a real upper bound; a no-op for the default batch (24
+  // deduped legacy+scoped rows never exceeds 25).
+  return rows.slice(0, batchSize)
 }
 
 export interface EnrichOneOutcome {
@@ -255,6 +261,27 @@ export interface EnrichOneOutcome {
 }
 
 /**
+ * Per-tick memoization caches threaded from `runEnrichmentTick` into every
+ * `enrichOne` call for one claimed batch (finding F2). Ported from legacy's
+ * `geocodeCache` (index.ts:109-229, keyed on the exact query string built by
+ * `buildGeocodeQuery`) and `imageCache` (index.ts:256-279, keyed on
+ * `[...tags].sort().join(",")`). Both legacy caches store hits AND misses —
+ * see the comment at index.ts:142-144: "a venue that fails to geocode should
+ * not be retried for every event in the same batch." Optional and defaulted
+ * to fresh empty maps so single-call unit tests don't need to construct them.
+ *
+ * Legacy's third per-tick cache, `sourceCache` (index.ts:93-104, 228-231), is
+ * intentionally NOT ported here: it exists solely to feed `fetchSourceUrl`
+ * for the scraper-image-refetch path, which is dead code per deviation #5
+ * (file header) — `EnrichmentDb` already dropped `fetchSourceUrl` entirely,
+ * so there is nothing left for a `sourceCache` to memoize.
+ */
+export interface EnrichOneCaches {
+  geocodeCache?: Map<string, GeocodeResult | null>
+  imageCache?: Map<string, StockImageResult | null>
+}
+
+/**
  * Enrich one candidate: geocode fallback tiers for coords, tag-keyed stock
  * image fallback chain for images, then the write path selected by what (if
  * anything) was produced. Ported from legacy `enrichOne`
@@ -263,11 +290,23 @@ export interface EnrichOneOutcome {
 export async function enrichOne(
   db: EnrichmentDb,
   candidate: EnrichmentCandidate,
-  deps: EnrichmentTickDependencies
+  deps: EnrichmentTickDependencies,
+  caches: EnrichOneCaches = {}
 ): Promise<EnrichOneOutcome> {
   const geocode = deps.geocode ?? geocodeViaNominatim
   const findImage = deps.findImage ?? findFallbackImage
   const trackDownload = deps.trackDownload ?? trackUnsplashDownload
+  const geocodeCache = caches.geocodeCache ?? new Map<string, GeocodeResult | null>()
+  const imageCache = caches.imageCache ?? new Map<string, StockImageResult | null>()
+
+  // Both hits and misses are cached — a venue that fails to geocode should
+  // not be retried for every event in the same batch (index.ts:142-144).
+  const cachedGeocode = async (query: string): Promise<GeocodeResult | null> => {
+    if (geocodeCache.has(query)) return geocodeCache.get(query) ?? null
+    const result = await geocode(query)
+    geocodeCache.set(query, result)
+    return result
+  }
 
   let latitude: number | null = null
   let longitude: number | null = null
@@ -287,7 +326,7 @@ export async function enrichOne(
     })
 
     if (query) {
-      const geo = await geocode(query)
+      const geo = await cachedGeocode(query)
       if (geo) {
         latitude = geo.latitude
         longitude = geo.longitude
@@ -308,7 +347,7 @@ export async function enrichOne(
                 cityState: cityCtx?.state ?? null,
               })
               if (fallbackQuery) {
-                const fallbackGeo = await geocode(fallbackQuery)
+                const fallbackGeo = await cachedGeocode(fallbackQuery)
                 if (fallbackGeo) {
                   latitude = fallbackGeo.latitude
                   longitude = fallbackGeo.longitude
@@ -332,7 +371,7 @@ export async function enrichOne(
         cityState: null,
       })
       if (venueOnlyQuery && venueOnlyQuery !== query) {
-        const venueGeo = await geocode(venueOnlyQuery)
+        const venueGeo = await cachedGeocode(venueOnlyQuery)
         if (venueGeo) {
           latitude = venueGeo.latitude
           longitude = venueGeo.longitude
@@ -353,7 +392,16 @@ export async function enrichOne(
   // path (index.ts:227-254) is dead code — go straight to the tag-keyed
   // stock-image fallback (index.ts:256-279).
   if (candidate.needsImages && candidate.tags.length > 0) {
-    stockResult = await findImage(candidate.tags, deps.providerKeys, { title: candidate.title })
+    // Cache keyed on sorted tag slugs — events sharing the same tag set are
+    // thematically identical, so reusing the result (hit or miss) is
+    // acceptable within one tick (index.ts:256-267).
+    const imageKey = [...candidate.tags].sort().join(",")
+    if (imageCache.has(imageKey)) {
+      stockResult = imageCache.get(imageKey) ?? null
+    } else {
+      stockResult = await findImage(candidate.tags, deps.providerKeys, { title: candidate.title })
+      imageCache.set(imageKey, stockResult)
+    }
     if (stockResult) {
       images = [stockResult.url]
       imageSource = stockResult.attribution.provider
@@ -445,7 +493,7 @@ export interface EnrichmentTickSummary {
   attemptsMarked: number
   errors: number
   tracking: { processed: number; succeeded: number; failed: number }
-  attributionBackfill: { processed: number; upserted: number; errors: number }
+  attributionBackfill: { processed: number; upserted: number; skipped: number; errors: number }
   parentTips: { enabled: boolean; generated: number; errors: number }
   durationMs: number
   stoppedEarly: boolean
@@ -492,60 +540,85 @@ function withCityContextCache(db: EnrichmentDb): EnrichmentDb {
 }
 
 /**
+ * Shared wall-clock budget check (plan deviation #4, binding; finding F1).
+ * `runEnrichmentTick`'s JSDoc covers the rationale; this type/factory exists
+ * so every call site — the main claim loop, the entry to each auxiliary
+ * pass, and the between-rows check inside each aux pass's own loop — shares
+ * one `now()` reading and one `budgetMs` threshold rather than re-deriving
+ * the check ad hoc (the bug fixed here: previously only the main loop
+ * checked it, so time spent inside an aux pass, or past the last main row,
+ * ran unbounded).
+ */
+interface Deadline {
+  exceeded(): boolean
+}
+
+function createDeadline(now: () => number, startedAt: number, budgetMs: number): Deadline {
+  return {
+    exceeded: () => now() - startedAt >= budgetMs,
+  }
+}
+
+/**
  * Ported from legacy `runPendingUnsplashTrackingPass` (index.ts:390-423): no
  * key configured means the pass is a no-op (legacy's early `return summary`
- * before the RPC call).
+ * before the RPC call). Finding F1: checks the shared `deadline` between
+ * rows so a slow tracking pass can't blow through the tick's budget.
  */
 async function runTrackingPass(
   db: EnrichmentDb,
-  deps: EnrichmentTickDependencies
-): Promise<EnrichmentTickSummary["tracking"]> {
+  deps: EnrichmentTickDependencies,
+  deadline: Deadline
+): Promise<{ summary: EnrichmentTickSummary["tracking"]; stoppedEarly: boolean }> {
   const summary = { processed: 0, succeeded: 0, failed: 0 }
   const unsplashAccessKey = deps.unsplashAccessKey ?? ""
-  if (!unsplashAccessKey) return summary
+  if (!unsplashAccessKey) return { summary, stoppedEarly: false }
 
   const trackDownload = deps.trackDownload ?? trackUnsplashDownload
   const rows = await db.listPendingUnsplashTracking(deps.trackingBatch ?? 25)
   summary.processed = rows.length
 
   for (const row of rows) {
+    if (deadline.exceeded()) return { summary, stoppedEarly: true }
     const result = await trackDownload(row.downloadLocation, unsplashAccessKey)
     await db.markUnsplashTrackingResult(row.attributionId, result.ok, result.error ?? undefined)
     if (result.ok) summary.succeeded += 1
     else summary.failed += 1
   }
 
-  return summary
+  return { summary, stoppedEarly: false }
 }
 
 /**
  * Ported from legacy `runUnsplashAttributionBackfillPass` (index.ts:439-499).
+ * Legacy's per-row outcome has three buckets: `backfilled`, `skipped` (null
+ * lookup, index.ts:464-467 — "if (!attribution) { summary.skipped += 1;
+ * continue }"), and `errors` (thrown/upsert failure). CONTROLLER RULING P1
+ * (binding, overrides the plan brief's "null lookup counted as error"
+ * wording — finding F4): legacy wins, a null lookup is counted as `skipped`.
  *
- * Deviation: legacy's per-row outcome has three buckets — `backfilled`,
- * `skipped` (null lookup, index.ts:464-467), and `errors` (thrown/upsert
- * failure). `EnrichmentTickSummary.attributionBackfill` (this port's Produces
- * shape) has no `skipped` field, so a null lookup is folded into `errors`
- * here — the row still gets nothing written either way, only the bucket
- * label differs from legacy.
+ * Finding F1: checks the shared `deadline` between rows.
  */
 async function runAttributionBackfillPass(
   db: EnrichmentDb,
-  deps: EnrichmentTickDependencies
-): Promise<EnrichmentTickSummary["attributionBackfill"]> {
-  const summary = { processed: 0, upserted: 0, errors: 0 }
+  deps: EnrichmentTickDependencies,
+  deadline: Deadline
+): Promise<{ summary: EnrichmentTickSummary["attributionBackfill"]; stoppedEarly: boolean }> {
+  const summary = { processed: 0, upserted: 0, skipped: 0, errors: 0 }
   const unsplashAccessKey = deps.unsplashAccessKey ?? ""
-  if (!unsplashAccessKey) return summary
+  if (!unsplashAccessKey) return { summary, stoppedEarly: false }
 
   const lookupPhoto = deps.lookupPhoto ?? lookupUnsplashPhotoFromUrl
   const rows = await db.listEventsNeedingAttributionBackfill(deps.attributionBackfillBatch ?? 10)
   summary.processed = rows.length
 
   for (const row of rows) {
+    if (deadline.exceeded()) return { summary, stoppedEarly: true }
     try {
       const attribution = await lookupPhoto(row.imageUrl, unsplashAccessKey)
       if (!attribution) {
-        // Legacy: "skipped" (index.ts:465-466) — see deviation note above.
-        summary.errors += 1
+        // Legacy: null lookup is "skipped", not an error (index.ts:464-467).
+        summary.skipped += 1
         continue
       }
       await db.upsertUnsplashAttributionBackfill({
@@ -564,7 +637,7 @@ async function runAttributionBackfillPass(
     }
   }
 
-  return summary
+  return { summary, stoppedEarly: false }
 }
 
 /**
@@ -585,56 +658,116 @@ async function runAttributionBackfillPass(
  * the config resolution didn't already know, so probing would be artificial:
  * report `{ enabled: true, generated: 0, errors: 1 }` and skip the list/
  * generate calls entirely.
+ *
+ * Finding F3: legacy's HTTP boundary made three seam-throw scenarios
+ * impossible; in-process they are real, and the tick must never reject:
+ * - `loadParentTipsFeatureConfig` throws -> legacy's `cfgErr`
+ *   (parent-tips-pass.ts:31-39, `if (cfgErr || !cfg || cfg.enabled !== true)
+ *   return summary`): treated exactly like "not configured" — return the
+ *   untouched default summary.
+ * - `listEventsNeedingParentTips` throws -> legacy's `claimErr`
+ *   (parent-tips-pass.ts:42-52): `summary.enabled` stays `true` (already set
+ *   before this call, matching legacy), log a warning, return without
+ *   incrementing `errors`.
+ * - the per-row `generateParentTipsForEvent` call throws (its own try/catch
+ *   covers the LLM call and DB write, but prompt-building runs *outside*
+ *   that try/catch and can throw on malformed candidate data) -> legacy's
+ *   per-row catch (parent-tips-pass.ts:98-106, `catch (rowErr) { errors += 1;
+ *   log; }` then loop `continue`s): `errors += 1`, log, continue — no
+ *   `markEnrichmentAttempt` call (unlike the sibling non-thrown-failure
+ *   branch below, which does call it, matching parent-tips-pass.ts:76-94).
+ *
+ * Finding F1: also checks the shared `deadline` between rows of the generate
+ * loop, matching the main claim loop's between-rows check.
  */
 async function runParentTipsPass(
   db: EnrichmentDb,
-  deps: EnrichmentTickDependencies
-): Promise<EnrichmentTickSummary["parentTips"]> {
+  deps: EnrichmentTickDependencies,
+  deadline: Deadline
+): Promise<{ summary: EnrichmentTickSummary["parentTips"]; stoppedEarly: boolean }> {
   const summary: EnrichmentTickSummary["parentTips"] = {
     enabled: false,
     generated: 0,
     errors: 0,
   }
 
-  const dbConfig = await db.loadParentTipsFeatureConfig()
-  if (!dbConfig || !dbConfig.enabled) return summary
+  let dbConfig: { modelId: string | null; provider: string | null; enabled: boolean } | null
+  try {
+    dbConfig = await db.loadParentTipsFeatureConfig()
+  } catch (err) {
+    // Legacy cfgErr (parent-tips-pass.ts:37-39): treated as "not configured" — silent no-op.
+    logEdgeEvent("warn", "parent-tips config load failed", {
+      function: "backfill-event-enrichment",
+      stage: "parent-tips",
+      error: errorMessage(err),
+    })
+    return { summary, stoppedEarly: false }
+  }
+  if (!dbConfig || !dbConfig.enabled) return { summary, stoppedEarly: false }
   summary.enabled = true
 
   const config = resolveParentTipsAiConfig(dbConfig, deps.parentTipsEnv)
   if (!config.configured) {
     // CONTROLLER RULING P2 — see the function-level doc comment above.
     summary.errors = 1
-    return summary
+    return { summary, stoppedEarly: false }
   }
 
-  const rows = await db.listEventsNeedingParentTips(deps.parentTipsBatch ?? 8)
-  for (const row of rows) {
-    const result = await generateParentTipsForEvent(db, row, config, {
-      fetchImpl: deps.fetchImpl,
+  let rows: ParentTipsCandidate[]
+  try {
+    rows = await db.listEventsNeedingParentTips(deps.parentTipsBatch ?? 8)
+  } catch (err) {
+    // Legacy claimErr (parent-tips-pass.ts:42-52): log + return, `enabled`
+    // stays true, `errors` is NOT incremented — matching legacy exactly.
+    logEdgeEvent("warn", "parent-tips claim failed", {
+      function: "backfill-event-enrichment",
+      stage: "parent-tips",
+      error: errorMessage(err),
     })
-    if (result.status === "generated") {
-      summary.generated += 1
-    } else {
-      // Legacy: non-503 failure → count error, mark attempt, continue
-      // (parent-tips-pass.ts:76-94). The mark-attempt call itself is
-      // guarded the same way legacy guards it (parent-tips-pass.ts:80-93):
-      // a failure there logs a warning and the loop continues — it must
-      // never crash the whole tick.
-      summary.errors += 1
-      try {
-        await db.markEnrichmentAttempt(row.eventId)
-      } catch (markErr) {
-        logEdgeEvent("warn", "parent-tips mark attempt failed", {
-          function: "backfill-event-enrichment",
-          stage: "parent-tips",
-          eventId: row.eventId,
-          error: errorMessage(markErr),
-        })
+    return { summary, stoppedEarly: false }
+  }
+
+  for (const row of rows) {
+    if (deadline.exceeded()) return { summary, stoppedEarly: true }
+    try {
+      const result = await generateParentTipsForEvent(db, row, config, {
+        fetchImpl: deps.fetchImpl,
+      })
+      if (result.status === "generated") {
+        summary.generated += 1
+      } else {
+        // Legacy: non-503 failure → count error, mark attempt, continue
+        // (parent-tips-pass.ts:76-94). The mark-attempt call itself is
+        // guarded the same way legacy guards it (parent-tips-pass.ts:80-93):
+        // a failure there logs a warning and the loop continues — it must
+        // never crash the whole tick.
+        summary.errors += 1
+        try {
+          await db.markEnrichmentAttempt(row.eventId)
+        } catch (markErr) {
+          logEdgeEvent("warn", "parent-tips mark attempt failed", {
+            function: "backfill-event-enrichment",
+            stage: "parent-tips",
+            eventId: row.eventId,
+            error: errorMessage(markErr),
+          })
+        }
       }
+    } catch (rowErr) {
+      // Legacy's outer per-row catch (parent-tips-pass.ts:98-106): count
+      // error, log, continue. No markEnrichmentAttempt here — legacy's outer
+      // catch doesn't call it either.
+      summary.errors += 1
+      logEdgeEvent("warn", "parent-tips row failed", {
+        function: "backfill-event-enrichment",
+        stage: "parent-tips",
+        eventId: row.eventId,
+        error: errorMessage(rowErr),
+      })
     }
   }
 
-  return summary
+  return { summary, stoppedEarly: false }
 }
 
 /**
@@ -652,6 +785,14 @@ async function runParentTipsPass(
  * the next tick to re-list), all three aux passes are skipped for this tick,
  * and `stoppedEarly` is set so callers/observability can tell a tick was cut
  * short rather than completing normally with a small batch.
+ *
+ * Finding F1 (fixed here): the original version only checked the budget
+ * between main-batch rows, so a slow last row or a slow aux pass (up to 8
+ * parent-tips rows × a 30s LLM timeout each) could run the tick unbounded.
+ * The shared `deadline` (see `createDeadline` above) is now re-checked
+ * immediately before each aux pass is *entered*, and each pass itself
+ * re-checks it between its own rows — tripping the budget anywhere skips all
+ * remaining work and latches `stoppedEarly = true` for the rest of the tick.
  */
 export async function runEnrichmentTick(
   db: EnrichmentDb,
@@ -660,6 +801,7 @@ export async function runEnrichmentTick(
   const now = deps.now ?? Date.now
   const startedAt = now()
   const budgetMs = deps.budgetMs ?? 110_000
+  const deadline = createDeadline(now, startedAt, budgetMs)
 
   const summary: EnrichmentTickSummary = {
     claimed: 0,
@@ -668,7 +810,7 @@ export async function runEnrichmentTick(
     attemptsMarked: 0,
     errors: 0,
     tracking: { processed: 0, succeeded: 0, failed: 0 },
-    attributionBackfill: { processed: 0, upserted: 0, errors: 0 },
+    attributionBackfill: { processed: 0, upserted: 0, skipped: 0, errors: 0 },
     parentTips: { enabled: false, generated: 0, errors: 0 },
     durationMs: 0,
     stoppedEarly: false,
@@ -678,14 +820,18 @@ export async function runEnrichmentTick(
   summary.claimed = candidates.length
 
   const cityCachedDb = withCityContextCache(db)
+  // Finding F2: per-tick geocode + image memoization, shared across every
+  // `enrichOne` call in this batch — see `EnrichOneCaches`'s doc comment.
+  const geocodeCache = new Map<string, GeocodeResult | null>()
+  const imageCache = new Map<string, StockImageResult | null>()
 
   for (const candidate of candidates) {
-    if (now() - startedAt >= budgetMs) {
+    if (deadline.exceeded()) {
       summary.stoppedEarly = true
       break
     }
     try {
-      const outcome = await enrichOne(cityCachedDb, candidate, deps)
+      const outcome = await enrichOne(cityCachedDb, candidate, deps, { geocodeCache, imageCache })
       if (outcome.coordsSet) summary.coordsSet += 1
       if (outcome.imagesSet) summary.imagesSet += 1
       if (outcome.attempted) summary.attemptsMarked += 1
@@ -694,10 +840,28 @@ export async function runEnrichmentTick(
     }
   }
 
-  if (!summary.stoppedEarly) {
-    summary.tracking = await runTrackingPass(db, deps)
-    summary.attributionBackfill = await runAttributionBackfillPass(db, deps)
-    summary.parentTips = await runParentTipsPass(db, deps)
+  if (!summary.stoppedEarly && !deadline.exceeded()) {
+    const trackingResult = await runTrackingPass(db, deps, deadline)
+    summary.tracking = trackingResult.summary
+    if (trackingResult.stoppedEarly) summary.stoppedEarly = true
+  } else {
+    summary.stoppedEarly = true
+  }
+
+  if (!summary.stoppedEarly && !deadline.exceeded()) {
+    const backfillResult = await runAttributionBackfillPass(db, deps, deadline)
+    summary.attributionBackfill = backfillResult.summary
+    if (backfillResult.stoppedEarly) summary.stoppedEarly = true
+  } else {
+    summary.stoppedEarly = true
+  }
+
+  if (!summary.stoppedEarly && !deadline.exceeded()) {
+    const parentTipsResult = await runParentTipsPass(db, deps, deadline)
+    summary.parentTips = parentTipsResult.summary
+    if (parentTipsResult.stoppedEarly) summary.stoppedEarly = true
+  } else {
+    summary.stoppedEarly = true
   }
 
   summary.durationMs = now() - startedAt

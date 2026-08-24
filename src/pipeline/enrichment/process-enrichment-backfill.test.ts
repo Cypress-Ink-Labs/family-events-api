@@ -80,6 +80,8 @@ class FakeEnrichmentDb implements EnrichmentDb {
     enabled: boolean
   } | null = null
   parentTipsRows: ParentTipsCandidate[] = []
+  parentTipsFeatureConfigError: Error | null = null
+  listEventsNeedingParentTipsError: Error | null = null
 
   async listEventsNeedingEnrichment(limit: number): Promise<EnrichmentCandidate[]> {
     this.calls.push({ type: "listEventsNeedingEnrichment", limit })
@@ -161,11 +163,13 @@ class FakeEnrichmentDb implements EnrichmentDb {
     enabled: boolean
   } | null> {
     this.calls.push({ type: "loadParentTipsFeatureConfig" })
+    if (this.parentTipsFeatureConfigError) throw this.parentTipsFeatureConfigError
     return this.parentTipsFeatureConfig
   }
 
   async listEventsNeedingParentTips(limit: number): Promise<ParentTipsCandidate[]> {
     this.calls.push({ type: "listEventsNeedingParentTips", limit })
+    if (this.listEventsNeedingParentTipsError) throw this.listEventsNeedingParentTipsError
     return this.parentTipsRows.slice(0, limit)
   }
 
@@ -284,6 +288,19 @@ describe("claimEnrichmentBatch", () => {
       { type: "listEventsNeedingEnrichment", limit: 1 },
       { type: "listImageEnrichmentInScope", limit: 1 },
     ])
+  })
+
+  it("F5: caps the deduped result at batchSize even when both half-claims independently clamp to 1 row", async () => {
+    // Math.max(1, floor(1/2)) = 1 for each half-claim, so batchSize:1 can
+    // return 2 distinct (already-deduped) rows without the post-dedupe cap.
+    const db = new FakeEnrichmentDb()
+    db.legacyRows = [candidate({ eventId: "a" })]
+    db.scopedRows = [candidate({ eventId: "b" })]
+
+    const rows = await claimEnrichmentBatch(db, 1)
+
+    expect(rows).toHaveLength(1)
+    expect(rows.map((r) => r.eventId)).toEqual(["a"])
   })
 })
 
@@ -575,6 +592,71 @@ describe("runEnrichmentTick — city-context cache", () => {
   })
 })
 
+describe("runEnrichmentTick — per-tick geocode/image caches (F2)", () => {
+  it("caches a failed geocode query across two candidates sharing the same address: geocode stub called once (index.ts:142-144, misses are cached too)", async () => {
+    const db = new FakeEnrichmentDb()
+    db.legacyRows = [
+      candidate({ eventId: "a", needsCoords: true, address: "1 Shared St" }),
+      candidate({ eventId: "b", needsCoords: true, address: "1 Shared St" }),
+    ]
+    const geocode = vi.fn(async () => null)
+
+    const summary = await runEnrichmentTick(db, baseDeps({ geocode }))
+
+    expect(geocode).toHaveBeenCalledTimes(1)
+    expect(summary.attemptsMarked).toBe(2)
+    expect(db.calls).toContainEqual({ type: "markEnrichmentAttempt", eventId: "a" })
+    expect(db.calls).toContainEqual({ type: "markEnrichmentAttempt", eventId: "b" })
+  })
+
+  it("caches a successful findImage result across two candidates sharing the same tag set: findImage stub called once, both events get the cached image", async () => {
+    const db = new FakeEnrichmentDb()
+    db.legacyRows = [
+      candidate({ eventId: "a", needsImages: true, tags: ["storytime", "outdoor"] }),
+      candidate({ eventId: "b", needsImages: true, tags: ["outdoor", "storytime"] }),
+    ]
+    const result = stockResult({
+      attribution: { ...stockResult().attribution, provider: "pexels", photoId: "pexels-shared" },
+    })
+    const findImage = vi.fn(async () => result)
+
+    const summary = await runEnrichmentTick(db, baseDeps({ findImage }))
+
+    expect(findImage).toHaveBeenCalledTimes(1)
+    expect(summary.imagesSet).toBe(2)
+    expect(db.calls).toContainEqual({
+      type: "updateEventEnrichment",
+      eventId: "a",
+      latitude: null,
+      longitude: null,
+      images: [result.url],
+    })
+    expect(db.calls).toContainEqual({
+      type: "updateEventEnrichment",
+      eventId: "b",
+      latitude: null,
+      longitude: null,
+      images: [result.url],
+    })
+  })
+
+  it("caches a failed (null) findImage result across two candidates sharing the same tag set, matching legacy's miss-reuse semantics: findImage stub called once, both fall through to markEnrichmentAttempt", async () => {
+    const db = new FakeEnrichmentDb()
+    db.legacyRows = [
+      candidate({ eventId: "a", needsImages: true, tags: ["storytime"] }),
+      candidate({ eventId: "b", needsImages: true, tags: ["storytime"] }),
+    ]
+    const findImage = vi.fn(async () => null)
+
+    const summary = await runEnrichmentTick(db, baseDeps({ findImage }))
+
+    expect(findImage).toHaveBeenCalledTimes(1)
+    expect(summary.attemptsMarked).toBe(2)
+    expect(db.calls).toContainEqual({ type: "markEnrichmentAttempt", eventId: "a" })
+    expect(db.calls).toContainEqual({ type: "markEnrichmentAttempt", eventId: "b" })
+  })
+})
+
 describe("runEnrichmentTick — tracking pass", () => {
   it("marks success/failure per stubbed trackDownload and skips entirely when no key is configured", async () => {
     const db = new FakeEnrichmentDb()
@@ -639,7 +721,7 @@ describe("runEnrichmentTick — tracking pass", () => {
 })
 
 describe("runEnrichmentTick — attribution backfill pass", () => {
-  it("upserts from stubbed lookupPhoto and counts a null lookup as an error", async () => {
+  it("F4 (CONTROLLER RULING P1, legacy wins): upserts from stubbed lookupPhoto and counts a null lookup as skipped, not an error (index.ts:464-467)", async () => {
     const db = new FakeEnrichmentDb()
     db.attributionBackfillRows = [
       { eventId: "e1", imageUrl: "https://img-1" },
@@ -652,7 +734,12 @@ describe("runEnrichmentTick — attribution backfill pass", () => {
 
     const summary = await runEnrichmentTick(db, baseDeps({ unsplashAccessKey: "key", lookupPhoto }))
 
-    expect(summary.attributionBackfill).toEqual({ processed: 2, upserted: 1, errors: 1 })
+    expect(summary.attributionBackfill).toEqual({
+      processed: 2,
+      upserted: 1,
+      skipped: 1,
+      errors: 0,
+    })
     expect(db.calls).toContainEqual({
       type: "upsertUnsplashAttributionBackfill",
       params: {
@@ -766,6 +853,70 @@ describe("runEnrichmentTick — parent-tips pass", () => {
   })
 })
 
+describe("runEnrichmentTick — parent-tips pass guards (F3)", () => {
+  it("treats a thrown config-load error like legacy's cfgErr (parent-tips-pass.ts:37-39): default summary, tick doesn't reject, other passes' results survive", async () => {
+    const db = new FakeEnrichmentDb()
+    db.parentTipsFeatureConfigError = new Error("config table unavailable")
+    db.pendingTrackingRows = [
+      {
+        attributionId: "attr-1",
+        eventId: "e1",
+        imageUrl: "u1",
+        downloadLocation: "https://dl-1",
+        attempts: 0,
+      },
+    ]
+    const trackDownload = vi.fn(async () => ({ ok: true, error: null }))
+
+    const summary = await runEnrichmentTick(
+      db,
+      baseDeps({ unsplashAccessKey: "key", trackDownload })
+    )
+
+    expect(summary.parentTips).toEqual({ enabled: false, generated: 0, errors: 0 })
+    expect(summary.tracking).toEqual({ processed: 1, succeeded: 1, failed: 0 })
+    expect(summary.stoppedEarly).toBe(false)
+    expect(db.calls.some((c) => c.type === "listEventsNeedingParentTips")).toBe(false)
+  })
+
+  it("treats a thrown claim/list error like legacy's claimErr (parent-tips-pass.ts:42-52): enabled stays true, errors not incremented, tick doesn't reject", async () => {
+    const db = new FakeEnrichmentDb()
+    db.parentTipsFeatureConfig = { modelId: "gpt-4.1-nano", provider: "openai", enabled: true }
+    db.listEventsNeedingParentTipsError = new Error("rpc timeout")
+
+    const summary = await runEnrichmentTick(db, baseDeps({ parentTipsEnv: openAiEnv() }))
+
+    expect(summary.parentTips).toEqual({ enabled: true, generated: 0, errors: 0 })
+    expect(summary.stoppedEarly).toBe(false)
+  })
+
+  it("treats a per-row thrown error like legacy's outer per-row catch (parent-tips-pass.ts:98-106): errors+=1, continues to the next row, no markEnrichmentAttempt for the thrown row", async () => {
+    const db = new FakeEnrichmentDb()
+    db.parentTipsFeatureConfig = { modelId: "gpt-4.1-nano", provider: "openai", enabled: true }
+    db.parentTipsRows = [
+      // `title: null` blows up `buildParentTipsUserPrompt`'s `.slice()` call,
+      // which runs *outside* `generateParentTipsForEvent`'s own try/catch —
+      // a genuine uncaught throw reaching `runParentTipsPass`'s loop.
+      parentTipsCandidate({ eventId: "pt-bad", title: null as unknown as string }),
+      parentTipsCandidate({ eventId: "pt-good" }),
+    ]
+
+    const summary = await runEnrichmentTick(
+      db,
+      baseDeps({
+        parentTipsEnv: openAiEnv(),
+        fetchImpl: fakeFetchOk([{ category: "arrival", text: "Arrive 15 minutes early." }]),
+      })
+    )
+
+    expect(summary.parentTips).toEqual({ enabled: true, generated: 1, errors: 1 })
+    expect(db.calls.some((c) => c.type === "markEnrichmentAttempt" && c.eventId === "pt-bad")).toBe(
+      false
+    )
+    expect(db.calls).toContainEqual({ type: "updateEventParentTips", eventId: "pt-good" })
+  })
+})
+
 describe("runEnrichmentTick — budget", () => {
   it("stops mid-main-batch when the budget is exhausted, skipping remaining rows and all aux passes", async () => {
     const db = new FakeEnrichmentDb()
@@ -804,8 +955,50 @@ describe("runEnrichmentTick — budget", () => {
     expect(db.calls.some((c) => c.type === "listEventsNeedingAttributionBackfill")).toBe(false)
     expect(db.calls.some((c) => c.type === "loadParentTipsFeatureConfig")).toBe(false)
     expect(summary.tracking).toEqual({ processed: 0, succeeded: 0, failed: 0 })
-    expect(summary.attributionBackfill).toEqual({ processed: 0, upserted: 0, errors: 0 })
+    expect(summary.attributionBackfill).toEqual({
+      processed: 0,
+      upserted: 0,
+      skipped: 0,
+      errors: 0,
+    })
     expect(summary.parentTips).toEqual({ enabled: false, generated: 0, errors: 0 })
+  })
+
+  it("F1: re-checks the budget before each aux pass and mid-parent-tips loop, skipping remaining rows with stoppedEarly true", async () => {
+    const db = new FakeEnrichmentDb()
+    // Empty main batch: isolates the assertion to the aux-pass deadline
+    // checks (entry-check before tracking/backfill/parent-tips, plus the
+    // between-rows check inside the parent-tips loop).
+    db.legacyRows = []
+    db.scopedRows = []
+    db.parentTipsFeatureConfig = { modelId: "gpt-4.1-nano", provider: "openai", enabled: true }
+    db.parentTipsRows = [
+      parentTipsCandidate({ eventId: "pt-1" }),
+      parentTipsCandidate({ eventId: "pt-2" }),
+    ]
+
+    // now() call order: [0]=startedAt, [1]=tracking entry, [2]=backfill entry,
+    // [3]=parent-tips entry, [4]=parent-tips row1, [5]=parent-tips row2 (trips).
+    // No unsplashAccessKey configured, so tracking/backfill each return before
+    // consuming any further now() calls.
+    const clockValues = [0, 10, 20, 30, 40, 150]
+    let clockIndex = 0
+    const now = () => clockValues[Math.min(clockIndex++, clockValues.length - 1)] ?? 0
+
+    const summary = await runEnrichmentTick(
+      db,
+      baseDeps({
+        now,
+        budgetMs: 100,
+        parentTipsEnv: openAiEnv(),
+        fetchImpl: fakeFetchOk([{ category: "arrival", text: "Arrive 15 minutes early." }]),
+      })
+    )
+
+    expect(summary.stoppedEarly).toBe(true)
+    expect(summary.parentTips).toEqual({ enabled: true, generated: 1, errors: 0 })
+    expect(db.calls).toContainEqual({ type: "updateEventParentTips", eventId: "pt-1" })
+    expect(db.calls.some((c) => "eventId" in c && c.eventId === "pt-2")).toBe(false)
   })
 })
 

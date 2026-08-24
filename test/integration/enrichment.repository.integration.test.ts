@@ -706,7 +706,7 @@ describe("runEnrichmentTick against EnrichmentRepository", () => {
       attemptsMarked: 0,
       errors: 0,
       tracking: { processed: 0, succeeded: 0, failed: 0 },
-      attributionBackfill: { processed: 0, upserted: 0, errors: 0 },
+      attributionBackfill: { processed: 0, upserted: 0, skipped: 0, errors: 0 },
       parentTips: { enabled: false, generated: 0, errors: 0 },
       stoppedEarly: false,
     })
