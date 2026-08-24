@@ -75,9 +75,20 @@ function makeService() {
   return { service, jobs, gate, repository }
 }
 
+const originalEnv = {
+  NODE_ENV: process.env.NODE_ENV,
+  CUTOVER_REVIEW: process.env.CUTOVER_REVIEW,
+}
+
+function restoreEnv(name: keyof typeof originalEnv): void {
+  const value = originalEnv[name]
+  if (value === undefined) delete process.env[name]
+  else process.env[name] = value
+}
+
 afterEach(() => {
-  delete process.env.NODE_ENV
-  delete process.env.CUTOVER_REVIEW
+  restoreEnv("NODE_ENV")
+  restoreEnv("CUTOVER_REVIEW")
 })
 
 describe("ReviewQueueService registration", () => {

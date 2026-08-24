@@ -122,9 +122,20 @@ function makeService() {
   return { service, jobs, gate, classification }
 }
 
+const originalEnv = {
+  NODE_ENV: process.env.NODE_ENV,
+  CUTOVER_TAG: process.env.CUTOVER_TAG,
+}
+
+function restoreEnv(name: keyof typeof originalEnv): void {
+  const value = originalEnv[name]
+  if (value === undefined) delete process.env[name]
+  else process.env[name] = value
+}
+
 afterEach(() => {
-  delete process.env.NODE_ENV
-  delete process.env.CUTOVER_TAG
+  restoreEnv("NODE_ENV")
+  restoreEnv("CUTOVER_TAG")
 })
 
 describe("TagQueueService registration", () => {
@@ -200,6 +211,24 @@ describe("TagQueueService task dispatch", () => {
         options: { singletonKey: "drain-tag-queue" },
       },
     ])
+  })
+
+  it("does not drain a queued continuation after the Nest cron gate is paused", async () => {
+    const { service, gate, classification } = makeService()
+    gate.enabled = false
+    classification.claimable = [
+      {
+        id: 1,
+        event_id: "evt-1",
+        source_run_id: null,
+        trigger_type: "import",
+        attempt_count: 0,
+      },
+    ]
+
+    await service.handleJob({ task: "drain-tag-queue" })
+
+    expect(classification.completed).toEqual([])
   })
 
   it("runs enrichment through its legacy cron gate", async () => {

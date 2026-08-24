@@ -97,13 +97,11 @@ export class TagQueueService implements OnModuleInit {
   private async runTask(task: TagTask): Promise<void> {
     switch (task) {
       case "process-tag-queue":
-        return this.gate.runGated(this.schedule(task), async () => {
+      case DRAIN_TASK:
+        return this.gate.runGated(this.schedule("process-tag-queue"), async () => {
           const summary = await this.drainTagQueue()
           return JSON.stringify(summary)
         })
-      case DRAIN_TASK:
-        await this.drainTagQueue()
-        return
       case "backfill-enrichment":
         return this.gate.runGated(this.schedule(task), async () => {
           const summary = await runEnrichmentTick(
