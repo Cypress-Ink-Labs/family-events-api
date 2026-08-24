@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common"
 
 import { ClassificationRepository } from "./classification/classification.repository.js"
 import { CronGateService } from "./cron-gate.service.js"
+import { EnrichmentRepository } from "./enrichment/enrichment.repository.js"
 import { FailurePingService } from "./failure-ping.service.js"
 import { IngestionRepository } from "./ingestion/ingestion.repository.js"
 import { ScrapeQueueService } from "./ingestion/scrape-queue.service.js"
@@ -17,10 +18,17 @@ import { ScrapeQueueService } from "./ingestion/scrape-queue.service.js"
   providers: [
     ClassificationRepository,
     CronGateService,
+    EnrichmentRepository,
     FailurePingService,
     IngestionRepository,
     ScrapeQueueService,
   ],
-  exports: [ClassificationRepository, CronGateService, FailurePingService, IngestionRepository],
+  exports: [
+    ClassificationRepository,
+    CronGateService,
+    EnrichmentRepository,
+    FailurePingService,
+    IngestionRepository,
+  ],
 })
 export class PipelineModule {}
