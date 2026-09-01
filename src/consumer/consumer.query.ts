@@ -7,7 +7,7 @@ import { decodeCursor } from "./cursor.js"
 const integerString = z.string().regex(/^\d+$/)
 const querySchema = z.strictObject({
   city_id: z.uuid().optional(),
-  keyword: z.string().trim().min(1).optional(),
+  keyword: z.string().trim().min(1).max(100).optional(), // legacy events-api capped keyword at 100
   date_from: z.iso.datetime({ offset: true }).optional(),
   date_to: z.iso.datetime({ offset: true }).optional(),
   is_free: z.enum(["true", "false"]).optional(),

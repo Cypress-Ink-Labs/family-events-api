@@ -8,6 +8,7 @@ import request from "supertest"
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { AuthModule } from "../../src/auth/auth.module.js"
+import { PgExceptionFilter } from "../../src/common/pg-exception.filter.js"
 import { ConsumerModule } from "../../src/consumer/consumer.module.js"
 import { DataModule } from "../../src/data/data.module.js"
 import { DbModule } from "../../src/db/db.module.js"
@@ -58,6 +59,7 @@ describe("consumer read HTTP API", () => {
       ],
     }).compile()
     app = moduleRef.createNestApplication()
+    app.useGlobalFilters(new PgExceptionFilter(app.getHttpAdapter()))
     await app.init()
     db = app.get(DbService)
     await ensureCatalogSchema(db)
@@ -173,6 +175,16 @@ describe("consumer read HTTP API", () => {
       .query({ limit: 1, cursor: page1.body.next_cursor })
       .expect(200)
     expect(page2.body.events.map((event: { id: string }) => event.id)).toEqual([second])
+  })
+
+  it("returns no next_cursor when the page exactly fills the limit", async () => {
+    for (let i = 0; i < 3; i++) {
+      await insertEvent({ title: `Boundary event ${i}`, start: `2026-08-1${i + 1}T15:00:00+00:00` })
+    }
+    const res = await request(app.getHttpServer()).get("/v1/events?limit=3")
+    expect(res.status).toBe(200)
+    expect(res.body.events).toHaveLength(3)
+    expect(res.body.next_cursor).toBeNull()
   })
 
   it("uses the keyword search path and returns enriched events", async () => {
@@ -438,6 +450,15 @@ describe("consumer read HTTP API", () => {
       .set("Authorization", "Bearer unmapped-token")
       .send({ on: true })
       .expect(403)
+  })
+
+  it("maps an FK violation to 404 when favoriting a nonexistent event", async () => {
+    const res = await request(app.getHttpServer())
+      .put(`/v1/events/${randomUUID()}/favorite`)
+      .set("Authorization", "Bearer mapped-token")
+      .send({ on: true })
+    expect(res.status).toBe(404)
+    expect(res.body.message).toBe("related record not found")
   })
 
   it("toggles favorite and calendar personalization round-trip", async () => {

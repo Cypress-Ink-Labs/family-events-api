@@ -17,14 +17,18 @@ import type {
   SimilarEvent,
   Tag,
 } from "../data/types.js"
+import { zonedDayStartUtc } from "../pipeline/zoned-time.js"
 import { encodeCursor } from "./cursor.js"
 import type { ExploreQuery, PlanQuery } from "./consumer.query.js"
 import { WeatherService } from "./weather.service.js"
 
-const PLAN_WINDOW_MS = 86_400_000
 const PLAN_LIMIT = 5
 const DETAIL_SIMILAR_LIMIT = 4
 const MAP_LIMIT = 200
+
+// Consumers render in this zone when an event/city has none; the app's
+// src/lib/dates.ts uses the same default.
+const DEFAULT_PLAN_TIMEZONE = "America/Chicago"
 
 export interface EventsPage {
   events: EnrichedEvent[]
@@ -88,7 +92,12 @@ export class ConsumerService {
 
   async listEvents(input: ExploreQuery, userKey: string | null): Promise<EventsPage> {
     const usesSearch = input.keyword !== null || input.isFree !== null || input.kidAge !== null
+    // Probe one row past the limit so next_cursor is emitted only when a next
+    // page actually exists (an exactly-full last page must not advertise an
+    // empty one). Same pattern as the legacy events-api edge function.
+    const probeLimit = input.limit + 1
     let events: EnrichedEvent[]
+    let hasMore: boolean
 
     if (usesSearch) {
       const hits = await this.eventsRepository.searchEvents({
@@ -99,18 +108,20 @@ export class ConsumerService {
         isFree: input.isFree,
         ageMin: input.kidAge,
         ageMax: input.kidAge,
-        limit: input.limit,
+        limit: probeLimit,
         after: input.after,
       })
+      hasMore = hits.length > input.limit
+      const pageHits = hasMore ? hits.slice(0, input.limit) : hits
       events =
-        hits.length === 0
+        pageHits.length === 0
           ? []
           : await this.eventsRepository.listEvents({
-              eventIds: hits.map((hit) => hit.id),
+              eventIds: pageHits.map((hit) => hit.id),
               userKey,
               limit: input.limit,
             })
-      const order = new Map(hits.map((hit, index) => [hit.id, index]))
+      const order = new Map(pageHits.map((hit, index) => [hit.id, index]))
       events.sort(
         (left, right) =>
           (order.get(left.id) ?? Number.MAX_SAFE_INTEGER) -
@@ -122,16 +133,20 @@ export class ConsumerService {
         dateFrom: input.dateFrom,
         dateTo: input.dateTo,
         userKey,
-        limit: input.limit,
+        limit: probeLimit,
         after: input.after,
       })
+      hasMore = events.length > input.limit
+      if (hasMore) {
+        events = events.slice(0, input.limit)
+      }
     }
 
     const last = events.at(-1)
     return {
       events,
       next_cursor:
-        events.length === input.limit && last !== undefined
+        hasMore && last !== undefined
           ? encodeCursor({ startDatetime: last.start_datetime, id: last.id })
           : null,
     }
@@ -208,13 +223,12 @@ export class ConsumerService {
   }
 
   async planForToday(input: PlanQuery, userKey: string): Promise<PlanPage> {
-    const from = new Date()
-    const to = new Date(from.getTime() + PLAN_WINDOW_MS)
-    const { lat, lng, weatherFit } = await this.resolvePlanWeather(input.cityId)
+    const now = new Date()
+    const { lat, lng, weatherFit, timezone } = await this.resolvePlanContext(input.cityId)
     const planned = await this.planRepository.planForRange({
       userKey,
-      dateFrom: from.toISOString(),
-      dateTo: to.toISOString(),
+      dateFrom: zonedDayStartUtc(now, timezone, 0).toISOString(),
+      dateTo: zonedDayStartUtc(now, timezone, 1).toISOString(),
       cityIds: input.cityId === null ? null : [input.cityId],
       lat,
       lng,
@@ -225,23 +239,22 @@ export class ConsumerService {
     return { available: true, planned }
   }
 
-  private async resolvePlanWeather(cityId: string | null): Promise<{
+  private async resolvePlanContext(cityId: string | null): Promise<{
     lat: number | null
     lng: number | null
     weatherFit: string
+    timezone: string
   }> {
     if (cityId === null) {
-      return { lat: null, lng: null, weatherFit: "neutral" }
+      return { lat: null, lng: null, weatherFit: "neutral", timezone: DEFAULT_PLAN_TIMEZONE }
     }
     const cities = await this.referenceRepository.listCities()
     const city = cities.find((row) => row.id === cityId)
     const lat = parseCoord(city?.latitude ?? null)
     const lng = parseCoord(city?.longitude ?? null)
-    if (lat === null || lng === null) {
-      return { lat: null, lng: null, weatherFit: "neutral" }
-    }
-    const snapshot = await this.weather.snapshot(lat, lng)
-    return { lat, lng, weatherFit: snapshot.weatherFit }
+    const weatherFit =
+      lat === null || lng === null ? "neutral" : (await this.weather.snapshot(lat, lng)).weatherFit
+    return { lat, lng, weatherFit, timezone: city?.timezone ?? DEFAULT_PLAN_TIMEZONE }
   }
 }
 

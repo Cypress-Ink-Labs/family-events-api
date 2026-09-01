@@ -53,6 +53,7 @@
             "name": "keyword",
             "in": "query",
             "schema": {
+              "maxLength": 100,
               "type": "string"
             }
           },
@@ -1621,7 +1622,8 @@
         "properties": {
           "title": {
             "type": "string",
-            "minLength": 1
+            "minLength": 1,
+            "maxLength": 200
           },
           "description": {
             "type": "string",

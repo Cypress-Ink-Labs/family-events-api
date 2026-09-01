@@ -334,7 +334,7 @@ export class EventsQueryDto {
   @ApiPropertyOptional({ format: "uuid" })
   city_id?: string
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ maxLength: 100 })
   keyword?: string
 
   @ApiPropertyOptional({ format: "date-time" })

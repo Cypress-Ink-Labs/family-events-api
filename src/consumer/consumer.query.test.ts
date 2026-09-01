@@ -1,7 +1,7 @@
 import { BadRequestException } from "@nestjs/common"
 import { describe, expect, it } from "vitest"
 
-import { parseMapQuery, parsePlanQuery } from "./consumer.query.js"
+import { parseExploreQuery, parseMapQuery, parsePlanQuery } from "./consumer.query.js"
 
 describe("parseMapQuery", () => {
   it("accepts an optional city_id", () => {
@@ -14,6 +14,13 @@ describe("parseMapQuery", () => {
   it("rejects invalid or unknown query parameters", () => {
     expect(() => parseMapQuery({ city_id: "not-a-uuid" })).toThrow(BadRequestException)
     expect(() => parseMapQuery({ limit: "999" })).toThrow(BadRequestException)
+  })
+})
+
+describe("parseExploreQuery", () => {
+  it("rejects a keyword over the legacy 100-character cap", () => {
+    expect(() => parseExploreQuery({ keyword: "x".repeat(101) })).toThrow(BadRequestException)
+    expect(() => parseExploreQuery({ keyword: "x".repeat(100) })).not.toThrow()
   })
 })
 
