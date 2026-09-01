@@ -1,4 +1,4 @@
-import { BadRequestException } from "@nestjs/common"
+import { BadRequestException, HttpStatus } from "@nestjs/common"
 import { z } from "zod"
 
 const uuidSchema = z.uuid()
@@ -25,7 +25,9 @@ const communityEventSchema = z
     (input) =>
       input.endDatetime === undefined ||
       input.endDatetime === null ||
-      input.endDatetime > input.startDatetime,
+      // Compare instants: the fields independently allow any UTC offset, so
+      // lexical string order is not meaningful across mixed offsets.
+      Date.parse(input.endDatetime) > Date.parse(input.startDatetime),
     {
       message: "endDatetime must be after startDatetime",
       path: ["endDatetime"],
@@ -57,7 +59,9 @@ function parseBody<T>(schema: z.ZodType<T>, body: unknown): T {
   const result = schema.safeParse(body)
   if (!result.success) {
     throw new BadRequestException({
+      statusCode: HttpStatus.BAD_REQUEST,
       message: "invalid request body",
+      error: "Bad Request",
       issues: result.error.issues.map((issue) => ({
         path: issue.path.map(String).join("."),
         message: issue.message,

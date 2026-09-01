@@ -148,4 +148,29 @@ describe("parseCommunityEventInput", () => {
     const bad = { ...validBody, title: "x".repeat(201) }
     expect(() => parseCommunityEventInput(bad)).toThrow(BadRequestException)
   })
+
+  it("accepts an endDatetime in a different offset that is still after start", () => {
+    const good = {
+      ...validBody,
+      // 04:00Z start, 05:00Z end: one hour apart, so lexical string order
+      // must not decide the comparison.
+      startDatetime: "2026-06-01T09:00:00+05:00",
+      endDatetime: "2026-06-01T05:00:00Z",
+    }
+    expect(() => parseCommunityEventInput(good)).not.toThrow()
+  })
+
+  it("returns the full 400 envelope with field-level issues", () => {
+    try {
+      parseCommunityEventInput({ ...validBody, ageMin: 12, ageMax: 5 })
+      expect.unreachable()
+    } catch (error) {
+      expect((error as BadRequestException).getResponse()).toEqual({
+        statusCode: 400,
+        message: "invalid request body",
+        error: "Bad Request",
+        issues: [{ path: "ageMax", message: "ageMin must be less than or equal to ageMax" }],
+      })
+    }
+  })
 })
