@@ -62,6 +62,22 @@ const planQuerySchema = z.strictObject({
   kid_age: integerString.optional(),
 })
 
+const mapQuerySchema = z.strictObject({
+  city_id: z.uuid().optional(),
+})
+
+export interface MapQuery {
+  cityId: string | null
+}
+
+export function parseMapQuery(query: unknown): MapQuery {
+  const result = mapQuerySchema.safeParse(query)
+  if (!result.success) {
+    throw new BadRequestException("invalid query parameters")
+  }
+  return { cityId: result.data.city_id ?? null }
+}
+
 export interface PlanQuery {
   cityId: string | null
   kidAge: number | null

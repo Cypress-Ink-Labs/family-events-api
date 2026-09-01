@@ -189,6 +189,50 @@
         ]
       }
     },
+    "/v1/events/map": {
+      "get": {
+        "operationId": "ConsumerController_listMapEvents",
+        "parameters": [
+          {
+            "required": false,
+            "name": "city_id",
+            "in": "query",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapEventsDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query parameters"
+          },
+          "401": {
+            "description": "The supplied bearer token is invalid"
+          }
+        },
+        "security": [
+          {},
+          {
+            "clerk": []
+          }
+        ],
+        "summary": "List mappable events",
+        "tags": [
+          "consumer"
+        ]
+      }
+    },
     "/v1/events/{id}": {
       "get": {
         "operationId": "ConsumerController_getEvent",
@@ -236,6 +280,50 @@
         ]
       }
     },
+    "/v1/events/{id}/detail": {
+      "get": {
+        "operationId": "ConsumerController_getEventDetail",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventDetailDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid event id"
+          },
+          "401": {
+            "description": "The supplied bearer token is invalid"
+          }
+        },
+        "security": [
+          {},
+          {
+            "clerk": []
+          }
+        ],
+        "summary": "Get the consumer event-detail composite",
+        "tags": [
+          "consumer"
+        ]
+      }
+    },
     "/v1/tags": {
       "get": {
         "operationId": "ConsumerController_listTags",
@@ -265,6 +353,72 @@
           }
         ],
         "summary": "List event tags",
+        "tags": [
+          "consumer"
+        ]
+      }
+    },
+    "/v1/me/favorites": {
+      "get": {
+        "operationId": "ConsumerAccountReadController_listFavorites",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FavoriteEventsDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "A valid Clerk bearer token is required"
+          },
+          "403": {
+            "description": "The Clerk user is not provisioned"
+          }
+        },
+        "security": [
+          {
+            "clerk": []
+          }
+        ],
+        "summary": "List the current user's favorite events",
+        "tags": [
+          "consumer"
+        ]
+      }
+    },
+    "/v1/me/calendar": {
+      "get": {
+        "operationId": "ConsumerAccountReadController_listCalendar",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CalendarEventsDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "A valid Clerk bearer token is required"
+          },
+          "403": {
+            "description": "The Clerk user is not provisioned"
+          }
+        },
+        "security": [
+          {
+            "clerk": []
+          }
+        ],
+        "summary": "List the current user's calendar entries",
         "tags": [
           "consumer"
         ]
@@ -998,6 +1152,155 @@
           "next_cursor"
         ]
       },
+      "MapEventDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "title": {
+            "type": "string"
+          },
+          "latitude": {
+            "type": "number",
+            "format": "double"
+          },
+          "longitude": {
+            "type": "number",
+            "format": "double"
+          },
+          "start_datetime": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "venue_name": {
+            "type": "string",
+            "nullable": true
+          },
+          "is_free": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "latitude",
+          "longitude",
+          "start_datetime",
+          "venue_name",
+          "is_free"
+        ]
+      },
+      "MapEventsDto": {
+        "type": "object",
+        "properties": {
+          "events": {
+            "maxItems": 200,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MapEventDto"
+            }
+          }
+        },
+        "required": [
+          "events"
+        ]
+      },
+      "SimilarEventDto": {
+        "type": "object",
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "event_id",
+          "title"
+        ]
+      },
+      "EventCommentDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "body": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "display_name": {
+            "type": "string",
+            "nullable": true
+          },
+          "avatar_url": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "body",
+          "created_at",
+          "updated_at",
+          "display_name",
+          "avatar_url"
+        ]
+      },
+      "EventDetailDto": {
+        "type": "object",
+        "properties": {
+          "event": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/EnrichedEventDto"
+              }
+            ]
+          },
+          "similar": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SimilarEventDto"
+            }
+          },
+          "comments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EventCommentDto"
+            }
+          },
+          "my_rating": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5,
+            "nullable": true
+          },
+          "signed_in": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "event",
+          "similar",
+          "comments",
+          "my_rating",
+          "signed_in"
+        ]
+      },
       "TagDto": {
         "type": "object",
         "properties": {
@@ -1020,6 +1323,119 @@
           "name",
           "slug",
           "color"
+        ]
+      },
+      "FavoriteEventsDto": {
+        "type": "object",
+        "properties": {
+          "events": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EnrichedEventDto"
+            }
+          }
+        },
+        "required": [
+          "events"
+        ]
+      },
+      "CalendarEventDto": {
+        "type": "object",
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "added_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "notes": {
+            "type": "string",
+            "nullable": true
+          },
+          "title": {
+            "type": "string"
+          },
+          "start_datetime": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "end_datetime": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "venue_name": {
+            "type": "string",
+            "nullable": true
+          },
+          "address": {
+            "type": "string",
+            "nullable": true
+          },
+          "city_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "is_free": {
+            "type": "boolean"
+          },
+          "price": {
+            "type": "string",
+            "nullable": true
+          },
+          "images": {
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": true
+              },
+              {
+                "type": "array",
+                "items": {}
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              }
+            ],
+            "nullable": true
+          }
+        },
+        "required": [
+          "event_id",
+          "added_at",
+          "notes",
+          "title",
+          "start_datetime",
+          "end_datetime",
+          "venue_name",
+          "address",
+          "city_id",
+          "is_free",
+          "price",
+          "images"
+        ]
+      },
+      "CalendarEventsDto": {
+        "type": "object",
+        "properties": {
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CalendarEventDto"
+            }
+          }
+        },
+        "required": [
+          "entries"
         ]
       },
       "PlannedEventDto": {

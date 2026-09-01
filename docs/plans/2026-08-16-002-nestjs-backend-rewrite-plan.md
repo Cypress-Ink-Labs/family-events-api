@@ -104,11 +104,22 @@ field-for-field from `family-events-app` server modules with idempotent `ON CONF
 semantics and integration test coverage. Remaining: read-side repositories for events,
 sources, queues, notifications.
 
-### U24 — Consumer read API
-Parity endpoints for `search_events` (keyset cursor `(start_datetime, id)`, page 24),
-`events_enriched` batch hydration, event detail + `find_similar_events_by_id`, tags,
-cities, `public_events` preview. Contract fidelity matters more than SQL reuse: the
-RPCs' SQL can be called directly initially, then inlined.
+### U24 — Consumer read API ✅ (done)
+
+The live app's seven consumed reads are covered by `GET /v1/cities`, `GET /v1/events`
+(explore/search with `(start_datetime, id)` keyset cursors and page size 24),
+`GET /v1/events/map` (published, coordinate-bearing events; max 200),
+`GET /v1/events/:id/detail` (published enriched event, four similar titles, approved
+comments, and optional caller rating), `GET /v1/plan` (24-hour window; max 5), plus
+mapped-user-only `GET /v1/me/favorites` and `GET /v1/me/calendar`. The latest
+`find_similar_events_by_id` SQL is installed verbatim in disposable integration tests;
+`events_enriched` hydration applies an outer published-status filter so event-ID reads
+cannot expose drafts.
+
+Notification preferences/inbox reads, invite reads, and the `public_events` preview are
+explicitly excluded: `family-events-app/src/fn/consumer.ts` imports no corresponding
+server function or module. They remain owned by later notification/admin work rather
+than an invented U24 contract.
 
 ### U25 — Consumer write API ✅ (done)
 Favorites, calendar, ratings, comments, profile + preferred cities (U6b demote-first

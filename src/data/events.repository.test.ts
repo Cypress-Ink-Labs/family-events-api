@@ -46,6 +46,25 @@ describe("EventsRepository.listEvents", () => {
     expect(query.mock.calls[0]?.[0]).not.toContain("SELECT *")
     expect(query.mock.calls[0]?.[0]).not.toContain("search_vector")
   })
+
+  it("re-applies the requested status after event-id hydration", async () => {
+    const { db, query } = makeDb()
+    await new EventsRepository(db).listEvents({ eventIds: ["event-1"] })
+    expect(query.mock.calls[0]?.[0]).toContain("WHERE status = $2::text")
+  })
+})
+
+describe("EventsRepository.listMapEvents", () => {
+  it("filters usable coordinates before applying the map limit", async () => {
+    const { db, query } = makeDb()
+    await new EventsRepository(db).listMapEvents({ cityId: "city-1", limit: 200 })
+    const [sql, params] = query.mock.calls[0]!
+    expect(sql.indexOf("latitude IS NOT NULL")).toBeLessThan(sql.indexOf("LIMIT"))
+    expect(sql.indexOf("longitude IS NOT NULL")).toBeLessThan(sql.indexOf("LIMIT"))
+    expect(sql).toContain("latitude BETWEEN -90 AND 90")
+    expect(sql).toContain("longitude BETWEEN -180 AND 180")
+    expect(params).toEqual(["city-1", 200])
+  })
 })
 
 describe("EventsRepository.searchEvents", () => {
@@ -72,6 +91,22 @@ describe("EventsRepository.searchEvents", () => {
       null,
       null,
     ])
+  })
+})
+
+describe("EventsRepository.findSimilarEventsById", () => {
+  it("calls the consumer similarity RPC with parameterized inputs", async () => {
+    const { db, query } = makeDb()
+
+    await new EventsRepository(db).findSimilarEventsById("event-1", {
+      limit: 4,
+      cityId: "city-1",
+    })
+
+    const [sql, params] = query.mock.calls[0]!
+    expect(sql).toContain("public.find_similar_events_by_id(")
+    expect(sql).not.toContain("SELECT *")
+    expect(params).toEqual(["event-1", 4, "city-1"])
   })
 })
 

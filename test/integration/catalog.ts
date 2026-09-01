@@ -258,6 +258,13 @@ export async function ensureCatalogSchema(db: DbService): Promise<void> {
   }
 }
 
+/** Installs the pgvector-backed RPC used by the consumer detail composite. */
+export async function ensureConsumerSimilaritySchema(db: DbService): Promise<void> {
+  for (const file of ["event_embeddings_similarity.sql", "find_similar_events_by_id.sql"]) {
+    await db.query(readFileSync(join(SQL_DIR, file), "utf8"))
+  }
+}
+
 export async function truncateCatalog(db: DbService): Promise<void> {
   await db.query(`TRUNCATE
     public.comments, public.user_preferred_cities, public.user_profiles,

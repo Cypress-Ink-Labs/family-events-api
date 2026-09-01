@@ -1,15 +1,30 @@
 import { Injectable } from "@nestjs/common"
 
+import { CalendarRepository } from "../data/calendar.repository.js"
+import { CommentsRepository } from "../data/comments.repository.js"
 import { EventsRepository } from "../data/events.repository.js"
+import { FavoritesRepository } from "../data/favorites.repository.js"
 import { PlanRepository } from "../data/plan.repository.js"
+import { RatingsRepository } from "../data/ratings.repository.js"
 import { ReferenceRepository } from "../data/reference.repository.js"
-import type { City, EnrichedEvent, PlannedEvent, Tag } from "../data/types.js"
+import type {
+  CalendarEvent,
+  City,
+  EnrichedEvent,
+  EventComment,
+  PlannedEvent,
+  PublicEventComment,
+  SimilarEvent,
+  Tag,
+} from "../data/types.js"
 import { encodeCursor } from "./cursor.js"
 import type { ExploreQuery, PlanQuery } from "./consumer.query.js"
 import { WeatherService } from "./weather.service.js"
 
 const PLAN_WINDOW_MS = 86_400_000
 const PLAN_LIMIT = 5
+const DETAIL_SIMILAR_LIMIT = 4
+const MAP_LIMIT = 200
 
 export interface EventsPage {
   events: EnrichedEvent[]
@@ -21,13 +36,46 @@ export interface PlanPage {
   planned: PlannedEvent[]
 }
 
+export interface EventDetail {
+  event: EnrichedEvent | null
+  similar: SimilarEvent[]
+  comments: PublicEventComment[]
+  my_rating: number | null
+  signed_in: boolean
+}
+
+export interface MapEvent {
+  id: string
+  title: string
+  latitude: number
+  longitude: number
+  start_datetime: string
+  venue_name: string | null
+  is_free: boolean
+}
+
+function toPublicEventComment(comment: EventComment): PublicEventComment {
+  return {
+    id: comment.id,
+    body: comment.body,
+    created_at: comment.created_at,
+    updated_at: comment.updated_at,
+    display_name: comment.display_name,
+    avatar_url: comment.avatar_url,
+  }
+}
+
 @Injectable()
 export class ConsumerService {
   constructor(
     private readonly eventsRepository: EventsRepository,
     private readonly referenceRepository: ReferenceRepository,
     private readonly planRepository: PlanRepository,
-    private readonly weather: WeatherService
+    private readonly weather: WeatherService,
+    private readonly favorites: FavoritesRepository,
+    private readonly calendar: CalendarRepository,
+    private readonly ratings: RatingsRepository,
+    private readonly comments: CommentsRepository
   ) {}
 
   listCities(): Promise<City[]> {
@@ -96,6 +144,67 @@ export class ConsumerService {
       limit: 1,
     })
     return rows[0] ?? null
+  }
+
+  async getEventDetail(id: string, userKey: string | null): Promise<EventDetail> {
+    const events = await this.eventsRepository.listEvents({ eventIds: [id], userKey, limit: 1 })
+    const event = events[0]
+    if (event === undefined) {
+      return {
+        event: null,
+        similar: [],
+        comments: [],
+        my_rating: null,
+        signed_in: userKey !== null,
+      }
+    }
+    const [similar, comments, rating] = await Promise.all([
+      this.eventsRepository.findSimilarEventsById(id, { limit: DETAIL_SIMILAR_LIMIT }),
+      this.comments.listEventComments(id),
+      userKey === null ? Promise.resolve(null) : this.ratings.getUserEventRating(userKey, id),
+    ])
+    return {
+      event,
+      similar,
+      comments: comments.map(toPublicEventComment),
+      my_rating: rating?.score ?? null,
+      signed_in: userKey !== null,
+    }
+  }
+
+  async listMapEvents(cityId: string | null): Promise<MapEvent[]> {
+    const events = await this.eventsRepository.listMapEvents({ cityId, limit: MAP_LIMIT })
+    const mapped: MapEvent[] = []
+    for (const event of events) {
+      if (event.latitude === null || event.longitude === null) continue
+      const latitude = Number(event.latitude)
+      const longitude = Number(event.longitude)
+      if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) continue
+      mapped.push({
+        id: event.id,
+        title: event.title,
+        latitude,
+        longitude,
+        start_datetime: event.start_datetime,
+        venue_name: event.venue_name,
+        is_free: event.is_free,
+      })
+    }
+    return mapped
+  }
+
+  async listFavoriteEvents(userKey: string): Promise<EnrichedEvent[]> {
+    const favorites = await this.favorites.listFavorites(userKey)
+    if (favorites.length === 0) return []
+    return this.eventsRepository.listEvents({
+      eventIds: favorites.map((favorite) => favorite.event_id),
+      userKey,
+      limit: favorites.length,
+    })
+  }
+
+  listCalendarEvents(userKey: string): Promise<CalendarEvent[]> {
+    return this.calendar.listCalendarEvents(userKey)
   }
 
   async planForToday(input: PlanQuery, userKey: string): Promise<PlanPage> {

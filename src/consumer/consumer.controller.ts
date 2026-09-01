@@ -14,8 +14,17 @@ import {
   OptionalClerkAuthGuard,
   type OptionalIdentifiedRequest,
 } from "../auth/optional-clerk.guard.js"
-import { CityDto, EnrichedEventDto, EventsPageDto, EventsQueryDto, TagDto } from "./consumer.dto.js"
-import { parseEventId, parseExploreQuery } from "./consumer.query.js"
+import {
+  CityDto,
+  EnrichedEventDto,
+  EventDetailDto,
+  EventsPageDto,
+  EventsQueryDto,
+  MapEventsDto,
+  MapQueryDto,
+  TagDto,
+} from "./consumer.dto.js"
+import { parseEventId, parseExploreQuery, parseMapQuery } from "./consumer.query.js"
 import { ConsumerService } from "./consumer.service.js"
 
 const OPTIONAL_CLERK_SECURITY: Record<string, string[]>[] = [{}, { clerk: [] }]
@@ -53,6 +62,19 @@ export class ConsumerController {
     return this.consumer.listEvents(input, request.identity?.supabaseUuid ?? null)
   }
 
+  @Get("events/map")
+  @ApiOperation({
+    summary: "List mappable events",
+    security: OPTIONAL_CLERK_SECURITY,
+  })
+  @ApiQuery({ type: MapQueryDto })
+  @ApiOkResponse({ type: MapEventsDto })
+  @ApiBadRequestResponse({ description: "Invalid query parameters" })
+  async listMapEvents(@Query() query: Record<string, unknown>): Promise<MapEventsDto> {
+    const input = parseMapQuery(query)
+    return { events: await this.consumer.listMapEvents(input.cityId) }
+  }
+
   @Get("events/:id")
   @ApiOperation({
     summary: "Get an event",
@@ -72,6 +94,21 @@ export class ConsumerController {
     )
     if (event === null) throw new NotFoundException("event not found")
     return event
+  }
+
+  @Get("events/:id/detail")
+  @ApiOperation({
+    summary: "Get the consumer event-detail composite",
+    security: OPTIONAL_CLERK_SECURITY,
+  })
+  @ApiParam({ name: "id", format: "uuid" })
+  @ApiOkResponse({ type: EventDetailDto })
+  @ApiBadRequestResponse({ description: "Invalid event id" })
+  getEventDetail(
+    @Param("id") rawId: string,
+    @Req() request: OptionalIdentifiedRequest
+  ): Promise<EventDetailDto> {
+    return this.consumer.getEventDetail(parseEventId(rawId), request.identity?.supabaseUuid ?? null)
   }
 
   @Get("tags")

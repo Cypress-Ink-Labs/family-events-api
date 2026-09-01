@@ -58,6 +58,21 @@ export interface ListEventsInput {
   dateTo?: string | null
 }
 
+export interface ListMapEventsInput {
+  cityId?: string | null
+  limit?: number
+}
+
+export interface MappableEvent {
+  id: string
+  title: string
+  latitude: string
+  longitude: string
+  start_datetime: string
+  venue_name: string | null
+  is_free: boolean
+}
+
 export interface SearchEventsInput {
   keyword?: string | null
   cityId?: string | null
@@ -96,6 +111,17 @@ export interface SearchedEvent {
   images: Json
   status: string
   is_featured: boolean
+}
+
+/** Consumer detail contract: the app renders only the linked event id and title. */
+export interface SimilarEvent {
+  event_id: string
+  title: string
+}
+
+export interface SimilarEventsInput {
+  limit?: number
+  cityId?: string | null
 }
 
 export interface City {
@@ -152,6 +178,16 @@ export interface EventComment {
   body: string
   is_approved: boolean
   is_flagged: boolean
+  created_at: string
+  updated_at: string
+  display_name: string | null
+  avatar_url: string | null
+}
+
+/** Public detail-page projection; moderation and ownership fields stay server-side. */
+export interface PublicEventComment {
+  id: string
+  body: string
   created_at: string
   updated_at: string
   display_name: string | null

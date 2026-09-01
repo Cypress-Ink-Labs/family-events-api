@@ -1,7 +1,21 @@
 import { BadRequestException } from "@nestjs/common"
 import { describe, expect, it } from "vitest"
 
-import { parsePlanQuery } from "./consumer.query.js"
+import { parseMapQuery, parsePlanQuery } from "./consumer.query.js"
+
+describe("parseMapQuery", () => {
+  it("accepts an optional city_id", () => {
+    expect(parseMapQuery({})).toEqual({ cityId: null })
+    expect(parseMapQuery({ city_id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc" })).toEqual({
+      cityId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+    })
+  })
+
+  it("rejects invalid or unknown query parameters", () => {
+    expect(() => parseMapQuery({ city_id: "not-a-uuid" })).toThrow(BadRequestException)
+    expect(() => parseMapQuery({ limit: "999" })).toThrow(BadRequestException)
+  })
+})
 
 describe("parsePlanQuery", () => {
   it("defaults city and age to null", () => {

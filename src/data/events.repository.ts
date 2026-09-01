@@ -1,7 +1,16 @@
 import { Injectable } from "@nestjs/common"
 
 import { DbService } from "../db/db.service.js"
-import type { EnrichedEvent, ListEventsInput, SearchEventsInput, SearchedEvent } from "./types.js"
+import type {
+  EnrichedEvent,
+  ListEventsInput,
+  ListMapEventsInput,
+  MappableEvent,
+  SearchedEvent,
+  SearchEventsInput,
+  SimilarEvent,
+  SimilarEventsInput,
+} from "./types.js"
 
 // Consumer event reads (U23): a port of family-events-app src/server/events.ts.
 // The repositories call the same deployed RPCs with the same named parameters,
@@ -27,6 +36,20 @@ FROM public.events_enriched(
   p_after_id             => $8::uuid,
   p_limit                => $9::int
 )
+WHERE status = $2::text
+`
+
+const MAP_SQL = `
+SELECT id, title, latitude, longitude, start_datetime, venue_name, is_free
+FROM public.events
+WHERE status = 'published'::public.event_status
+  AND ($1::uuid IS NULL OR city_id = $1::uuid)
+  AND latitude IS NOT NULL
+  AND longitude IS NOT NULL
+  AND latitude BETWEEN -90 AND 90
+  AND longitude BETWEEN -180 AND 180
+ORDER BY start_datetime ASC, id ASC
+LIMIT LEAST(GREATEST(COALESCE($2::int, 200), 1), 500)
 `
 
 const SEARCH_SQL = `
@@ -53,6 +76,15 @@ FROM public.search_events(
 )
 `
 
+const SIMILAR_BY_ID_SQL = `
+SELECT event_id::text, title
+FROM public.find_similar_events_by_id(
+  p_event_id => $1::uuid,
+  p_limit    => $2::int,
+  p_city_id  => $3::uuid
+)
+`
+
 @Injectable()
 export class EventsRepository {
   constructor(private readonly db: DbService) {}
@@ -69,6 +101,10 @@ export class EventsRepository {
       input.after?.id ?? null,
       input.limit ?? 24,
     ])
+  }
+
+  async listMapEvents(input: ListMapEventsInput = {}): Promise<MappableEvent[]> {
+    return this.db.query<MappableEvent>(MAP_SQL, [input.cityId ?? null, input.limit ?? 200])
   }
 
   async searchEvents(input: SearchEventsInput = {}): Promise<SearchedEvent[]> {
@@ -88,6 +124,17 @@ export class EventsRepository {
       input.lat ?? null,
       input.lng ?? null,
       input.radiusKm ?? null,
+    ])
+  }
+
+  async findSimilarEventsById(
+    eventId: string,
+    input: SimilarEventsInput = {}
+  ): Promise<SimilarEvent[]> {
+    return this.db.query<SimilarEvent>(SIMILAR_BY_ID_SQL, [
+      eventId,
+      input.limit ?? 5,
+      input.cityId ?? null,
     ])
   }
 }

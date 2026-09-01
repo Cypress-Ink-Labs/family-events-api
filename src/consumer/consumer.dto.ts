@@ -1,6 +1,14 @@
 import { ApiProperty, ApiPropertyOptional, type ApiPropertyOptions } from "@nestjs/swagger"
 
-import type { City, EnrichedEvent, PlannedEvent, Tag } from "../data/types.js"
+import type {
+  CalendarEvent,
+  City,
+  EnrichedEvent,
+  PlannedEvent,
+  PublicEventComment,
+  SimilarEvent,
+  Tag,
+} from "../data/types.js"
 import type { Json } from "../db/json.js"
 
 const JSON_VALUE_PROPERTY: ApiPropertyOptions = {
@@ -146,6 +154,132 @@ export class EventsPageDto {
 
   @ApiProperty({ type: String, nullable: true })
   next_cursor!: string | null
+}
+
+export class SimilarEventDto implements SimilarEvent {
+  @ApiProperty({ format: "uuid" })
+  event_id!: string
+
+  @ApiProperty()
+  title!: string
+}
+
+export class EventCommentDto implements PublicEventComment {
+  @ApiProperty({ format: "uuid" })
+  id!: string
+
+  @ApiProperty()
+  body!: string
+
+  @ApiProperty({ format: "date-time" })
+  created_at!: string
+
+  @ApiProperty({ format: "date-time" })
+  updated_at!: string
+
+  @ApiProperty({ type: String, nullable: true })
+  display_name!: string | null
+
+  @ApiProperty({ type: String, nullable: true })
+  avatar_url!: string | null
+}
+
+export class EventDetailDto {
+  @ApiProperty({ type: EnrichedEventDto, nullable: true })
+  event!: EnrichedEventDto | null
+
+  @ApiProperty({ type: [SimilarEventDto] })
+  similar!: SimilarEventDto[]
+
+  @ApiProperty({ type: [EventCommentDto] })
+  comments!: EventCommentDto[]
+
+  @ApiProperty({ type: "integer", minimum: 1, maximum: 5, nullable: true })
+  my_rating!: number | null
+
+  @ApiProperty()
+  signed_in!: boolean
+}
+
+export class MapEventDto {
+  @ApiProperty({ format: "uuid" })
+  id!: string
+
+  @ApiProperty()
+  title!: string
+
+  @ApiProperty({ type: "number", format: "double" })
+  latitude!: number
+
+  @ApiProperty({ type: "number", format: "double" })
+  longitude!: number
+
+  @ApiProperty({ format: "date-time" })
+  start_datetime!: string
+
+  @ApiProperty({ type: String, nullable: true })
+  venue_name!: string | null
+
+  @ApiProperty()
+  is_free!: boolean
+}
+
+export class MapEventsDto {
+  @ApiProperty({ type: [MapEventDto], maxItems: 200 })
+  events!: MapEventDto[]
+}
+
+export class MapQueryDto {
+  @ApiPropertyOptional({ format: "uuid" })
+  city_id?: string
+}
+
+export class FavoriteEventsDto {
+  @ApiProperty({ type: [EnrichedEventDto] })
+  events!: EnrichedEventDto[]
+}
+
+export class CalendarEventDto implements CalendarEvent {
+  @ApiProperty({ format: "uuid" })
+  event_id!: string
+
+  @ApiProperty({ format: "date-time" })
+  added_at!: string
+
+  @ApiProperty({ type: String, nullable: true })
+  notes!: string | null
+
+  @ApiProperty()
+  title!: string
+
+  @ApiProperty({ format: "date-time" })
+  start_datetime!: string
+
+  @ApiProperty({ type: String, format: "date-time", nullable: true })
+  end_datetime!: string | null
+
+  @ApiProperty({ type: String, nullable: true })
+  venue_name!: string | null
+
+  @ApiProperty({ type: String, nullable: true })
+  address!: string | null
+
+  @ApiProperty({ type: String, format: "uuid", nullable: true })
+  city_id!: string | null
+
+  @ApiProperty()
+  is_free!: boolean
+
+  @ApiProperty({ type: String, nullable: true })
+  price!: string | null
+
+  @ApiProperty(JSON_VALUE_PROPERTY)
+  images!: Json
+}
+
+export class CalendarEventsDto {
+  @ApiProperty({ type: [CalendarEventDto] })
+  entries!: CalendarEventDto[]
 }
 
 export class PlannedEventDto implements PlannedEvent {
