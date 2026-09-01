@@ -86,9 +86,9 @@ afterEach(() => {
 })
 
 describe("ConsumerService.planForToday", () => {
-  it("uses the app's D+0..1 window, limit 5, and weatherFit neutral without a city", async () => {
+  it("uses the zone-local today window, not a rolling 24h", async () => {
     vi.useFakeTimers()
-    vi.setSystemTime(new Date("2026-08-16T12:00:00.000Z"))
+    vi.setSystemTime(new Date("2026-08-16T12:00:00.000Z")) // 07:00 in Chicago
     const { service, planForRange, snapshot } = makeService()
 
     await expect(service.planForToday({ cityId: null, kidAge: null }, "user-1")).resolves.toEqual({
@@ -99,14 +99,27 @@ describe("ConsumerService.planForToday", () => {
     expect(snapshot).not.toHaveBeenCalled()
     expect(planForRange).toHaveBeenCalledWith({
       userKey: "user-1",
-      dateFrom: "2026-08-16T12:00:00.000Z",
-      dateTo: "2026-08-17T12:00:00.000Z",
+      dateFrom: "2026-08-16T05:00:00.000Z",
+      dateTo: "2026-08-17T05:00:00.000Z",
       cityIds: null,
       lat: null,
       lng: null,
       kidAge: null,
       weatherFit: "neutral",
       limit: 5,
+    })
+  })
+
+  it("plan window is DST-safe (23h on the spring-forward day)", async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date("2026-03-08T09:00:00.000Z"))
+    const { service, planForRange } = makeService()
+
+    await service.planForToday({ cityId: null, kidAge: null }, "user-1")
+
+    expect(planForRange.mock.calls[0]?.[0]).toMatchObject({
+      dateFrom: "2026-03-08T06:00:00.000Z",
+      dateTo: "2026-03-09T05:00:00.000Z",
     })
   })
 

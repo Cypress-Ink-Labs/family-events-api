@@ -17,14 +17,18 @@ import type {
   SimilarEvent,
   Tag,
 } from "../data/types.js"
+import { zonedDayStartUtc } from "../pipeline/zoned-time.js"
 import { encodeCursor } from "./cursor.js"
 import type { ExploreQuery, PlanQuery } from "./consumer.query.js"
 import { WeatherService } from "./weather.service.js"
 
-const PLAN_WINDOW_MS = 86_400_000
 const PLAN_LIMIT = 5
 const DETAIL_SIMILAR_LIMIT = 4
 const MAP_LIMIT = 200
+
+// Consumers render in this zone when an event/city has none; the app's
+// src/lib/dates.ts uses the same default.
+const DEFAULT_PLAN_TIMEZONE = "America/Chicago"
 
 export interface EventsPage {
   events: EnrichedEvent[]
@@ -219,13 +223,12 @@ export class ConsumerService {
   }
 
   async planForToday(input: PlanQuery, userKey: string): Promise<PlanPage> {
-    const from = new Date()
-    const to = new Date(from.getTime() + PLAN_WINDOW_MS)
-    const { lat, lng, weatherFit } = await this.resolvePlanWeather(input.cityId)
+    const now = new Date()
+    const { lat, lng, weatherFit, timezone } = await this.resolvePlanContext(input.cityId)
     const planned = await this.planRepository.planForRange({
       userKey,
-      dateFrom: from.toISOString(),
-      dateTo: to.toISOString(),
+      dateFrom: zonedDayStartUtc(now, timezone, 0).toISOString(),
+      dateTo: zonedDayStartUtc(now, timezone, 1).toISOString(),
       cityIds: input.cityId === null ? null : [input.cityId],
       lat,
       lng,
@@ -236,23 +239,22 @@ export class ConsumerService {
     return { available: true, planned }
   }
 
-  private async resolvePlanWeather(cityId: string | null): Promise<{
+  private async resolvePlanContext(cityId: string | null): Promise<{
     lat: number | null
     lng: number | null
     weatherFit: string
+    timezone: string
   }> {
     if (cityId === null) {
-      return { lat: null, lng: null, weatherFit: "neutral" }
+      return { lat: null, lng: null, weatherFit: "neutral", timezone: DEFAULT_PLAN_TIMEZONE }
     }
     const cities = await this.referenceRepository.listCities()
     const city = cities.find((row) => row.id === cityId)
     const lat = parseCoord(city?.latitude ?? null)
     const lng = parseCoord(city?.longitude ?? null)
-    if (lat === null || lng === null) {
-      return { lat: null, lng: null, weatherFit: "neutral" }
-    }
-    const snapshot = await this.weather.snapshot(lat, lng)
-    return { lat, lng, weatherFit: snapshot.weatherFit }
+    const weatherFit =
+      lat === null || lng === null ? "neutral" : (await this.weather.snapshot(lat, lng)).weatherFit
+    return { lat, lng, weatherFit, timezone: city?.timezone ?? DEFAULT_PLAN_TIMEZONE }
   }
 }
 
