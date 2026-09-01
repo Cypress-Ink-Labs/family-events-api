@@ -175,6 +175,16 @@ describe("consumer read HTTP API", () => {
     expect(page2.body.events.map((event: { id: string }) => event.id)).toEqual([second])
   })
 
+  it("returns no next_cursor when the page exactly fills the limit", async () => {
+    for (let i = 0; i < 3; i++) {
+      await insertEvent({ title: `Boundary event ${i}`, start: `2026-08-1${i + 1}T15:00:00+00:00` })
+    }
+    const res = await request(app.getHttpServer()).get("/v1/events?limit=3")
+    expect(res.status).toBe(200)
+    expect(res.body.events).toHaveLength(3)
+    expect(res.body.next_cursor).toBeNull()
+  })
+
   it("uses the keyword search path and returns enriched events", async () => {
     const match = await insertEvent({
       title: "Family Storytime",

@@ -88,7 +88,12 @@ export class ConsumerService {
 
   async listEvents(input: ExploreQuery, userKey: string | null): Promise<EventsPage> {
     const usesSearch = input.keyword !== null || input.isFree !== null || input.kidAge !== null
+    // Probe one row past the limit so next_cursor is emitted only when a next
+    // page actually exists (an exactly-full last page must not advertise an
+    // empty one). Same pattern as the legacy events-api edge function.
+    const probeLimit = input.limit + 1
     let events: EnrichedEvent[]
+    let hasMore: boolean
 
     if (usesSearch) {
       const hits = await this.eventsRepository.searchEvents({
@@ -99,18 +104,20 @@ export class ConsumerService {
         isFree: input.isFree,
         ageMin: input.kidAge,
         ageMax: input.kidAge,
-        limit: input.limit,
+        limit: probeLimit,
         after: input.after,
       })
+      hasMore = hits.length > input.limit
+      const pageHits = hasMore ? hits.slice(0, input.limit) : hits
       events =
-        hits.length === 0
+        pageHits.length === 0
           ? []
           : await this.eventsRepository.listEvents({
-              eventIds: hits.map((hit) => hit.id),
+              eventIds: pageHits.map((hit) => hit.id),
               userKey,
               limit: input.limit,
             })
-      const order = new Map(hits.map((hit, index) => [hit.id, index]))
+      const order = new Map(pageHits.map((hit, index) => [hit.id, index]))
       events.sort(
         (left, right) =>
           (order.get(left.id) ?? Number.MAX_SAFE_INTEGER) -
@@ -122,16 +129,20 @@ export class ConsumerService {
         dateFrom: input.dateFrom,
         dateTo: input.dateTo,
         userKey,
-        limit: input.limit,
+        limit: probeLimit,
         after: input.after,
       })
+      hasMore = events.length > input.limit
+      if (hasMore) {
+        events = events.slice(0, input.limit)
+      }
     }
 
     const last = events.at(-1)
     return {
       events,
       next_cursor:
-        events.length === input.limit && last !== undefined
+        hasMore && last !== undefined
           ? encodeCursor({ startDatetime: last.start_datetime, id: last.id })
           : null,
     }

@@ -9,6 +9,7 @@ import type { RatingsRepository } from "../data/ratings.repository.js"
 import type { ReferenceRepository } from "../data/reference.repository.js"
 import type { City, EnrichedEvent } from "../data/types.js"
 import { ConsumerService } from "./consumer.service.js"
+import { decodeCursor } from "./cursor.js"
 import type { WeatherService } from "./weather.service.js"
 
 const CITY: City = {
@@ -26,6 +27,7 @@ function makeService(opts?: { cities?: City[]; weatherFit?: string }): {
   listEvents: ReturnType<typeof vi.fn>
   listMapEvents: ReturnType<typeof vi.fn>
   findSimilarEventsById: ReturnType<typeof vi.fn>
+  searchEvents: ReturnType<typeof vi.fn>
   listFavorites: ReturnType<typeof vi.fn>
   listCalendarEvents: ReturnType<typeof vi.fn>
   listEventComments: ReturnType<typeof vi.fn>
@@ -36,6 +38,7 @@ function makeService(opts?: { cities?: City[]; weatherFit?: string }): {
   const listEvents = vi.fn(async () => [])
   const listMapEvents = vi.fn(async () => [])
   const findSimilarEventsById = vi.fn(async () => [])
+  const searchEvents = vi.fn(async () => [])
   const listFavorites = vi.fn(async () => [])
   const listCalendarEvents = vi.fn(async () => [])
   const listEventComments = vi.fn(async () => [])
@@ -49,7 +52,12 @@ function makeService(opts?: { cities?: City[]; weatherFit?: string }): {
     observedAt: "2026-08-16T12:00:00.000Z",
   }))
   const service = new ConsumerService(
-    { listEvents, listMapEvents, findSimilarEventsById } as unknown as EventsRepository,
+    {
+      listEvents,
+      listMapEvents,
+      findSimilarEventsById,
+      searchEvents,
+    } as unknown as EventsRepository,
     { listCities: async () => opts?.cities ?? [CITY] } as unknown as ReferenceRepository,
     { planForRange } as unknown as PlanRepository,
     { snapshot } as unknown as WeatherService,
@@ -63,6 +71,7 @@ function makeService(opts?: { cities?: City[]; weatherFit?: string }): {
     listEvents,
     listMapEvents,
     findSimilarEventsById,
+    searchEvents,
     listFavorites,
     listCalendarEvents,
     listEventComments,
@@ -246,5 +255,63 @@ describe("ConsumerService.listCalendarEvents", () => {
       { event_id: "event-1", title: "Storytime" },
     ])
     expect(listCalendarEvents).toHaveBeenCalledWith("user-1")
+  })
+})
+
+function mockRow(n: number): EnrichedEvent {
+  return {
+    id: `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`,
+    start_datetime: `2026-08-16T12:00:${String(n % 60).padStart(2, "0")}.000Z`,
+  } as unknown as EnrichedEvent
+}
+
+describe("ConsumerService.listEvents cursor", () => {
+  const QUERY = {
+    cityId: null,
+    keyword: null,
+    dateFrom: null,
+    dateTo: null,
+    isFree: null,
+    kidAge: null,
+    after: null,
+    limit: 3,
+  }
+
+  it("emits no cursor when the result set exactly fills one page", async () => {
+    const { service, listEvents } = makeService()
+    const rows = [mockRow(0), mockRow(1), mockRow(2)]
+    listEvents.mockImplementation(async (input: { limit: number }) => rows.slice(0, input.limit))
+
+    const page = await service.listEvents(QUERY, null)
+
+    expect(page.events).toHaveLength(3)
+    expect(page.next_cursor).toBeNull()
+  })
+
+  it("trims the probe row and emits its predecessor's cursor when more rows exist", async () => {
+    const { service, listEvents } = makeService()
+    const rows = [mockRow(0), mockRow(1), mockRow(2), mockRow(3)]
+    listEvents.mockImplementation(async (input: { limit: number }) => rows.slice(0, input.limit))
+
+    const page = await service.listEvents(QUERY, null)
+
+    expect(page.events).toHaveLength(3)
+    expect(decodeCursor(page.next_cursor!)).toEqual({
+      startDatetime: rows[2]!.start_datetime,
+      id: rows[2]!.id,
+    })
+  })
+
+  it("probes limit+1 on the search path too", async () => {
+    const { service, listEvents, searchEvents } = makeService()
+    const hits = [mockRow(0), mockRow(1), mockRow(2), mockRow(3)]
+    searchEvents.mockResolvedValue(hits)
+    listEvents.mockResolvedValue(hits.slice(0, 3))
+
+    const page = await service.listEvents({ ...QUERY, keyword: "splash" }, null)
+
+    expect(searchEvents).toHaveBeenCalledWith(expect.objectContaining({ limit: 4 }))
+    expect(page.events).toHaveLength(3)
+    expect(page.next_cursor).not.toBeNull()
   })
 })
