@@ -148,6 +148,15 @@ FROM public.events
 WHERE id = $1::uuid
 `
 
+// Legacy buildReviewQueueDeps loaded this joined row once per batch before
+// resolveLlmReviewConfig. A missing row falls back to env configuration.
+const LOAD_EVENT_REVIEW_FEATURE_CONFIG_SQL = `
+SELECT cfg.model_id AS model, cfg.enabled, models.provider
+FROM public.ai_feature_config cfg
+LEFT JOIN public.approved_ai_models models ON models.id = cfg.model_id
+WHERE cfg.feature = 'event-review'
+`
+
 function traceInputSnapshot(event: EventReviewRow): Record<string, unknown> {
   return {
     title: event.title,
@@ -166,6 +175,19 @@ export class ReviewRepository implements ReviewQueueDb {
   }
 
   // ── ReviewQueueDb ─────────────────────────────────────────────────────────
+
+  async loadEventReviewFeatureConfig(): Promise<{
+    model: string
+    enabled: boolean
+    provider: string | null
+  } | null> {
+    const rows = await this.db.query<{
+      model: string
+      enabled: boolean
+      provider: string | null
+    }>(LOAD_EVENT_REVIEW_FEATURE_CONFIG_SQL)
+    return rows[0] ?? null
+  }
 
   async reapStuckReviewQueueRows(): Promise<number> {
     const rows = await this.db.query<{ reaped: number }>(REAP_STUCK_REVIEW_QUEUE_ROWS_SQL)

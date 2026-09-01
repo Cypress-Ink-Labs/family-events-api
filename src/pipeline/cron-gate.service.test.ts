@@ -1,14 +1,14 @@
 import { describe, expect, it, vi } from "vitest"
 
 import type { DbService } from "../db/db.service.js"
-import { CronGateService } from "./cron-gate.service.js"
+import { CronGateService, nestGateLabel, type CronGateState } from "./cron-gate.service.js"
 import type { FailurePingService } from "./failure-ping.service.js"
 import { FAMILIES } from "./families.js"
 
 const SCHEDULE = FAMILIES.scrape.schedules[0]!
 
 function makeService(
-  queryResults: { enabled: boolean }[],
+  queryResults: CronGateState[],
   failurePing?: Pick<FailurePingService, "send">
 ) {
   const query = vi.fn(async (text: string, _params?: unknown[]) => {
@@ -23,21 +23,36 @@ function makeService(
 }
 
 describe("CronGateService", () => {
-  it("treats a missing kill-switch row as enabled (legacy COALESCE semantics)", async () => {
-    const { service } = makeService([])
-    expect(await service.isEnabled("cron-scrape-sources")).toBe(true)
+  it("uses the namespaced Nest operational label", () => {
+    expect(nestGateLabel("cron-scrape-sources")).toBe("nestjs:cron-scrape-sources")
   })
 
-  it("skips the tick without recording a run when disabled", async () => {
-    const { service, query } = makeService([{ enabled: false }])
+  it("fails safe to both gates enabled when the state query returns no row", async () => {
+    const { service } = makeService([])
+    expect(await service.getGateState("cron-scrape-sources")).toEqual({
+      legacyEnabled: true,
+      nestEnabled: true,
+    })
+  })
+
+  it("skips Nest execution while the legacy cron remains enabled", async () => {
+    const { service, query } = makeService([{ legacyEnabled: true, nestEnabled: true }])
     const fn = vi.fn()
     await service.runGated(SCHEDULE, fn)
     expect(fn).not.toHaveBeenCalled()
     expect(query.mock.calls.filter(([text]) => text.startsWith("INSERT"))).toHaveLength(0)
   })
 
-  it("records a succeeded run with the handler summary as body", async () => {
-    const { service, query } = makeService([{ enabled: true }])
+  it("skips Nest execution while its independent operational gate is paused", async () => {
+    const { service, query } = makeService([{ legacyEnabled: false, nestEnabled: false }])
+    const fn = vi.fn()
+    await service.runGated(SCHEDULE, fn)
+    expect(fn).not.toHaveBeenCalled()
+    expect(query.mock.calls.filter(([text]) => text.startsWith("INSERT"))).toHaveLength(0)
+  })
+
+  it("starts Nest execution after the legacy cron is disabled and records success", async () => {
+    const { service, query } = makeService([{ legacyEnabled: false, nestEnabled: true }])
     await service.runGated(SCHEDULE, async () => "imported 5 events")
     const insert = query.mock.calls.find(([text]) => text.startsWith("INSERT"))
     expect(insert?.[1]).toEqual([
@@ -49,7 +64,7 @@ describe("CronGateService", () => {
   })
 
   it("records a failed run and rethrows so pg-boss retry policy applies", async () => {
-    const { service, query } = makeService([{ enabled: true }])
+    const { service, query } = makeService([{ legacyEnabled: false, nestEnabled: true }])
     await expect(
       service.runGated(SCHEDULE, async () => {
         throw new Error("scrape blew up")
@@ -61,7 +76,7 @@ describe("CronGateService", () => {
 
   it("pings the operator with the legacy label after recording a failed run", async () => {
     const send = vi.fn(async () => "sent" as const)
-    const { service, query } = makeService([{ enabled: true }], { send })
+    const { service, query } = makeService([{ legacyEnabled: false, nestEnabled: true }], { send })
     await expect(
       service.runGated(SCHEDULE, async () => {
         throw new Error("scrape blew up")
@@ -79,7 +94,7 @@ describe("CronGateService", () => {
 
   it("does not ping on a succeeded run", async () => {
     const send = vi.fn(async () => "sent" as const)
-    const { service } = makeService([{ enabled: true }], { send })
+    const { service } = makeService([{ legacyEnabled: false, nestEnabled: true }], { send })
     await service.runGated(SCHEDULE, async () => "imported 5 events")
     expect(send).not.toHaveBeenCalled()
   })
@@ -88,7 +103,7 @@ describe("CronGateService", () => {
     const send = vi.fn(async () => {
       throw new Error("telegram down")
     })
-    const { service, query } = makeService([{ enabled: true }], { send })
+    const { service, query } = makeService([{ legacyEnabled: false, nestEnabled: true }], { send })
     await expect(
       service.runGated(SCHEDULE, async () => {
         throw new Error("scrape blew up")

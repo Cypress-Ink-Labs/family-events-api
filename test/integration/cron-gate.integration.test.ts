@@ -2,7 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest"
 
 import type { DbService } from "../../src/db/db.service.js"
 import { createIntegrationDb } from "./db.js"
-import { CronGateService } from "../../src/pipeline/cron-gate.service.js"
+import { CronGateService, nestGateLabel } from "../../src/pipeline/cron-gate.service.js"
 import { FAMILIES } from "../../src/pipeline/families.js"
 
 /**
@@ -43,15 +43,24 @@ describe("CronGateService (integration)", () => {
     await db.onModuleDestroy()
   })
 
-  it("missing row means enabled; explicit false disables", async () => {
-    expect(await gate.isEnabled(SCHEDULE.replaces)).toBe(true)
+  it("missing row means legacy-enabled; explicit false hands ownership to Nest", async () => {
+    expect(await gate.getGateState(SCHEDULE.replaces)).toEqual({
+      legacyEnabled: true,
+      nestEnabled: true,
+    })
     await db.query("INSERT INTO private.cron_enabled (label, enabled) VALUES ($1, false)", [
       SCHEDULE.replaces,
     ])
-    expect(await gate.isEnabled(SCHEDULE.replaces)).toBe(false)
+    expect(await gate.getGateState(SCHEDULE.replaces)).toEqual({
+      legacyEnabled: false,
+      nestEnabled: true,
+    })
   })
 
   it("successful gated run lands in railway_cron_runs with succeeded status", async () => {
+    await db.query("INSERT INTO private.cron_enabled (label, enabled) VALUES ($1, false)", [
+      SCHEDULE.replaces,
+    ])
     await gate.runGated(SCHEDULE, async () => "ok: 3 sources due")
     const runs = await db.query<{ label: string; status: string; body: string | null }>(
       "SELECT label, status, body FROM private.railway_cron_runs"
@@ -62,6 +71,9 @@ describe("CronGateService (integration)", () => {
   })
 
   it("failed gated run records failure and rethrows", async () => {
+    await db.query("INSERT INTO private.cron_enabled (label, enabled) VALUES ($1, false)", [
+      SCHEDULE.replaces,
+    ])
     await expect(
       gate.runGated(SCHEDULE, async () => {
         throw new Error("upstream 500")
@@ -73,8 +85,8 @@ describe("CronGateService (integration)", () => {
     expect(runs).toEqual([{ status: "failed", body: "upstream 500" }])
   })
 
-  it("disabled label runs nothing and records nothing", async () => {
-    await db.query("INSERT INTO private.cron_enabled (label, enabled) VALUES ($1, false)", [
+  it("legacy-enabled label runs no Nest work and records nothing", async () => {
+    await db.query("INSERT INTO private.cron_enabled (label, enabled) VALUES ($1, true)", [
       SCHEDULE.replaces,
     ])
     let executed = false
@@ -82,6 +94,24 @@ describe("CronGateService (integration)", () => {
       executed = true
     })
     expect(executed).toBe(false)
+    const runs = await db.query("SELECT 1 FROM private.railway_cron_runs")
+    expect(runs).toHaveLength(0)
+  })
+
+  it("namespaced Nest label pauses execution without re-enabling legacy", async () => {
+    await db.query(
+      "INSERT INTO private.cron_enabled (label, enabled) VALUES ($1, false), ($2, false)",
+      [SCHEDULE.replaces, nestGateLabel(SCHEDULE.replaces)]
+    )
+    let executed = false
+    await gate.runGated(SCHEDULE, async () => {
+      executed = true
+    })
+    expect(executed).toBe(false)
+    expect(await gate.getGateState(SCHEDULE.replaces)).toEqual({
+      legacyEnabled: false,
+      nestEnabled: false,
+    })
     const runs = await db.query("SELECT 1 FROM private.railway_cron_runs")
     expect(runs).toHaveLength(0)
   })

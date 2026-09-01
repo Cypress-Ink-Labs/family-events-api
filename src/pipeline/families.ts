@@ -35,7 +35,7 @@ export interface FamilySchedule {
 export interface FamilyConfig {
   queue: string
   deadLetter: string
-  /** Max jobs in flight per work() registration (pg-boss batchSize). */
+  /** Independent single-job workers spawned per API process (pg-boss localConcurrency). */
   concurrency: number
   retryLimit: number
   /** Seconds; base for exponential backoff when retryBackoff is true. */

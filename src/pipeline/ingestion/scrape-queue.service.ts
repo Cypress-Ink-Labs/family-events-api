@@ -76,7 +76,7 @@ export class ScrapeQueueService implements OnModuleInit {
           data: { task: schedule.task },
           key: schedule.key,
         })),
-        batchSize: family.concurrency,
+        localConcurrency: family.concurrency,
       }
     )
     this.logger.log("scrape family registered (queue, dlq, schedules)")

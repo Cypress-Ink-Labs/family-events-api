@@ -24,8 +24,8 @@ interface QueueRegistration {
   schedules: QueueSchedule[]
   /** null = queue only (e.g. a dead-letter queue nothing consumes yet). */
   handler: JobHandler<never> | null
-  /** work() batch size — max jobs in flight per registration (U12 concurrency). */
-  batchSize: number
+  /** Independent single-job workers to spawn for this queue in this process. */
+  localConcurrency: number
 }
 
 /**
@@ -45,7 +45,7 @@ export class JobsService implements OnApplicationBootstrap, OnApplicationShutdow
     name: string,
     handler: JobHandler<Data> | null,
     options: Queue = { name },
-    config: { schedules?: QueueSchedule[]; batchSize?: number } = {}
+    config: { schedules?: QueueSchedule[]; localConcurrency?: number } = {}
   ): void {
     if (this.boss !== null) {
       throw new Error(`queue "${name}" registered after pg-boss start`)
@@ -55,7 +55,7 @@ export class JobsService implements OnApplicationBootstrap, OnApplicationShutdow
       options,
       schedules: config.schedules ?? [],
       handler: handler as JobHandler<never> | null,
-      batchSize: config.batchSize ?? 1,
+      localConcurrency: config.localConcurrency ?? 1,
     })
   }
 
@@ -77,9 +77,13 @@ export class JobsService implements OnApplicationBootstrap, OnApplicationShutdow
       await boss.createQueue(registration.name, registration.options)
       const { handler } = registration
       if (handler !== null) {
-        await boss.work(registration.name, { batchSize: registration.batchSize }, async (jobs) => {
-          await Promise.all(jobs.map((job) => handler(job.data as never, job.id)))
-        })
+        await boss.work(
+          registration.name,
+          { batchSize: 1, localConcurrency: registration.localConcurrency },
+          async ([job]) => {
+            if (job) await handler(job.data as never, job.id)
+          }
+        )
       }
       for (const schedule of registration.schedules) {
         await boss.schedule(
