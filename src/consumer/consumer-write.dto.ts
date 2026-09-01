@@ -18,7 +18,7 @@ export class CommentInputDto {
 }
 
 export class CommunityEventInputDto implements CommunityEventInput {
-  @ApiProperty({ minLength: 1 })
+  @ApiProperty({ minLength: 1, maxLength: 200 })
   title!: string
 
   @ApiPropertyOptional({ type: String, nullable: true })

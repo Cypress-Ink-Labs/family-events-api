@@ -7,19 +7,39 @@ const ratingSchema = z.strictObject({ score: z.int().min(1).max(5) })
 const commentSchema = z.strictObject({ body: z.string().trim().min(1).max(4000) })
 const nullableString = z.string().optional().nullable()
 const nullableInteger = z.int().min(0).optional().nullable()
-const communityEventSchema = z.strictObject({
-  title: z.string().trim().min(1),
-  description: nullableString,
-  startDatetime: z.iso.datetime({ offset: true }),
-  endDatetime: z.iso.datetime({ offset: true }).optional().nullable(),
-  venueName: nullableString,
-  address: nullableString,
-  cityId: uuidSchema,
-  ageMin: nullableInteger,
-  ageMax: nullableInteger,
-  isFree: z.boolean().optional(),
-  price: z.number().min(0).optional().nullable(),
-})
+const communityEventSchema = z
+  .strictObject({
+    title: z.string().trim().min(1).max(200),
+    description: nullableString,
+    startDatetime: z.iso.datetime({ offset: true }),
+    endDatetime: z.iso.datetime({ offset: true }).optional().nullable(),
+    venueName: nullableString,
+    address: nullableString,
+    cityId: uuidSchema,
+    ageMin: nullableInteger,
+    ageMax: nullableInteger,
+    isFree: z.boolean().optional(),
+    price: z.number().min(0).optional().nullable(),
+  })
+  .refine(
+    (input) =>
+      input.endDatetime === undefined ||
+      input.endDatetime === null ||
+      input.endDatetime > input.startDatetime,
+    {
+      message: "endDatetime must be after startDatetime",
+      path: ["endDatetime"],
+    }
+  )
+  .refine(
+    (input) =>
+      input.ageMin === undefined ||
+      input.ageMin === null ||
+      input.ageMax === undefined ||
+      input.ageMax === null ||
+      input.ageMin <= input.ageMax,
+    { message: "ageMin must be less than or equal to ageMax", path: ["ageMax"] }
+  )
 const preferredCitiesSchema = z
   .strictObject({
     city_ids: z.array(uuidSchema).min(1),
@@ -35,7 +55,15 @@ export type PreferredCitiesInput = z.infer<typeof preferredCitiesSchema>
 
 function parseBody<T>(schema: z.ZodType<T>, body: unknown): T {
   const result = schema.safeParse(body)
-  if (!result.success) throw new BadRequestException("invalid request body")
+  if (!result.success) {
+    throw new BadRequestException({
+      message: "invalid request body",
+      issues: result.error.issues.map((issue) => ({
+        path: issue.path.map(String).join("."),
+        message: issue.message,
+      })),
+    })
+  }
   return result.data
 }
 

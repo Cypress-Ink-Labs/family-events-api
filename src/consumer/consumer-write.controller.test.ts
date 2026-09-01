@@ -14,6 +14,7 @@ import {
 import { RatingsRepository } from "../data/ratings.repository.js"
 import { SubmissionLimitError, SubmissionsRepository } from "../data/submissions.repository.js"
 import { ConsumerWriteController } from "./consumer-write.controller.js"
+import { parseCommunityEventInput } from "./consumer-write.input.js"
 import { ConsumerWriteService } from "./consumer-write.service.js"
 
 const USER_KEY = "99999999-9999-4999-8999-999999999999"
@@ -103,5 +104,48 @@ describe("ConsumerWriteController", () => {
       )
     ).toThrow(BadRequestException)
     expect(preferredCities.setPreferredCities).not.toHaveBeenCalled()
+  })
+})
+
+describe("parseCommunityEventInput", () => {
+  const validBody = {
+    title: "Neighborhood Picnic",
+    startDatetime: "2026-08-19T15:00:00+00:00",
+    cityId: CITY_ID,
+  }
+
+  it("rejects endDatetime before startDatetime, naming the field", () => {
+    const bad = {
+      ...validBody,
+      startDatetime: "2026-06-01T10:00:00Z",
+      endDatetime: "2026-06-01T09:00:00Z",
+    }
+    try {
+      parseCommunityEventInput(bad)
+      expect.unreachable()
+    } catch (error) {
+      const response = (error as BadRequestException).getResponse() as {
+        issues: Array<{ path: string; message: string }>
+      }
+      expect(response.issues.some((issue) => issue.path === "endDatetime")).toBe(true)
+    }
+  })
+
+  it("rejects ageMin above ageMax, naming the field", () => {
+    const bad = { ...validBody, ageMin: 12, ageMax: 5 }
+    try {
+      parseCommunityEventInput(bad)
+      expect.unreachable()
+    } catch (error) {
+      const response = (error as BadRequestException).getResponse() as {
+        issues: Array<{ path: string; message: string }>
+      }
+      expect(response.issues.some((issue) => issue.path === "ageMax")).toBe(true)
+    }
+  })
+
+  it("caps keyword-length style overflow on title", () => {
+    const bad = { ...validBody, title: "x".repeat(201) }
+    expect(() => parseCommunityEventInput(bad)).toThrow(BadRequestException)
   })
 })
