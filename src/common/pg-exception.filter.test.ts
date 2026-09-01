@@ -38,19 +38,33 @@ describe("PgExceptionFilter", () => {
     const { host, status, json } = makeHost()
     new PgExceptionFilter().catch(pgError("23503"), host)
     expect(status).toHaveBeenCalledWith(404)
-    expect(json).toHaveBeenCalledWith({ statusCode: 404, message: "related record not found" })
+    expect(json).toHaveBeenCalledWith({
+      statusCode: 404,
+      message: "related record not found",
+      error: "Not Found",
+    })
   })
 
   it("maps a unique violation (23505) to 409", () => {
-    const { host, status } = makeHost()
+    const { host, status, json } = makeHost()
     new PgExceptionFilter().catch(pgError("23505"), host)
     expect(status).toHaveBeenCalledWith(409)
+    expect(json).toHaveBeenCalledWith({
+      statusCode: 409,
+      message: "record already exists",
+      error: "Conflict",
+    })
   })
 
   it("maps invalid text representation (22P02) to 400", () => {
-    const { host, status } = makeHost()
+    const { host, status, json } = makeHost()
     new PgExceptionFilter().catch(pgError("22P02"), host)
     expect(status).toHaveBeenCalledWith(400)
+    expect(json).toHaveBeenCalledWith({
+      statusCode: 400,
+      message: "invalid identifier",
+      error: "Bad Request",
+    })
   })
 
   it("delegates everything else to the base filter", () => {
