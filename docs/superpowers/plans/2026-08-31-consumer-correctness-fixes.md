@@ -14,7 +14,7 @@
 
 - All commands run from the repo root. Full gate: `pnpm check` (= format:check + lint + typecheck + test). Run `pnpm test` after every task and `pnpm check` before each commit.
 - Unit tests are colocated (`src/**/*.test.ts`, swc vitest config; `DATABASE_URL` is pre-seeded with a dummy in `vitest.config.mts`). Integration tests live in `test/integration/`, need the real database (`integrationDatabaseUrl()` from `test/integration/db.ts`), and run with `pnpm test:integration`.
-- Style: semicolons, double quotes, ESM import specifiers ending in `.js`. `pnpm format:check` must pass.
+- Style: no semicolons (repo oxfmt is `semi: false`), double quotes, ESM import specifiers ending in `.js`. `pnpm format:check` must pass.
 - SQL lives in repositories; services never concatenate SQL. RPC semantics are pinned by the SQL fixtures in `test/integration/sql/`; do not edit those fixtures in this plan.
 - If a change alters any response shape, regenerate the contract with `pnpm openapi` and commit the new `openapi.json` in the same commit. (The app's vendored copy is synced by a separate plan; do NOT copy `openapi.json` to the app repo here.)
 
