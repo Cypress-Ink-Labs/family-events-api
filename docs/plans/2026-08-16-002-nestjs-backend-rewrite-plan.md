@@ -1,9 +1,11 @@
 # NestJS backend rewrite plan (reconstructed) — units U20–U33
 
-**Status:** U20, U21, U22, U23, U24, U25, and U26 done; U27 foundation landed
-(topology + gate + failure pings); U28/U30 pure-logic ports landed; U29 complete
-(classification, review, enrichment, pgvector, and pg-boss registration); the
-U24 read-API tail and U30–U33 remain.
+**Status:** U20–U29 done (U24 read-API tail closed by #25; U29 pg-boss
+registration closed by #26; U21 contract emitted, drift-checked, and consumed by
+the app's generated client); U30 has only the pure weekend-window logic; U30–U33
+remain. The 2026-08-31 migration-review plans (`docs/superpowers/plans/`) carry
+the next slices: consumer correctness landed as #27, deployment (005) and the
+U30 email slice (006) are ready.
 **Supersedes:** old U13–U18 of `2026-08-14-001` (production-readiness plan), per the mid-session
 redirect: *everything server-side moves to NestJS*.
 
