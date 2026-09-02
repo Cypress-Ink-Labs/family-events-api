@@ -20,6 +20,13 @@ async function bootstrap(): Promise<void> {
   app.enableShutdownHooks()
   SwaggerModule.setup("docs", app, buildOpenApiDocument(app))
   const config = app.get(ConfigService<Env, true>)
+  // The web app calls this API from the browser at cutover; without CORS those
+  // requests die as opaque network errors. Unset = same-origin/server-to-server
+  // only (current behavior).
+  const webOrigin = config.get("WEB_ORIGIN", { infer: true })
+  if (webOrigin) {
+    app.enableCors({ origin: webOrigin, credentials: true })
+  }
   await app.listen(config.get("PORT", { infer: true }))
 }
 

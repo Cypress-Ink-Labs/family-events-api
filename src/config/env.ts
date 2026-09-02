@@ -24,6 +24,11 @@ export const envSchema = z.object({
   TELEGRAM_FAILURE_CHAT_ID: z.string().optional(),
   /** OpenWeatherMap key for the plan weather proxy. Unset returns a neutral snapshot. */
   OPENWEATHER_API_KEY: z.string().optional(),
+  /** Public origin of the web app; enables CORS for its browser calls. Unset = no CORS headers. */
+  WEB_ORIGIN: z
+    .url()
+    .transform((origin) => origin.replace(/\/+$/, ""))
+    .optional(),
 })
 
 export type Env = z.infer<typeof envSchema>
