@@ -29,6 +29,17 @@ describe("validateEnv", () => {
     expect(validateEnv({ ...base, OPENWEATHER_API_KEY: "owm" }).OPENWEATHER_API_KEY).toBe("owm")
   })
 
+  it("accepts an optional WEB_ORIGIN, normalizes a trailing slash, and rejects a non-URL", () => {
+    expect(validateEnv(base).WEB_ORIGIN).toBeUndefined()
+    expect(validateEnv({ ...base, WEB_ORIGIN: "https://events.example.com" }).WEB_ORIGIN).toBe(
+      "https://events.example.com"
+    )
+    expect(validateEnv({ ...base, WEB_ORIGIN: "https://events.example.com/" }).WEB_ORIGIN).toBe(
+      "https://events.example.com"
+    )
+    expect(() => validateEnv({ ...base, WEB_ORIGIN: "not a url" })).toThrow(/WEB_ORIGIN/)
+  })
+
   it("passes cutover flags through as raw strings for flags.ts semantics", () => {
     const env = validateEnv({ ...base, CUTOVER_SCRAPE: "true", CUTOVER_TAG: "false" })
     expect(env.CUTOVER_SCRAPE).toBe("true")
