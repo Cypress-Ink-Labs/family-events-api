@@ -43,3 +43,28 @@ pg-boss schedules replace the legacy Railway cron containers stage by stage
 (rewrite plan U33): enabling a `CUTOVER_<FAMILY>` flag installs the family's
 queues, and the atomic `private.cron_enabled` handoff disables the matching
 legacy label. Both sides must never run the same schedule simultaneously.
+
+## Notifications (email, staged)
+
+In production, queues register only when their cutover flags are exactly
+`"true"`: `CUTOVER_REMINDERS` and `CUTOVER_DIGEST`. Scheduled handlers also
+pass through the atomic `private.cron_enabled` gate, so setting a flag installs
+the queue but sends nothing until the corresponding legacy cron is disabled.
+
+| Variable | Required when enabled | Notes |
+| --- | --- | --- |
+| `RESEND_API_KEY` | yes | Resend key. Unset means all email soft-fails (logged as `sent: false, dev: true`); jobs still complete without retry. |
+| `RESEND_FROM` | recommended | Default `Family Events <onboarding@resend.dev>` is a sandbox sender; replace it with a verified domain for production. |
+| `APP_URL` | recommended | Default `https://family-events.up.railway.app`; used for event, logo, browse, and preference links. |
+
+Operator checklist before flipping a flag:
+
+1. Confirm the Resend hosted template `family-events-event-reminder` exists.
+   Legacy templates were deployed outside the repository, so recreate it if
+   needed. The weekly digest uses raw HTML and needs no hosted template.
+2. Set `RESEND_FROM` to a verified Resend domain.
+3. Submit a one-recipient digest job through the pg-boss dashboard or SQL:
+   `{ "task": "send", "testEmail": "you@example.com" }`. The address must
+   belong to a user with `digest_email = true`.
+4. Set one `CUTOVER_*` flag to `"true"` and redeploy. Disable its matching
+   legacy cron through the U33 atomic handoff, then watch the first run summary.

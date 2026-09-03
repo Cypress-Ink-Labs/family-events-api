@@ -208,11 +208,14 @@ history contain no scheduler, while tag-event already embeds routine writes inli
 Boot tests pin both flag directions so safe production defaults install no ownership
 before U33.
 
-### U30 — Notifications port 🟡 (weekend window landed)
-`notification_queue` processing with fail-before-side-effects hydration semantics (032);
-reminders (no-retry); weekly digest: recipient keyset pagination (035), Chicago weekend
-window (**pure logic ported with DST tests**, plan 031), Resend + react-email templates,
-web push (VAPID) + APNs + FCM, Telegram digest + `digest_telegram` prefs.
+### U30 — Notifications port 🟡 (email slice in review)
+Daily reminders and the weekly digest are implemented as strictly serial, no-retry
+pg-boss families behind `CUTOVER_REMINDERS` / `CUTOVER_DIGEST` plus the atomic
+legacy-cron handoff. The slice includes recipient keyset pagination, Chicago day/weekend
+windows, soft-fail Resend delivery, the hosted reminder template, and raw branded digest
+HTML. Remaining: `notification_queue` processing with fail-before-side-effects hydration
+semantics (032), web push (VAPID) + APNs + FCM, Telegram digest +
+`digest_telegram` prefs.
 
 ### U31 — Admin API port
 The ~30 `admin_*` RPCs as operator-guarded endpoints: review queue (cursor
