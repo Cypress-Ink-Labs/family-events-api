@@ -29,6 +29,25 @@ describe("validateEnv", () => {
     expect(validateEnv({ ...base, OPENWEATHER_API_KEY: "owm" }).OPENWEATHER_API_KEY).toBe("owm")
   })
 
+  it("accepts optional Resend notification settings", () => {
+    const withoutMail = validateEnv(base)
+    expect(withoutMail.RESEND_API_KEY).toBeUndefined()
+    expect(withoutMail.RESEND_FROM).toBeUndefined()
+    expect(withoutMail.APP_URL).toBeUndefined()
+    expect(
+      validateEnv({
+        ...base,
+        RESEND_API_KEY: "re_test",
+        RESEND_FROM: "Family Events <hello@example.com>",
+        APP_URL: "https://events.example.com",
+      })
+    ).toMatchObject({
+      RESEND_API_KEY: "re_test",
+      RESEND_FROM: "Family Events <hello@example.com>",
+      APP_URL: "https://events.example.com",
+    })
+  })
+
   it("accepts an optional WEB_ORIGIN, normalizes a trailing slash, and rejects a non-URL", () => {
     expect(validateEnv(base).WEB_ORIGIN).toBeUndefined()
     expect(validateEnv({ ...base, WEB_ORIGIN: "https://events.example.com" }).WEB_ORIGIN).toBe(

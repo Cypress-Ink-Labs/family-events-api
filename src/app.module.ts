@@ -8,6 +8,7 @@ import { DataModule } from "./data/data.module.js"
 import { DbModule } from "./db/db.module.js"
 import { HealthModule } from "./health/health.module.js"
 import { JobsModule } from "./jobs/jobs.module.js"
+import { NotificationsModule } from "./notifications/notifications.module.js"
 import { PipelineModule } from "./pipeline/pipeline.module.js"
 
 @Module({
@@ -19,6 +20,7 @@ import { PipelineModule } from "./pipeline/pipeline.module.js"
     AuthModule,
     ConsumerModule,
     PipelineModule,
+    NotificationsModule,
     HealthModule,
   ],
 })
