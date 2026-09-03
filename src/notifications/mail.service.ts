@@ -33,7 +33,7 @@ export class MailService {
 
     const apiKey = this.config.get("RESEND_API_KEY", { infer: true })
     if (!apiKey) {
-      this.logger.warn(`RESEND_API_KEY not configured; skipped email to ${input.to}`)
+      this.logger.warn("RESEND_API_KEY not configured; skipped email")
       return { sent: false, dev: true }
     }
 
@@ -57,15 +57,12 @@ export class MailService {
         signal: AbortSignal.timeout(10_000),
       })
       if (!response.ok) {
-        const body = (await response.text().catch(() => "")).slice(0, 300)
-        this.logger.warn(`Resend rejected email to ${input.to}: ${response.status} ${body}`)
+        this.logger.warn(`Resend rejected email: status=${response.status}`)
         return { sent: false, status: response.status }
       }
       return { sent: true, status: response.status }
-    } catch (error) {
-      this.logger.warn(
-        `Resend delivery failed for ${input.to}: ${error instanceof Error ? error.message : String(error)}`
-      )
+    } catch {
+      this.logger.warn("Resend delivery failed: network_or_timeout")
       return { sent: false }
     }
   }

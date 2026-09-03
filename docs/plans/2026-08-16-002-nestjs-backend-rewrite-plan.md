@@ -209,6 +209,7 @@ Boot tests pin both flag directions so safe production defaults install no owner
 before U33.
 
 ### U30 — Notifications port 🟡 (email slice in review)
+
 Daily reminders and the weekly digest are implemented as strictly serial, no-retry
 pg-boss families behind `CUTOVER_REMINDERS` / `CUTOVER_DIGEST` plus the atomic
 legacy-cron handoff. The slice includes recipient keyset pagination, Chicago day/weekend

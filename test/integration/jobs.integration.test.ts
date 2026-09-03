@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto"
 
 import { ConfigService } from "@nestjs/config"
 import { PgBoss } from "pg-boss"
+import { Pool } from "pg"
 import { describe, expect, it } from "vitest"
 
 import { JobsService } from "../../src/jobs/jobs.service.js"
@@ -11,11 +12,6 @@ describe("JobsService queue reconciliation", () => {
   it("overwrites stale retry settings on a pre-existing queue", async () => {
     const connectionString = integrationDatabaseUrl()
     const schema = `pgboss_test_${randomUUID().replaceAll("-", "").slice(0, 12)}`
-    const seed = new PgBoss({ connectionString, schema })
-    await seed.start()
-    await seed.createQueue("email", { retryLimit: 3, retryDelay: 60 })
-    await seed.stop({ close: true })
-
     const service = new JobsService(
       new ConfigService({
         NODE_ENV: "development",
@@ -29,7 +25,14 @@ describe("JobsService queue reconciliation", () => {
       retryDelay: 30,
     })
 
+    let seed: PgBoss | null = new PgBoss({ connectionString, schema })
+    const cleanup = new Pool({ connectionString })
     try {
+      await seed.start()
+      await seed.createQueue("email", { retryLimit: 3, retryDelay: 60 })
+      await seed.stop({ close: true })
+      seed = null
+
       await service.onApplicationBootstrap()
       const inspector = new PgBoss({ connectionString, schema })
       await inspector.start()
@@ -42,7 +45,16 @@ describe("JobsService queue reconciliation", () => {
         await inspector.stop({ close: true })
       }
     } finally {
-      await service.onApplicationShutdown()
+      if (seed !== null) await seed.stop({ close: true }).catch(() => undefined)
+      try {
+        await service.onApplicationShutdown()
+      } finally {
+        try {
+          await cleanup.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`)
+        } finally {
+          await cleanup.end()
+        }
+      }
     }
   })
 })

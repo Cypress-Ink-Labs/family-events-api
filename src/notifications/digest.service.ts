@@ -105,11 +105,9 @@ export class DigestService {
         })
         if (result.sent) emailed += 1
         else failed += 1
-      } catch (error) {
+      } catch {
         failed += 1
-        this.logger.warn(
-          `digest failed for user ${user.userId}: ${error instanceof Error ? error.message : String(error)}`
-        )
+        this.logger.warn("digest delivery failed: planning_or_render_error")
       }
     }
     return { emailed, skipped, failed }

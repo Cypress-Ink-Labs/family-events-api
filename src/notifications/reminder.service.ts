@@ -71,13 +71,9 @@ export class ReminderService {
         try {
           if (await this.sendReminder(target, type)) emailed += 1
           else failed += 1
-        } catch (error) {
+        } catch {
           failed += 1
-          this.logger.warn(
-            `reminder failed for ${target.email}: ${
-              error instanceof Error ? error.message : String(error)
-            }`
-          )
+          this.logger.warn("reminder delivery failed: internal_error")
         }
       }
     }
@@ -105,7 +101,7 @@ export class ReminderService {
       },
     })
     if (!result.sent) {
-      this.logger.warn(`reminder email was not accepted for ${target.email}`)
+      this.logger.warn("reminder email was not accepted")
     }
     return result.sent
   }
