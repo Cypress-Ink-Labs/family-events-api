@@ -239,4 +239,14 @@ export interface PlannedEvent {
   is_free: boolean
   price: string | null
   images: Json
+  /** Ranking factors are used by the email digest explanation copy. */
+  distance_score?: string | null
+  weather_score?: string | null
+  age_score?: string | null
+  history_affinity?: string | null
+  family_fit_score?: string | null
+  timing_score?: string | null
+  novelty_score?: string | null
+  budget_score?: string | null
+  distance_km?: string | null
 }

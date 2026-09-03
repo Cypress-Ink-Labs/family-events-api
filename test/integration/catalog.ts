@@ -260,6 +260,10 @@ export async function ensureCatalogSchema(db: DbService): Promise<void> {
 
 /** Installs the pgvector-backed RPC used by the consumer detail composite. */
 export async function ensureConsumerSimilaritySchema(db: DbService): Promise<void> {
+  // The verbatim similarity migration defines private functions but assumes
+  // the baseline migration already created this schema. Keep this disposable
+  // fixture self-contained so it also passes against a fresh Postgres image.
+  await db.query("CREATE SCHEMA IF NOT EXISTS private")
   for (const file of ["event_embeddings_similarity.sql", "find_similar_events_by_id.sql"]) {
     await db.query(readFileSync(join(SQL_DIR, file), "utf8"))
   }

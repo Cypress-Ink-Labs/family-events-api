@@ -24,6 +24,12 @@ export const envSchema = z.object({
   TELEGRAM_FAILURE_CHAT_ID: z.string().optional(),
   /** OpenWeatherMap key for the plan weather proxy. Unset returns a neutral snapshot. */
   OPENWEATHER_API_KEY: z.string().optional(),
+  /** Resend key for reminder and digest emails. Unset makes MailService a logged no-op. */
+  RESEND_API_KEY: z.string().optional(),
+  /** Verified sender identity; MailService applies the legacy sandbox default when unset. */
+  RESEND_FROM: z.string().optional(),
+  /** Public app URL used in notification links; notification services apply the legacy default. */
+  APP_URL: z.string().optional(),
   /** Public origin of the web app; enables CORS for its browser calls. Unset = no CORS headers. */
   WEB_ORIGIN: z
     .url()

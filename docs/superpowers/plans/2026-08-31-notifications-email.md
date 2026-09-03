@@ -132,7 +132,7 @@ Legacy flow (`send-reminders/index.ts`, read it first): one daily run at `0 11 *
 
 **Interfaces:**
 - `ReminderRepository.findReminderTargets(input: { windowStart: string; windowEnd: string }): Promise<ReminderTarget[]>` where `ReminderTarget = { userId: string; email: string; displayName: string | null; eventId: string; title: string; startDatetime: string; venueName: string | null; address: string | null; reminderEmail: boolean | null }`.
-- `ReminderService.processRun(now: Date): Promise<{ emailed: number; skipped: number }>` — called by the pg-boss handler; unit-tested.
+- `ReminderService.processRun(now: Date): Promise<{ emailed: number; skipped: number; failed: number }>` — called by the pg-boss handler; unit-tested.
 - `ReminderQueueService` — `OnModuleInit`, gated by `isFamilyEnabled("reminders", process.env)`, registers DLQ (`handler: null`) + main queue with FAMILIES options but `retryLimit: 0` (U30 no-retry; legacy cron-runner `MAX_ATTEMPTS=1`), schedule from `FAMILIES.reminders.schedules` with `data: { task: "send" }`.
 
 - [ ] **Step 1: Repository + SQL**
@@ -195,7 +195,7 @@ Legacy flow (`send-weekly-digest/index.ts`, read it first): Mondays `0 13 * * 1`
 - `DigestRepository.listDigestUsers(after: string | null, limit: number): Promise<DigestUser[]>` where `DigestUser = { userId: string; email: string; displayName: string | null; childAge: number | null; cityName: string; lat: number | null; lng: number | null; cityIds: string[] }` (one query: prefs filtered to `digest_email IS TRUE`, joins to profiles + cities, plus a second query for `user_preferred_cities` batched as legacy does, fallback `city_preference_id`).
 - `renderDigestEmail(input): { subject: string; html: string }` — pure.
 - `buildExplanation(row): string | null` — pure, ported.
-- `DigestService.processRun(now: Date, testEmail?: string): Promise<{ emailed: number; skipped: number }>`.
+- `DigestService.processRun(now: Date, testEmail?: string): Promise<{ emailed: number; skipped: number; failed: number }>`.
 
 - [ ] **Step 1: Port the pure rendering pieces**
 
@@ -215,7 +215,7 @@ Legacy flow (`send-weekly-digest/index.ts`, read it first): Mondays `0 13 * * 1`
 
 - [ ] **Step 3: Queue service**
 
-`src/notifications/digest-queue.service.ts` — scrape-queue pattern for the `digest` family; `retryLimit: 0` (legacy no-retry label); schedule data `{ task: "send" }`; handler also accepts `{ task: "send", testEmail?: string }` for operator test runs; schedule `key: "weekly-digest"` (stable key so redeploys do not duplicate schedules; pg-boss upserts by key). Register in the module.
+`src/notifications/digest-queue.service.ts` — scrape-queue pattern for the `digest` family; `retryLimit: 0` (legacy no-retry label); schedule data `{ task: "send" }`; handler also accepts `{ task: "test", testEmail: string }` for operator test runs, bypassing only the schedule ownership gate while legacy remains active; schedule `key: "weekly-digest"` (stable key so redeploys do not duplicate schedules; pg-boss upserts by key). Register in the module.
 
 - [ ] **Step 4: Verify and commit**
 
@@ -258,10 +258,12 @@ Operator checklist before flipping a flag:
    account (legacy templates were deployed out-of-repo; recreate if needed).
    The digest needs no template (raw HTML).
 2. `RESEND_FROM` is a verified Resend domain.
-3. Test run: send a digest to one address via a manual job with
-   `{ task: "send", testEmail: "you@example.com" }` (pg-boss dashboard or SQL
-   insert into the digest queue).
-4. Flip one flag, redeploy, watch the first scheduled run's log summary.
+3. Set `CUTOVER_DIGEST="true"` and redeploy to install the queue while leaving
+   the legacy cron enabled.
+4. Test one address via `{ task: "test", testEmail: "you@example.com" }`
+   (pg-boss dashboard or SQL insert into the digest queue).
+5. Complete the atomic legacy-cron handoff and watch the first scheduled run's
+   log summary.
 ```
 
 - [ ] **Step 3: Gates and commit**

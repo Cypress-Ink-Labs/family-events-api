@@ -20,6 +20,10 @@ describe("isFamilyEnabled", () => {
     )
     expect(isFamilyEnabled("scrape", { NODE_ENV: "production", CUTOVER_SCRAPE: "1" })).toBe(false)
     expect(isFamilyEnabled("scrape", { NODE_ENV: "production" })).toBe(false)
+    expect(isFamilyEnabled("digest", { NODE_ENV: "production", CUTOVER_DIGEST: "true" })).toBe(true)
+    expect(
+      isFamilyEnabled("reminders", { NODE_ENV: "production", CUTOVER_REMINDERS: "true" })
+    ).toBe(true)
   })
 
   it("non-production is enabled unless the exact string false", () => {

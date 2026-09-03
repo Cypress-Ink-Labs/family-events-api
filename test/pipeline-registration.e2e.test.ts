@@ -7,6 +7,7 @@ import { JobsService, type QueueSchedule } from "../src/jobs/jobs.service.js"
 
 interface RegisteredQueue {
   name: string
+  options: Record<string, unknown>
   schedules: QueueSchedule[]
 }
 
@@ -16,10 +17,10 @@ class FakeJobs {
   registerQueue(
     name: string,
     _handler: unknown,
-    _options: object = {},
+    options: Record<string, unknown> = {},
     config: { schedules?: QueueSchedule[] } = {}
   ): void {
-    this.registered.push({ name, schedules: config.schedules ?? [] })
+    this.registered.push({ name, options, schedules: config.schedules ?? [] })
   }
 
   async send(): Promise<string | null> {
@@ -32,6 +33,8 @@ const originalEnv = {
   CUTOVER_SCRAPE: process.env.CUTOVER_SCRAPE,
   CUTOVER_TAG: process.env.CUTOVER_TAG,
   CUTOVER_REVIEW: process.env.CUTOVER_REVIEW,
+  CUTOVER_DIGEST: process.env.CUTOVER_DIGEST,
+  CUTOVER_REMINDERS: process.env.CUTOVER_REMINDERS,
 }
 
 function restoreEnv(name: keyof typeof originalEnv): void {
@@ -40,7 +43,12 @@ function restoreEnv(name: keyof typeof originalEnv): void {
   else process.env[name] = value
 }
 
-async function boot(flags: { tag?: string; review?: string }): Promise<{
+async function boot(flags: {
+  tag?: string
+  review?: string
+  digest?: string
+  reminders?: string
+}): Promise<{
   app: INestApplication
   jobs: FakeJobs
 }> {
@@ -50,6 +58,10 @@ async function boot(flags: { tag?: string; review?: string }): Promise<{
   else process.env.CUTOVER_TAG = flags.tag
   if (flags.review === undefined) delete process.env.CUTOVER_REVIEW
   else process.env.CUTOVER_REVIEW = flags.review
+  if (flags.digest === undefined) delete process.env.CUTOVER_DIGEST
+  else process.env.CUTOVER_DIGEST = flags.digest
+  if (flags.reminders === undefined) delete process.env.CUTOVER_REMINDERS
+  else process.env.CUTOVER_REMINDERS = flags.reminders
 
   const jobs = new FakeJobs()
   const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
@@ -66,6 +78,8 @@ afterEach(() => {
   restoreEnv("CUTOVER_SCRAPE")
   restoreEnv("CUTOVER_TAG")
   restoreEnv("CUTOVER_REVIEW")
+  restoreEnv("CUTOVER_DIGEST")
+  restoreEnv("CUTOVER_REMINDERS")
 })
 
 describe.sequential("pipeline family bootstrap", () => {
@@ -90,6 +104,29 @@ describe.sequential("pipeline family bootstrap", () => {
       expect(
         jobs.registered.flatMap((queue) => queue.schedules.map((item) => item.key)).toSorted()
       ).toEqual(["backfill-enrichment", "process-review-queue", "process-tag-queue"])
+    } finally {
+      await app.close()
+    }
+  })
+
+  it("installs no-retry digest and reminder queues only after their flags flip", async () => {
+    const { app, jobs } = await boot({ digest: "true", reminders: "true" })
+    try {
+      expect(jobs.registered.map((queue) => queue.name).toSorted()).toEqual([
+        "digest",
+        "digest.dlq",
+        "reminders",
+        "reminders.dlq",
+      ])
+      expect(
+        jobs.registered.flatMap((queue) => queue.schedules.map((item) => item.key)).toSorted()
+      ).toEqual(["send-reminders", "weekly-digest"])
+      expect(jobs.registered.find((queue) => queue.name === "digest")?.options).toMatchObject({
+        retryLimit: 0,
+      })
+      expect(jobs.registered.find((queue) => queue.name === "reminders")?.options).toMatchObject({
+        retryLimit: 0,
+      })
     } finally {
       await app.close()
     }
