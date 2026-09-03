@@ -6,7 +6,7 @@ Plans produced by the 2026-08-31 migration review (port from family-events-backe
 | --- | --- | --- | --- | --- |
 | 002 | [consumer-correctness-fixes](2026-08-31-consumer-correctness-fixes.md) | Cursor over-emission, PG errors as 500s, rolling plan window, unbounded keyword + opaque validation errors | none (baseline `4dbaa42`) | done (#27) |
 | 005 | [railway-deployment](2026-08-31-railway-deployment.md) | `railway.toml` for both services, `WEB_ORIGIN` CORS, per-repo deployment manifests | none for api tasks; app tasks run in `../family-events-app` | done (#28, app #5) |
-| 006 | [notifications-email](2026-08-31-notifications-email.md) | Reminders + weekly digest as pg-boss queues (`reminders`/`digest` families), soft-fail Resend MailService, legacy parity (no-retry, America/Chicago, same schedules) | none; sends gated by `CUTOVER_REMINDERS`/`CUTOVER_DIGEST` | in review |
+| 006 | [notifications-email](2026-08-31-notifications-email.md) | Reminders + weekly digest as pg-boss queues (`reminders`/`digest` families), soft-fail Resend MailService, legacy parity (no-retry, America/Chicago, same schedules) | none; sends gated by `CUTOVER_REMINDERS`/`CUTOVER_DIGEST` | done (#29) |
 
 Cross-repo counterparts live in `../family-events-app/docs/superpowers/plans/README.md` (app plans 001, 003, 004).
 

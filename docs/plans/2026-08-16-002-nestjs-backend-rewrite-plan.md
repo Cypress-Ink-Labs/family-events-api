@@ -208,7 +208,7 @@ history contain no scheduler, while tag-event already embeds routine writes inli
 Boot tests pin both flag directions so safe production defaults install no ownership
 before U33.
 
-### U30 — Notifications port 🟡 (email slice in review)
+### U30 — Notifications port 🟡 (email slice landed in #29)
 
 Daily reminders and the weekly digest are implemented as strictly serial, no-retry
 pg-boss families behind `CUTOVER_REMINDERS` / `CUTOVER_DIGEST` plus the atomic
