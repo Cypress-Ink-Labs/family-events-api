@@ -2,6 +2,7 @@ import { ConfigService } from "@nestjs/config"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 const pgBoss = vi.hoisted(() => ({
+  updateQueueCalls: [] as Array<[name: string, options: Record<string, unknown>]>,
   workCalls: [] as Array<
     [
       name: string,
@@ -17,6 +18,9 @@ vi.mock("pg-boss", () => ({
     async start() {}
     async stop() {}
     async createQueue() {}
+    async updateQueue(name: string, options: Record<string, unknown>) {
+      pgBoss.updateQueueCalls.push([name, options])
+    }
     async schedule() {}
     async send() {
       return "job-1"
@@ -44,6 +48,7 @@ function makeService(nodeEnv = "test"): JobsService {
 }
 
 beforeEach(() => {
+  pgBoss.updateQueueCalls = []
   pgBoss.workCalls = []
 })
 
@@ -77,5 +82,29 @@ describe("JobsService", () => {
 
     await callback([{ id: "job-a", data: { eventId: "event-a" } }])
     expect(handler).toHaveBeenCalledWith({ eventId: "event-a" }, "job-a")
+  })
+
+  it("reconciles mutable options when a queue already exists", async () => {
+    const service = makeService("development")
+    service.registerQueue("email", null, {
+      name: "email",
+      policy: "standard",
+      retryLimit: 0,
+      retryDelay: 30,
+      deadLetter: "email.dlq",
+    })
+
+    await service.onApplicationBootstrap()
+
+    expect(pgBoss.updateQueueCalls).toEqual([
+      [
+        "email",
+        {
+          retryLimit: 0,
+          retryDelay: 30,
+          deadLetter: "email.dlq",
+        },
+      ],
+    ])
   })
 })

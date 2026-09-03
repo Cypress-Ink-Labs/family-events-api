@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common"
+import { Injectable, Logger } from "@nestjs/common"
 
 import { DbService } from "../db/db.service.js"
 
@@ -34,13 +34,15 @@ SELECT
   c.longitude::double precision AS lng
 FROM public.user_notification_preferences unp
 JOIN public.user_profiles p ON p.id = unp.user_id
-  AND p.email IS NOT NULL
+  AND nullif(p.email, '') IS NOT NULL
 JOIN public.cities c ON c.id = p.city_preference_id
 WHERE unp.digest_email IS TRUE
 `
 
 @Injectable()
 export class DigestRepository {
+  private readonly logger = new Logger(DigestRepository.name)
+
   constructor(private readonly db: DbService) {}
 
   async listDigestUsers(after: string | null, limit: number): Promise<DigestUser[]> {
@@ -67,13 +69,23 @@ export class DigestRepository {
 
   private async withPreferredCities(rows: DigestUserRow[]): Promise<DigestUser[]> {
     if (rows.length === 0) return []
-    const preferred = await this.db.query<PreferredCityRow>(
-      `SELECT user_id AS "userId", city_id AS "cityId"
-       FROM public.user_preferred_cities
-       WHERE user_id = ANY($1::uuid[])
-       ORDER BY user_id, created_at, city_id`,
-      [rows.map((row) => row.userId)]
-    )
+    let preferred: PreferredCityRow[]
+    try {
+      preferred = await this.db.query<PreferredCityRow>(
+        `SELECT user_id AS "userId", city_id AS "cityId"
+         FROM public.user_preferred_cities
+         WHERE user_id = ANY($1::uuid[])
+         ORDER BY user_id, created_at, city_id`,
+        [rows.map((row) => row.userId)]
+      )
+    } catch (error) {
+      this.logger.warn(
+        `preferred-city lookup failed; using primary cities: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      )
+      preferred = []
+    }
     const byUser = new Map<string, string[]>()
     for (const row of preferred) {
       const cities = byUser.get(row.userId) ?? []

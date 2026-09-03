@@ -37,7 +37,7 @@ export class ReminderService {
     private readonly config: ConfigService<Env, true>
   ) {}
 
-  async processRun(now: Date): Promise<{ emailed: number; skipped: number }> {
+  async processRun(now: Date): Promise<{ emailed: number; skipped: number; failed: number }> {
     const todayStart = zonedDayStartUtc(now, REMINDER_TZ, 0)
     const todayEnd = zonedDayStartUtc(now, REMINDER_TZ, 1)
     const tomorrowEnd = zonedDayStartUtc(now, REMINDER_TZ, 2)
@@ -54,6 +54,7 @@ export class ReminderService {
 
     let emailed = 0
     let skipped = 0
+    let failed = 0
     const seen = new Set<string>()
     for (const [targets, type] of [
       [morningOf, "morning_of"],
@@ -67,16 +68,23 @@ export class ReminderService {
           skipped += 1
           continue
         }
-        await this.sendReminder(target, type)
-        // MailService soft-fails by contract. This summary tracks attempted
-        // recipient emails; delivery acceptance is logged by MailService.
-        emailed += 1
+        try {
+          if (await this.sendReminder(target, type)) emailed += 1
+          else failed += 1
+        } catch (error) {
+          failed += 1
+          this.logger.warn(
+            `reminder failed for ${target.email}: ${
+              error instanceof Error ? error.message : String(error)
+            }`
+          )
+        }
       }
     }
-    return { emailed, skipped }
+    return { emailed, skipped, failed }
   }
 
-  private async sendReminder(target: ReminderTarget, type: ReminderType): Promise<void> {
+  private async sendReminder(target: ReminderTarget, type: ReminderType): Promise<boolean> {
     const appUrl = (this.config.get("APP_URL", { infer: true }) ?? DEFAULT_APP_URL).replace(
       /\/+$/,
       ""
@@ -99,5 +107,6 @@ export class ReminderService {
     if (!result.sent) {
       this.logger.warn(`reminder email was not accepted for ${target.email}`)
     }
+    return result.sent
   }
 }

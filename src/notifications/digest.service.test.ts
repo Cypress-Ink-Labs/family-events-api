@@ -116,6 +116,7 @@ describe("DigestService", () => {
     await expect(service.processRun(new Date("2026-09-01T15:00:00Z"))).resolves.toEqual({
       emailed: 0,
       skipped: 1,
+      failed: 0,
     })
     expect(mail.send).not.toHaveBeenCalled()
   })
@@ -129,7 +130,7 @@ describe("DigestService", () => {
 
     await expect(
       service.processRun(new Date("2026-09-01T15:00:00Z"), " TEST@example.com ")
-    ).resolves.toEqual({ emailed: 1, skipped: 0 })
+    ).resolves.toEqual({ emailed: 1, skipped: 0, failed: 0 })
     expect(repository.findDigestUserByEmail).toHaveBeenCalledWith("test@example.com")
     expect(repository.listDigestUsers).not.toHaveBeenCalled()
     expect(mail.send).toHaveBeenCalledWith({
@@ -138,5 +139,17 @@ describe("DigestService", () => {
       html: expect.any(String),
     })
     expect(mail.send.mock.calls[0]?.[0]).not.toHaveProperty("templateId")
+  })
+
+  it("reports a soft-failed delivery in the run summary", async () => {
+    const { service, repository, mail } = makeService()
+    repository.listDigestUsers.mockResolvedValueOnce([user("u1")])
+    mail.send.mockResolvedValueOnce({ sent: false, dev: true })
+
+    await expect(service.processRun(new Date("2026-09-01T15:00:00Z"))).resolves.toEqual({
+      emailed: 0,
+      skipped: 0,
+      failed: 1,
+    })
   })
 })

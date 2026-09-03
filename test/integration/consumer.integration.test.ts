@@ -628,6 +628,19 @@ describe("consumer read HTTP API", () => {
       title: "Tonight",
       city_id: CITY,
     })
+    for (const factor of [
+      "distance_score",
+      "weather_score",
+      "age_score",
+      "history_affinity",
+      "family_fit_score",
+      "timing_score",
+      "novelty_score",
+      "budget_score",
+      "distance_km",
+    ]) {
+      expect(response.body.planned[0]).not.toHaveProperty(factor)
+    }
   })
 
   it("rejects an invalid plan city_id", async () => {

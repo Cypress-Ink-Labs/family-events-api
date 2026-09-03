@@ -23,22 +23,27 @@ export class DigestService {
     private readonly config: ConfigService<Env, true>
   ) {}
 
-  async processRun(now: Date, testEmail?: string): Promise<{ emailed: number; skipped: number }> {
+  async processRun(
+    now: Date,
+    testEmail?: string
+  ): Promise<{ emailed: number; skipped: number; failed: number }> {
     const normalizedTestEmail = testEmail?.trim().toLowerCase()
     if (normalizedTestEmail) {
       const user = await this.repository.findDigestUserByEmail(normalizedTestEmail)
-      if (!user) return { emailed: 0, skipped: 0 }
+      if (!user) return { emailed: 0, skipped: 0, failed: 0 }
       return this.processUsers([user], now)
     }
 
     let emailed = 0
     let skipped = 0
+    let failed = 0
     let after: string | null = null
     while (true) {
       const users = await this.repository.listDigestUsers(after, PAGE_SIZE)
       const page = await this.processUsers(users, now)
       emailed += page.emailed
       skipped += page.skipped
+      failed += page.failed
       if (users.length < PAGE_SIZE) break
       const nextAfter = users.at(-1)?.userId
       if (!nextAfter || nextAfter === after) {
@@ -46,13 +51,13 @@ export class DigestService {
       }
       after = nextAfter
     }
-    return { emailed, skipped }
+    return { emailed, skipped, failed }
   }
 
   private async processUsers(
     users: DigestUser[],
     now: Date
-  ): Promise<{ emailed: number; skipped: number }> {
+  ): Promise<{ emailed: number; skipped: number; failed: number }> {
     const weekend = weekendWindowUtc(now, DIGEST_TZ)
     const dateFrom = new Date(Math.max(now.getTime(), weekend.from.getTime())).toISOString()
     const dateTo = weekend.to.toISOString()
@@ -62,6 +67,7 @@ export class DigestService {
     )
     let emailed = 0
     let skipped = 0
+    let failed = 0
 
     for (const user of users) {
       try {
@@ -98,12 +104,14 @@ export class DigestService {
           html: rendered.html,
         })
         if (result.sent) emailed += 1
+        else failed += 1
       } catch (error) {
+        failed += 1
         this.logger.warn(
           `digest failed for user ${user.userId}: ${error instanceof Error ? error.message : String(error)}`
         )
       }
     }
-    return { emailed, skipped }
+    return { emailed, skipped, failed }
   }
 }

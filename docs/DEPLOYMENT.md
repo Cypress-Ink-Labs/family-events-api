@@ -63,8 +63,12 @@ Operator checklist before flipping a flag:
    Legacy templates were deployed outside the repository, so recreate it if
    needed. The weekly digest uses raw HTML and needs no hosted template.
 2. Set `RESEND_FROM` to a verified Resend domain.
-3. Submit a one-recipient digest job through the pg-boss dashboard or SQL:
-   `{ "task": "send", "testEmail": "you@example.com" }`. The address must
-   belong to a user with `digest_email = true`.
-4. Set one `CUTOVER_*` flag to `"true"` and redeploy. Disable its matching
-   legacy cron through the U33 atomic handoff, then watch the first run summary.
+3. Set `CUTOVER_DIGEST="true"` and redeploy to install the queue, but leave the
+   legacy digest cron enabled. Scheduled `send` jobs remain blocked by the
+   ownership gate.
+4. Submit a one-recipient job through the pg-boss dashboard or SQL:
+   `{ "task": "test", "testEmail": "you@example.com" }`. Manual `test` jobs
+   bypass only the schedule-ownership gate; the address must belong to a user
+   with `digest_email = true`.
+5. Disable the matching legacy cron through the U33 atomic handoff, then watch
+   the first scheduled run summary. Repeat independently for reminders.

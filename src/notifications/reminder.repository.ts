@@ -31,7 +31,7 @@ JOIN public.events e ON e.id = f.event_id
   AND e.start_datetime >= $1::timestamptz
   AND e.start_datetime < $2::timestamptz
 JOIN public.user_profiles p ON p.id = f.user_id
-  AND p.email IS NOT NULL
+  AND nullif(p.email, '') IS NOT NULL
 LEFT JOIN public.user_notification_preferences unp ON unp.user_id = f.user_id
 WHERE unp.reminder_email IS NOT FALSE
 ORDER BY f.user_id, e.start_datetime, e.id

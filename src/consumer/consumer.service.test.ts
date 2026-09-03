@@ -7,7 +7,7 @@ import type { FavoritesRepository } from "../data/favorites.repository.js"
 import type { PlanRepository } from "../data/plan.repository.js"
 import type { RatingsRepository } from "../data/ratings.repository.js"
 import type { ReferenceRepository } from "../data/reference.repository.js"
-import type { City, EnrichedEvent } from "../data/types.js"
+import type { City, EnrichedEvent, PlannedEvent } from "../data/types.js"
 import { ConsumerService } from "./consumer.service.js"
 import { decodeCursor } from "./cursor.js"
 import type { WeatherService } from "./weather.service.js"
@@ -134,6 +134,63 @@ describe("ConsumerService.planForToday", () => {
       kidAge: 6,
       weatherFit: "indoor",
     })
+  })
+
+  it("does not leak digest-only ranking factors into the consumer plan contract", async () => {
+    const { service, planForRange } = makeService()
+    planForRange.mockResolvedValueOnce([
+      {
+        event_id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+        score: "0.9",
+        start_datetime: "2026-08-16T15:00:00.000Z",
+        city_id: CITY.id,
+        title: "Storytime",
+        venue_name: "Library",
+        address: null,
+        is_free: true,
+        price: null,
+        images: [],
+        distance_score: "0.8",
+        weather_score: "0.7",
+        age_score: "0.6",
+        history_affinity: "0.5",
+        family_fit_score: "0.4",
+        timing_score: "0.9",
+        novelty_score: "0.3",
+        budget_score: "1",
+        distance_km: "2.5",
+      } satisfies PlannedEvent,
+    ])
+
+    const page = await service.planForToday({ cityId: null, kidAge: null }, "user-1")
+
+    expect(page.planned).toEqual([
+      {
+        event_id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+        score: "0.9",
+        start_datetime: "2026-08-16T15:00:00.000Z",
+        city_id: CITY.id,
+        title: "Storytime",
+        venue_name: "Library",
+        address: null,
+        is_free: true,
+        price: null,
+        images: [],
+      },
+    ])
+    for (const factor of [
+      "distance_score",
+      "weather_score",
+      "age_score",
+      "history_affinity",
+      "family_fit_score",
+      "timing_score",
+      "novelty_score",
+      "budget_score",
+      "distance_km",
+    ]) {
+      expect(page.planned[0]).not.toHaveProperty(factor)
+    }
   })
 })
 

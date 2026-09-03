@@ -58,7 +58,7 @@ export class ReminderQueueService implements OnModuleInit {
     await this.gate.runGated(schedule, async () => {
       const summary = await this.reminders.processRun(new Date())
       this.logger.log(
-        `reminder run complete: emailed=${summary.emailed} skipped=${summary.skipped}`
+        `reminder run complete: emailed=${summary.emailed} skipped=${summary.skipped} failed=${summary.failed}`
       )
       return JSON.stringify(summary)
     })

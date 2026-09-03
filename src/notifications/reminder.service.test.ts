@@ -65,6 +65,7 @@ describe("ReminderService", () => {
     await expect(service.processRun(new Date("2026-08-16T16:00:00Z"))).resolves.toEqual({
       emailed: 1,
       skipped: 0,
+      failed: 0,
     })
     expect(mail.send).toHaveBeenCalledTimes(1)
   })
@@ -79,6 +80,7 @@ describe("ReminderService", () => {
     await expect(service.processRun(new Date("2026-08-16T16:00:00Z"))).resolves.toEqual({
       emailed: 1,
       skipped: 1,
+      failed: 0,
     })
     expect(mail.send).toHaveBeenCalledTimes(1)
   })
@@ -105,14 +107,15 @@ describe("ReminderService", () => {
     })
   })
 
-  it("counts a MailService soft-failure as attempted and does not throw", async () => {
+  it("reports a MailService soft-failure and does not throw", async () => {
     const { service, repository, mail } = makeService()
     repository.findReminderTargets.mockResolvedValueOnce([target])
     mail.send.mockResolvedValueOnce({ sent: false, dev: true })
 
     await expect(service.processRun(new Date("2026-08-16T16:00:00Z"))).resolves.toEqual({
-      emailed: 1,
+      emailed: 0,
       skipped: 0,
+      failed: 1,
     })
   })
 })

@@ -51,18 +51,31 @@ export class DigestQueueService implements OnModuleInit {
   }
 
   async handleJob(data: DigestJobData): Promise<void> {
-    if (data.task !== "send") {
+    if (data.task !== "send" && data.task !== "test") {
       throw new Error(`unknown digest task: ${String(data.task)}`)
     }
     if (data.testEmail !== undefined && typeof data.testEmail !== "string") {
       throw new Error("digest testEmail must be a string")
     }
     const testEmail = typeof data.testEmail === "string" ? data.testEmail : undefined
+    if (data.task === "test") {
+      if (!testEmail?.trim()) throw new Error("digest test task requires testEmail")
+      const summary = await this.digest.processRun(new Date(), testEmail)
+      this.logger.log(
+        `digest test complete: emailed=${summary.emailed} skipped=${summary.skipped} failed=${summary.failed}`
+      )
+      return
+    }
+    if (testEmail !== undefined) {
+      throw new Error("scheduled digest task does not accept testEmail; use task=test")
+    }
     const schedule = FAMILIES.digest.schedules[0]
     if (!schedule) throw new Error("digest family schedule missing")
     await this.gate.runGated(schedule, async () => {
-      const summary = await this.digest.processRun(new Date(), testEmail)
-      this.logger.log(`digest run complete: emailed=${summary.emailed} skipped=${summary.skipped}`)
+      const summary = await this.digest.processRun(new Date())
+      this.logger.log(
+        `digest run complete: emailed=${summary.emailed} skipped=${summary.skipped} failed=${summary.failed}`
+      )
       return JSON.stringify(summary)
     })
   }

@@ -75,6 +75,18 @@ export class JobsService implements OnApplicationBootstrap, OnApplicationShutdow
     await boss.start()
     for (const registration of this.registrations) {
       await boss.createQueue(registration.name, registration.options)
+      // createQueue is intentionally a no-op for an existing queue. Reconcile
+      // mutable options as well so a queue previously created by the old
+      // worker or an operator cannot retain stale retry/delivery semantics.
+      const {
+        name: _name,
+        policy: _policy,
+        partition: _partition,
+        ...mutableOptions
+      } = registration.options
+      if (Object.keys(mutableOptions).length > 0) {
+        await boss.updateQueue(registration.name, mutableOptions)
+      }
       const { handler } = registration
       if (handler !== null) {
         await boss.work(
