@@ -6,6 +6,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest"
 
 import { DbModule } from "../../src/db/db.module.js"
 import { DbService } from "../../src/db/db.service.js"
+import { DigestRepository } from "../../src/notifications/digest.repository.js"
 import { ReminderRepository } from "../../src/notifications/reminder.repository.js"
 import { zonedDayStartUtc } from "../../src/pipeline/zoned-time.js"
 import { ensureCatalogSchema, truncateCatalog } from "./catalog.js"
@@ -14,6 +15,7 @@ import { integrationDatabaseUrl } from "./db.js"
 describe("notification repositories", () => {
   let moduleRef: TestingModule
   let db: DbService
+  let digests: DigestRepository
   let reminders: ReminderRepository
 
   beforeAll(async () => {
@@ -26,9 +28,10 @@ describe("notification repositories", () => {
         }),
         DbModule,
       ],
-      providers: [ReminderRepository],
+      providers: [DigestRepository, ReminderRepository],
     }).compile()
     db = moduleRef.get(DbService)
+    digests = moduleRef.get(DigestRepository)
     reminders = moduleRef.get(ReminderRepository)
     await ensureCatalogSchema(db)
     await db.query(`
@@ -100,5 +103,53 @@ describe("notification repositories", () => {
         reminderEmail: null,
       }),
     ])
+  })
+
+  it("keyset-lists email digest opt-ins with preferred-city fallback", async () => {
+    const primaryCity = randomUUID()
+    const extraCity = randomUUID()
+    const optedIn = randomUUID()
+    const optedOut = randomUUID()
+    await db.query(
+      `INSERT INTO public.cities (id, name, slug, timezone, latitude, longitude) VALUES
+       ($1, 'Lafayette', 'lafayette', 'America/Chicago', 30.22, -92.02),
+       ($2, 'Baton Rouge', 'baton-rouge', 'America/Chicago', 30.45, -91.19)`,
+      [primaryCity, extraCity]
+    )
+    await db.query(
+      `INSERT INTO public.user_profiles
+       (id, email, display_name, city_preference_id, child_age) VALUES
+       ($1, 'digest@example.com', 'Digest Reader', $3, 8),
+       ($2, 'out@example.com', 'Opted Out', $3, 7)`,
+      [optedIn, optedOut, primaryCity]
+    )
+    await db.query(
+      `INSERT INTO public.user_notification_preferences (user_id, digest_email) VALUES
+       ($1, true), ($2, false)`,
+      [optedIn, optedOut]
+    )
+    await db.query(
+      `INSERT INTO public.user_preferred_cities (user_id, city_id)
+       VALUES ($1, $2)`,
+      [optedIn, extraCity]
+    )
+
+    await expect(digests.listDigestUsers(null, 1000)).resolves.toEqual([
+      {
+        userId: optedIn,
+        email: "digest@example.com",
+        displayName: "Digest Reader",
+        childAge: 8,
+        cityName: "Lafayette",
+        lat: 30.22,
+        lng: -92.02,
+        cityIds: [extraCity],
+      },
+    ])
+    await expect(digests.listDigestUsers(optedIn, 1000)).resolves.toEqual([])
+    await expect(digests.findDigestUserByEmail("DIGEST@example.com")).resolves.toMatchObject({
+      userId: optedIn,
+      cityIds: [extraCity],
+    })
   })
 })

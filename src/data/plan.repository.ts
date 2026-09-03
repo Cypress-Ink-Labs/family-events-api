@@ -9,7 +9,9 @@ import type { PlanForRangeInput, PlannedEvent } from "./types.js"
 const PLAN_SQL = `
 SELECT
   event_id, score, start_datetime, city_id, title, venue_name,
-  address, is_free, price, images
+  address, is_free, price, images,
+  distance_score, weather_score, age_score, history_affinity,
+  family_fit_score, timing_score, novelty_score, budget_score, distance_km
 FROM public.plan_events_for_user_range(
   p_user_id     => $1::uuid,
   p_date_from   => $2::timestamptz,

@@ -236,7 +236,23 @@ export class ConsumerService {
       weatherFit,
       limit: PLAN_LIMIT,
     })
-    return { available: true, planned }
+    return {
+      available: true,
+      planned: planned.map(
+        ({
+          distance_score: _distanceScore,
+          weather_score: _weatherScore,
+          age_score: _ageScore,
+          history_affinity: _historyAffinity,
+          family_fit_score: _familyFitScore,
+          timing_score: _timingScore,
+          novelty_score: _noveltyScore,
+          budget_score: _budgetScore,
+          distance_km: _distanceKm,
+          ...event
+        }) => event
+      ),
+    }
   }
 
   private async resolvePlanContext(cityId: string | null): Promise<{
