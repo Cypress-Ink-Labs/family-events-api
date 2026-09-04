@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { FAMILIES, JOB_FAMILIES, deadLetterName } from "./families.js"
+import { FAMILIES, JOB_FAMILIES, deadLetterName, isLegacyReplacementSchedule } from "./families.js"
 
 /**
  * Parity guards in two directions:
@@ -21,6 +21,7 @@ const LEGACY_REPLACEMENTS: ReadonlyArray<[service: string, cron: string]> = [
 ]
 
 const allSchedules = JOB_FAMILIES.flatMap((family) => FAMILIES[family].schedules)
+const legacySchedules = allSchedules.filter(isLegacyReplacementSchedule)
 
 describe("FAMILIES", () => {
   it("defines a config with a DLQ for every job family", () => {
@@ -31,14 +32,15 @@ describe("FAMILIES", () => {
   })
 
   it("replaces every legacy cron service except db-maintenance, exactly once", () => {
-    expect(allSchedules.map((schedule) => schedule.replaces).toSorted()).toEqual(
+    expect(legacySchedules.map((schedule) => schedule.replaces).toSorted()).toEqual(
       LEGACY_REPLACEMENTS.map(([service]) => service).toSorted()
     )
+    expect(legacySchedules).toHaveLength(7)
   })
 
   it("preserves each legacy cron expression", () => {
     for (const [service, cron] of LEGACY_REPLACEMENTS) {
-      const schedule = allSchedules.find((candidate) => candidate.replaces === service)
+      const schedule = legacySchedules.find((candidate) => candidate.replaces === service)
       expect(schedule?.cron, service).toBe(cron)
     }
   })
@@ -46,10 +48,19 @@ describe("FAMILIES", () => {
   it("keeps user-facing send families strictly serial", () => {
     expect(FAMILIES.digest.concurrency).toBe(1)
     expect(FAMILIES.reminders.concurrency).toBe(1)
+    expect(FAMILIES.notify.concurrency).toBe(1)
   })
 
-  it("notify is event-driven: no schedules", () => {
-    expect(FAMILIES.notify.schedules).toEqual([])
+  it("models notify as one internal schedule with no legacy replacement", () => {
+    expect(FAMILIES.notify.schedules).toEqual([
+      {
+        key: "process-notification-queue",
+        cron: "*/5 * * * *",
+        task: "process",
+        replaces: null,
+      },
+    ])
+    expect(FAMILIES.notify.retryLimit).toBe(0)
   })
 
   it("uses unique schedule keys within each queue", () => {

@@ -31,7 +31,7 @@ interface QueueRegistration {
 /**
  * pg-boss lifecycle owner. Domain modules register queues before application
  * bootstrap; this service starts pg-boss once, creates the queues, attaches
- * workers, and installs cron schedules (replacing the Railway cron runner).
+ * workers, and installs both legacy-replacement and internal schedules.
  */
 @Injectable()
 export class JobsService implements OnApplicationBootstrap, OnApplicationShutdown {

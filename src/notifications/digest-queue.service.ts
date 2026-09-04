@@ -2,7 +2,7 @@ import { Injectable, Logger, type OnModuleInit } from "@nestjs/common"
 
 import { JobsService } from "../jobs/jobs.service.js"
 import { CronGateService } from "../pipeline/cron-gate.service.js"
-import { FAMILIES } from "../pipeline/families.js"
+import { FAMILIES, isLegacyReplacementSchedule } from "../pipeline/families.js"
 import { isFamilyEnabled } from "../pipeline/flags.js"
 import { DigestService } from "./digest.service.js"
 
@@ -70,7 +70,9 @@ export class DigestQueueService implements OnModuleInit {
       throw new Error("scheduled digest task does not accept testEmail; use task=test")
     }
     const schedule = FAMILIES.digest.schedules[0]
-    if (!schedule) throw new Error("digest family schedule missing")
+    if (!schedule || !isLegacyReplacementSchedule(schedule)) {
+      throw new Error("digest legacy schedule missing")
+    }
     await this.gate.runGated(schedule, async () => {
       const summary = await this.digest.processRun(new Date())
       this.logger.log(

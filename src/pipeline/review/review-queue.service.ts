@@ -2,7 +2,11 @@ import { Injectable, Logger, type OnModuleInit } from "@nestjs/common"
 
 import { JobsService } from "../../jobs/jobs.service.js"
 import { CronGateService } from "../cron-gate.service.js"
-import { FAMILIES, type FamilySchedule } from "../families.js"
+import {
+  FAMILIES,
+  isLegacyReplacementSchedule,
+  type LegacyReplacementSchedule,
+} from "../families.js"
 import { isFamilyEnabled } from "../flags.js"
 import { errorMessage, logEdgeEvent } from "../logger.js"
 import { resolveLlmReviewConfig, type EnvReader } from "./event-review/index.js"
@@ -89,9 +93,11 @@ export class ReviewQueueService implements OnModuleInit {
     return { get: (name) => process.env[name] }
   }
 
-  private schedule(key: string): FamilySchedule {
+  private schedule(key: string): LegacyReplacementSchedule {
     const schedule = FAMILIES.review.schedules.find((candidate) => candidate.key === key)
-    if (!schedule) throw new Error(`review family schedule missing: ${key}`)
+    if (!schedule || !isLegacyReplacementSchedule(schedule)) {
+      throw new Error(`review legacy schedule missing: ${key}`)
+    }
     return schedule
   }
 }

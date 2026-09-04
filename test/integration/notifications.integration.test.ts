@@ -7,6 +7,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest"
 import { DbModule } from "../../src/db/db.module.js"
 import { DbService } from "../../src/db/db.service.js"
 import { DigestRepository } from "../../src/notifications/digest.repository.js"
+import { NotificationQueueRepository } from "../../src/notifications/notification-queue.repository.js"
 import { ReminderRepository } from "../../src/notifications/reminder.repository.js"
 import { zonedDayStartUtc } from "../../src/pipeline/zoned-time.js"
 import { ensureCatalogSchema, truncateCatalog } from "./catalog.js"
@@ -17,6 +18,7 @@ describe("notification repositories", () => {
   let db: DbService
   let digests: DigestRepository
   let reminders: ReminderRepository
+  let notificationQueue: NotificationQueueRepository
 
   beforeAll(async () => {
     moduleRef = await Test.createTestingModule({
@@ -28,17 +30,51 @@ describe("notification repositories", () => {
         }),
         DbModule,
       ],
-      providers: [DigestRepository, ReminderRepository],
+      providers: [DigestRepository, NotificationQueueRepository, ReminderRepository],
     }).compile()
     db = moduleRef.get(DbService)
     digests = moduleRef.get(DigestRepository)
     reminders = moduleRef.get(ReminderRepository)
+    notificationQueue = moduleRef.get(NotificationQueueRepository)
     await ensureCatalogSchema(db)
     await db.query(`
       CREATE TABLE IF NOT EXISTS public.user_notification_preferences (
         user_id uuid PRIMARY KEY,
         reminder_email boolean,
-        digest_email boolean NOT NULL DEFAULT false
+        digest_email boolean NOT NULL DEFAULT false,
+        change_email boolean NOT NULL DEFAULT true,
+        change_push boolean NOT NULL DEFAULT true
+      )
+    `)
+    await db.query(
+      "ALTER TABLE public.user_notification_preferences ADD COLUMN IF NOT EXISTS change_email boolean NOT NULL DEFAULT true"
+    )
+    await db.query(
+      "ALTER TABLE public.user_notification_preferences ADD COLUMN IF NOT EXISTS change_push boolean NOT NULL DEFAULT true"
+    )
+    await db.query("DROP TABLE IF EXISTS public.user_notifications, public.notification_queue")
+    await db.query(`
+      CREATE TABLE public.notification_queue (
+        id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id uuid NOT NULL REFERENCES public.user_profiles(id) ON DELETE CASCADE,
+        event_id uuid NOT NULL REFERENCES public.events(id) ON DELETE CASCADE,
+        change_type text NOT NULL,
+        change_detail jsonb,
+        processed boolean NOT NULL DEFAULT false,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        processed_at timestamptz
+      )
+    `)
+    await db.query(`
+      CREATE TABLE public.user_notifications (
+        id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id uuid NOT NULL REFERENCES public.user_profiles(id) ON DELETE CASCADE,
+        type text NOT NULL,
+        title text NOT NULL,
+        body text NOT NULL,
+        event_id uuid REFERENCES public.events(id) ON DELETE SET NULL,
+        read_at timestamptz,
+        created_at timestamptz NOT NULL DEFAULT now()
       )
     `)
   })
@@ -151,5 +187,87 @@ describe("notification repositories", () => {
       userId: optedIn,
       cityIds: [extraCity],
     })
+  })
+
+  it("filters, hydrates, inserts, and marks durable notification queue rows", async () => {
+    const cityId = randomUUID()
+    const userId = randomUUID()
+    const eventId = randomUUID()
+    const pendingId = randomUUID()
+    const freshId = randomUUID()
+    const processedId = randomUUID()
+    await db.query(
+      `INSERT INTO public.cities (id, name, slug, timezone)
+       VALUES ($1, 'Lafayette', $2, 'America/Chicago')`,
+      [cityId, `lafayette-${cityId}`]
+    )
+    await db.query(
+      `INSERT INTO public.user_profiles (id, email, display_name)
+       VALUES ($1, 'notify@example.com', 'Notify Reader')`,
+      [userId]
+    )
+    await db.query(
+      `INSERT INTO public.events (id, title, start_datetime, city_id, status, venue_name)
+       VALUES ($1, 'Changed Event', '2026-09-06T16:30:00Z', $2, 'published', 'Library')`,
+      [eventId, cityId]
+    )
+    await db.query(
+      `INSERT INTO public.user_notification_preferences
+       (user_id, change_email, change_push) VALUES ($1, false, true)`,
+      [userId]
+    )
+    await db.query(
+      `INSERT INTO public.notification_queue
+       (id, user_id, event_id, change_type, change_detail, processed, created_at, processed_at)
+       VALUES
+       ($1, $4, $5, 'time_changed', '{"new_start":"2026-09-06T16:30:00Z"}', false,
+        '2026-09-05T13:00:00Z', null),
+       ($2, $4, $5, 'venue_changed', '{}', false, '2026-09-05T14:30:00Z', null),
+       ($3, $4, $5, 'cancelled', '{}', true, '2026-09-05T12:00:00Z',
+        '2026-09-05T12:30:00Z')`,
+      [pendingId, freshId, processedId, userId, eventId]
+    )
+
+    await expect(notificationQueue.listPending("2026-09-05T14:00:00.000Z")).resolves.toEqual([
+      expect.objectContaining({
+        id: pendingId,
+        userId,
+        eventId,
+        changeType: "time_changed",
+        changeDetail: { new_start: "2026-09-06T16:30:00Z" },
+      }),
+    ])
+    await expect(notificationQueue.hydrateEvents([eventId, eventId])).resolves.toEqual([
+      expect.objectContaining({ id: eventId, title: "Changed Event", venueName: "Library" }),
+    ])
+    await expect(notificationQueue.hydrateProfiles([userId])).resolves.toEqual([
+      { id: userId, email: "notify@example.com", displayName: "Notify Reader" },
+    ])
+    await expect(notificationQueue.hydratePreferences([userId])).resolves.toEqual([
+      { userId, changeEmail: false, changePush: true },
+    ])
+
+    await notificationQueue.insertInAppNotifications([
+      {
+        userId,
+        type: "change",
+        title: "Updated: Changed Event",
+        body: "The event time has changed.",
+        eventId,
+      },
+    ])
+    await expect(
+      db.query<{ title: string }>("SELECT title FROM public.user_notifications")
+    ).resolves.toEqual([{ title: "Updated: Changed Event" }])
+
+    const processedAt = "2026-09-05T15:00:00.000Z"
+    await notificationQueue.markProcessed([pendingId, pendingId], processedAt)
+    await expect(
+      db.query<{ processed: boolean; processedAt: string | null }>(
+        `SELECT processed, processed_at AS "processedAt"
+         FROM public.notification_queue WHERE id = $1`,
+        [pendingId]
+      )
+    ).resolves.toEqual([{ processed: true, processedAt: expect.any(String) }])
   })
 })

@@ -1,7 +1,7 @@
 import { Injectable, Logger, Optional } from "@nestjs/common"
 
 import { DbService } from "../db/db.service.js"
-import type { FamilySchedule } from "./families.js"
+import type { LegacyReplacementSchedule } from "./families.js"
 import { FailurePingService } from "./failure-ping.service.js"
 
 export interface CronGateState {
@@ -29,8 +29,8 @@ export function nestGateLabel(legacyLabel: string): string {
  *   http_status stays NULL: there is no HTTP hop anymore, the worker runs
  *   in-process.
  *
- * Only scheduled (cron-replacing) work is gated; event-driven jobs like the
- * notify family have no legacy label and no kill switch.
+ * Only legacy-replacement schedules are gated. Internal schedules such as
+ * notification_queue polling have no legacy label and never enter this API.
  */
 @Injectable()
 export class CronGateService {
@@ -70,7 +70,10 @@ export class CronGateService {
    * Successful/failed Nest executions retain the legacy run-history label,
    * and failures rethrow so pg-boss retry policy applies.
    */
-  async runGated(schedule: FamilySchedule, fn: () => Promise<string | void>): Promise<void> {
+  async runGated(
+    schedule: LegacyReplacementSchedule,
+    fn: () => Promise<string | void>
+  ): Promise<void> {
     const state = await this.getGateState(schedule.replaces)
     if (state.legacyEnabled) {
       this.logger.log(`${schedule.replaces} still owns schedule; skipping Nest ${schedule.key}`)

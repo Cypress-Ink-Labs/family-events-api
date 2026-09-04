@@ -3,7 +3,11 @@ import { Injectable, Logger, type OnModuleInit } from "@nestjs/common"
 import { JobsService } from "../../jobs/jobs.service.js"
 import { CronGateService } from "../cron-gate.service.js"
 import { FailurePingService } from "../failure-ping.service.js"
-import { FAMILIES, type FamilySchedule } from "../families.js"
+import {
+  FAMILIES,
+  isLegacyReplacementSchedule,
+  type LegacyReplacementSchedule,
+} from "../families.js"
 import { isFamilyEnabled } from "../flags.js"
 import { errorMessage, logEdgeEvent } from "../logger.js"
 import { IngestionRepository } from "./ingestion.repository.js"
@@ -169,9 +173,11 @@ export class ScrapeQueueService implements OnModuleInit {
     }
   }
 
-  private schedule(key: string): FamilySchedule {
+  private schedule(key: string): LegacyReplacementSchedule {
     const schedule = FAMILIES.scrape.schedules.find((candidate) => candidate.key === key)
-    if (!schedule) throw new Error(`scrape family schedule missing: ${key}`)
+    if (!schedule || !isLegacyReplacementSchedule(schedule)) {
+      throw new Error(`scrape legacy schedule missing: ${key}`)
+    }
     return schedule
   }
 }

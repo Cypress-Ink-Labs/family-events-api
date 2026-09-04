@@ -9,6 +9,7 @@ interface RegisteredQueue {
   name: string
   options: Record<string, unknown>
   schedules: QueueSchedule[]
+  localConcurrency: number
 }
 
 class FakeJobs {
@@ -18,9 +19,14 @@ class FakeJobs {
     name: string,
     _handler: unknown,
     options: Record<string, unknown> = {},
-    config: { schedules?: QueueSchedule[] } = {}
+    config: { schedules?: QueueSchedule[]; localConcurrency?: number } = {}
   ): void {
-    this.registered.push({ name, options, schedules: config.schedules ?? [] })
+    this.registered.push({
+      name,
+      options,
+      schedules: config.schedules ?? [],
+      localConcurrency: config.localConcurrency ?? 1,
+    })
   }
 
   async send(): Promise<string | null> {
@@ -35,6 +41,7 @@ const originalEnv = {
   CUTOVER_REVIEW: process.env.CUTOVER_REVIEW,
   CUTOVER_DIGEST: process.env.CUTOVER_DIGEST,
   CUTOVER_REMINDERS: process.env.CUTOVER_REMINDERS,
+  CUTOVER_NOTIFY: process.env.CUTOVER_NOTIFY,
 }
 
 function restoreEnv(name: keyof typeof originalEnv): void {
@@ -48,6 +55,7 @@ async function boot(flags: {
   review?: string
   digest?: string
   reminders?: string
+  notify?: string
 }): Promise<{
   app: INestApplication
   jobs: FakeJobs
@@ -62,6 +70,8 @@ async function boot(flags: {
   else process.env.CUTOVER_DIGEST = flags.digest
   if (flags.reminders === undefined) delete process.env.CUTOVER_REMINDERS
   else process.env.CUTOVER_REMINDERS = flags.reminders
+  if (flags.notify === undefined) delete process.env.CUTOVER_NOTIFY
+  else process.env.CUTOVER_NOTIFY = flags.notify
 
   const jobs = new FakeJobs()
   const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
@@ -80,10 +90,11 @@ afterEach(() => {
   restoreEnv("CUTOVER_REVIEW")
   restoreEnv("CUTOVER_DIGEST")
   restoreEnv("CUTOVER_REMINDERS")
+  restoreEnv("CUTOVER_NOTIFY")
 })
 
 describe.sequential("pipeline family bootstrap", () => {
-  it("leaves tag and review ownership absent under production-safe defaults", async () => {
+  it("leaves every family absent under production-safe defaults", async () => {
     const { app, jobs } = await boot({})
     try {
       expect(jobs.registered).toEqual([])
@@ -127,6 +138,31 @@ describe.sequential("pipeline family bootstrap", () => {
       expect(jobs.registered.find((queue) => queue.name === "reminders")?.options).toMatchObject({
         retryLimit: 0,
       })
+    } finally {
+      await app.close()
+    }
+  })
+
+  it("installs only the serial no-retry notify queue and internal schedule after its flag flips", async () => {
+    const { app, jobs } = await boot({ notify: "true" })
+    try {
+      expect(jobs.registered.map((queue) => queue.name).toSorted()).toEqual([
+        "notify",
+        "notify.dlq",
+      ])
+      const notify = jobs.registered.find((queue) => queue.name === "notify")
+      expect(notify?.options).toMatchObject({
+        deadLetter: "notify.dlq",
+        retryLimit: 0,
+      })
+      expect(notify?.localConcurrency).toBe(1)
+      expect(notify?.schedules).toEqual([
+        {
+          cron: "*/5 * * * *",
+          data: { task: "process" },
+          key: "process-notification-queue",
+        },
+      ])
     } finally {
       await app.close()
     }
