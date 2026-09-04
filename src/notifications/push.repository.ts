@@ -20,11 +20,6 @@ export const PUSH_CREDENTIAL_NAMES = [
   "vapid_private_key",
   "vapid_public_key",
   "vapid_subject",
-  "apns_team_id",
-  "apns_key_id",
-  "apns_private_key",
-  "apns_bundle_id",
-  "apns_environment",
   "fcm_service_account_json",
 ] as const
 

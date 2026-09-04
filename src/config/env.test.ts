@@ -53,11 +53,6 @@ describe("validateEnv", () => {
     expect(withoutPush.VAPID_PRIVATE_KEY).toBeUndefined()
     expect(withoutPush.VAPID_PUBLIC_KEY).toBeUndefined()
     expect(withoutPush.VAPID_SUBJECT).toBeUndefined()
-    expect(withoutPush.APNS_TEAM_ID).toBeUndefined()
-    expect(withoutPush.APNS_KEY_ID).toBeUndefined()
-    expect(withoutPush.APNS_PRIVATE_KEY).toBeUndefined()
-    expect(withoutPush.APNS_BUNDLE_ID).toBeUndefined()
-    expect(withoutPush.APNS_ENVIRONMENT).toBeUndefined()
     expect(withoutPush.FCM_SERVICE_ACCOUNT_JSON).toBeUndefined()
 
     expect(
@@ -66,28 +61,14 @@ describe("validateEnv", () => {
         VAPID_PRIVATE_KEY: "private",
         VAPID_PUBLIC_KEY: "public",
         VAPID_SUBJECT: "mailto:push@example.com",
-        APNS_TEAM_ID: "team",
-        APNS_KEY_ID: "key",
-        APNS_PRIVATE_KEY: "pem",
-        APNS_BUNDLE_ID: "com.example.app",
-        APNS_ENVIRONMENT: "sandbox",
         FCM_SERVICE_ACCOUNT_JSON: '{"project_id":"project"}',
       })
     ).toMatchObject({
       VAPID_PRIVATE_KEY: "private",
       VAPID_PUBLIC_KEY: "public",
       VAPID_SUBJECT: "mailto:push@example.com",
-      APNS_TEAM_ID: "team",
-      APNS_KEY_ID: "key",
-      APNS_PRIVATE_KEY: "pem",
-      APNS_BUNDLE_ID: "com.example.app",
-      APNS_ENVIRONMENT: "sandbox",
       FCM_SERVICE_ACCOUNT_JSON: '{"project_id":"project"}',
     })
-  })
-
-  it("rejects an unknown APNs environment", () => {
-    expect(() => validateEnv({ ...base, APNS_ENVIRONMENT: "staging" })).toThrow(/APNS_ENVIRONMENT/)
   })
 
   it("accepts an optional WEB_ORIGIN, normalizes a trailing slash, and rejects a non-URL", () => {

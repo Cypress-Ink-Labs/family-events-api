@@ -21,7 +21,8 @@ export class NotifyQueueService implements OnModuleInit {
 
   onModuleInit(): void {
     if (!isFamilyEnabled("notify", this.env ?? process.env)) {
-      this.logger.log("notify family disabled by cutover flag; queue not installed")
+      this.jobs.registerScheduleRemoval("notify", "process-notification-queue")
+      this.logger.log("notify family disabled by cutover flag; schedule removal registered")
       return
     }
     const family = FAMILIES.notify
@@ -49,17 +50,22 @@ export class NotifyQueueService implements OnModuleInit {
   }
 
   async handleJob(data: NotifyJobData): Promise<void> {
+    if (!isFamilyEnabled("notify", this.env ?? process.env)) {
+      throw new Error("notify family disabled")
+    }
     if (data.task !== "process") throw new Error("unknown notify task")
     const result = await this.notifications.processRun(new Date())
     const counts = result.channels
     const message =
-      `notify run complete: ok=${result.ok} processed=${result.processed} ` +
+      `notify run complete: ok=${result.ok} lock_acquired=${result.lockAcquired} ` +
+      `run_skipped=${result.skipped} processed=${result.processed} refreshed=${result.refreshed} ` +
       `persistence_failed=${result.persistenceFailed} ` +
       `email_sent=${counts.email.sent} email_failed=${counts.email.failed} ` +
       `email_skipped=${counts.email.skipped} in_app_sent=${counts.inApp.sent} ` +
       `in_app_failed=${counts.inApp.failed} in_app_skipped=${counts.inApp.skipped} ` +
       `push_sent=${counts.push.sent} push_failed=${counts.push.failed} ` +
-      `push_skipped=${counts.push.skipped} push_pruned=${counts.push.pruned}`
+      `push_skipped=${counts.push.skipped} push_pruned=${counts.push.pruned} ` +
+      `push_unmatched=${counts.push.unmatchedRecipients}`
     if (result.ok) this.logger.log(message)
     else this.logger.error(message)
   }

@@ -10,6 +10,7 @@ const pgBoss = vi.hoisted(() => ({
       handler: (jobs: Array<{ id: string; data: object }>) => Promise<void>,
     ]
   >,
+  unscheduleCalls: [] as Array<[queue: string, key?: string]>,
 }))
 
 vi.mock("pg-boss", () => ({
@@ -22,6 +23,9 @@ vi.mock("pg-boss", () => ({
       pgBoss.updateQueueCalls.push([name, options])
     }
     async schedule() {}
+    async unschedule(queue: string, key?: string) {
+      pgBoss.unscheduleCalls.push([queue, key])
+    }
     async send() {
       return "job-1"
     }
@@ -50,6 +54,7 @@ function makeService(nodeEnv = "test"): JobsService {
 beforeEach(() => {
   pgBoss.updateQueueCalls = []
   pgBoss.workCalls = []
+  pgBoss.unscheduleCalls = []
 })
 
 describe("JobsService", () => {
@@ -106,5 +111,14 @@ describe("JobsService", () => {
         },
       ],
     ])
+  })
+
+  it("removes registered durable schedules during bootstrap", async () => {
+    const service = makeService("development")
+    service.registerScheduleRemoval("notify", "process-notification-queue")
+
+    await service.onApplicationBootstrap()
+
+    expect(pgBoss.unscheduleCalls).toEqual([["notify", "process-notification-queue"]])
   })
 })

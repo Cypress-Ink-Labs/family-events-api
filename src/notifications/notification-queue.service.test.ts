@@ -66,19 +66,30 @@ function makeHarness(
 ) {
   const entries = input.entries ?? [entry()]
   const repository = {
+    withExclusiveRun: vi.fn(
+      async (
+        work: () => Promise<unknown>
+      ): Promise<{ acquired: false } | { acquired: true; value: unknown }> => ({
+        acquired: true,
+        value: await work(),
+      })
+    ),
     listPending: vi.fn(async () => entries),
     hydrateEvents: vi.fn(async () => input.events ?? [event()]),
     hydrateProfiles: vi.fn(async () => input.profiles ?? [profile()]),
     hydratePreferences: vi.fn(async () => input.preferences ?? [preference()]),
     insertInAppNotifications: vi.fn(async (_rows: InAppNotificationRow[]) => undefined),
     insertInAppNotification: vi.fn(async (_row: InAppNotificationRow) => undefined),
-    markProcessed: vi.fn(async () => undefined),
+    markProcessed: vi.fn(async (selected: NotificationQueueEntry[]) => selected.length),
   }
   const mail = {
     send: vi.fn(async (): Promise<SendMailResult> => ({ sent: true, status: 200 })),
   }
   const push = {
     send: vi.fn(async (): Promise<SendPushResult> => ({
+      requestedRecipients: 1,
+      matchedRecipients: 1,
+      unmatchedRecipients: 0,
       sent: 1,
       failed: 0,
       pruned: 0,
@@ -118,6 +129,26 @@ describe("buildChangeSummary", () => {
 })
 
 describe("NotificationQueueService", () => {
+  it("returns a lock-not-acquired result with no queue or delivery side effects", async () => {
+    const { service, repository, mail, push } = makeHarness()
+    repository.withExclusiveRun.mockImplementationOnce(async () => ({ acquired: false as const }))
+
+    await expect(service.processRun(NOW)).resolves.toMatchObject({
+      ok: true,
+      lockAcquired: false,
+      skipped: true,
+      skipReason: "lock_not_acquired",
+      processed: 0,
+      refreshed: 0,
+    })
+    expect(repository.listPending).not.toHaveBeenCalled()
+    expect(repository.hydrateEvents).not.toHaveBeenCalled()
+    expect(repository.insertInAppNotifications).not.toHaveBeenCalled()
+    expect(repository.markProcessed).not.toHaveBeenCalled()
+    expect(mail.send).not.toHaveBeenCalled()
+    expect(push.send).not.toHaveBeenCalled()
+  })
+
   it("uses the exact one-hour cutoff", async () => {
     const { service, repository } = makeHarness({ entries: [] })
 
@@ -152,7 +183,7 @@ describe("NotificationQueueService", () => {
     expect(result.channels).toEqual({
       email: { sent: 1, failed: 0, skipped: 0 },
       inApp: { sent: 1, failed: 0, skipped: 0 },
-      push: { sent: 1, failed: 0, skipped: 0, pruned: 0 },
+      push: { sent: 1, failed: 0, skipped: 0, pruned: 0, unmatchedRecipients: 0 },
     })
   })
 
@@ -182,13 +213,13 @@ describe("NotificationQueueService", () => {
       channels: {
         email: { sent: 0, failed: 0, skipped: 3 },
         inApp: { sent: 0, failed: 0, skipped: 3 },
-        push: { sent: 0, failed: 0, skipped: 3, pruned: 0 },
+        push: { sent: 0, failed: 0, skipped: 3, pruned: 0, unmatchedRecipients: 0 },
       },
     })
     expect(mail.send).not.toHaveBeenCalled()
     expect(push.send).not.toHaveBeenCalled()
     expect(repository.markProcessed).toHaveBeenCalledWith(
-      [missingEvent.id, missingProfile.id, missingEmail.id],
+      [missingEvent, missingProfile, missingEmail],
       NOW.toISOString()
     )
   })
@@ -248,7 +279,15 @@ describe("NotificationQueueService", () => {
 
   it("reports expired subscriptions as pruned rather than failed", async () => {
     const { service, push } = makeHarness()
-    push.send.mockResolvedValueOnce({ sent: 0, failed: 0, pruned: 1, skipped: 0 })
+    push.send.mockResolvedValueOnce({
+      requestedRecipients: 1,
+      matchedRecipients: 1,
+      unmatchedRecipients: 0,
+      sent: 0,
+      failed: 0,
+      pruned: 1,
+      skipped: 0,
+    })
 
     const result = await service.processRun(NOW)
 
@@ -257,6 +296,30 @@ describe("NotificationQueueService", () => {
       failed: 0,
       skipped: 0,
       pruned: 1,
+      unmatchedRecipients: 0,
+    })
+  })
+
+  it("reports recipients without subscriptions separately from delivery counts", async () => {
+    const { service, push } = makeHarness()
+    push.send.mockResolvedValueOnce({
+      requestedRecipients: 1,
+      matchedRecipients: 0,
+      unmatchedRecipients: 1,
+      sent: 0,
+      failed: 0,
+      pruned: 0,
+      skipped: 0,
+    })
+
+    const result = await service.processRun(NOW)
+
+    expect(result.channels.push).toEqual({
+      sent: 0,
+      failed: 0,
+      skipped: 0,
+      pruned: 0,
+      unmatchedRecipients: 1,
     })
   })
 
@@ -292,10 +355,24 @@ describe("NotificationQueueService", () => {
       channels: {
         email: { sent: 1, failed: 0, skipped: 0 },
         inApp: { sent: 1, failed: 0, skipped: 0 },
-        push: { sent: 1, failed: 0, skipped: 0, pruned: 0 },
+        push: { sent: 1, failed: 0, skipped: 0, pruned: 0, unmatchedRecipients: 0 },
       },
     })
     expect(mail.send).toHaveBeenCalledTimes(1)
     expect(push.send).toHaveBeenCalledTimes(1)
+  })
+
+  it("leaves concurrently refreshed rows pending and reports their count", async () => {
+    const second = entry({ id: "33333333-3333-4333-8333-333333333334" })
+    const { service, repository } = makeHarness({ entries: [entry(), second] })
+    repository.markProcessed.mockResolvedValueOnce(1)
+
+    await expect(service.processRun(NOW)).resolves.toMatchObject({
+      ok: true,
+      processed: 1,
+      refreshed: 1,
+      persistenceFailed: false,
+    })
+    expect(repository.markProcessed).toHaveBeenCalledWith([entry(), second], NOW.toISOString())
   })
 })

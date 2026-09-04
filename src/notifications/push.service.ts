@@ -13,25 +13,23 @@ import {
   type PushVaultCredentials,
 } from "./push.repository.js"
 import {
-  buildApnsRequest,
   buildFcmEndpoint,
   buildFcmMessage,
   getFcmAccessToken,
+  isFcmUnregisteredResponse,
   parseFcmServiceAccount,
-  signApnsJwt,
-  type ApnsCredentials,
   type FcmCredentials,
 } from "./push/mobile-push.js"
 import {
   buildVapidAuth,
   encryptPayload,
+  isTrustedWebPushEndpoint,
   webPushBody,
   type VapidCredentials,
 } from "./push/web-push.js"
 
 const PUSH_TIMEOUT_MS = 10_000
 const DEFAULT_VAPID_SUBJECT = "mailto:push@cypress-ink-labs.org"
-const DEFAULT_APNS_BUNDLE_ID = "com.familyevents.app"
 
 export interface SendPushInput {
   userIds: string[]
@@ -41,6 +39,9 @@ export interface SendPushInput {
 }
 
 export interface SendPushResult {
+  requestedRecipients: number
+  matchedRecipients: number
+  unmatchedRecipients: number
   sent: number
   failed: number
   pruned: number
@@ -52,25 +53,25 @@ export interface PushServiceDependencies {
   resolve?: PublicIpResolver
   guardedFetch?: typeof guardedFetch
   now?: () => number
-  signApnsJwt?: typeof signApnsJwt
   getFcmAccessToken?: typeof getFcmAccessToken
 }
 
 interface ResolvedCredentials {
   vapid?: VapidCredentials
-  apns?: ApnsCredentials
   fcm?: FcmCredentials
+}
+
+function unique(values: string[]): string[] {
+  return [...new Set(values)]
 }
 
 function partition(rows: PushSubscriptionRow[]): {
   web: PushSubscriptionRow[]
-  apns: PushSubscriptionRow[]
   fcm: PushSubscriptionRow[]
 } {
   return {
     web: rows.filter((row) => row.platform === "web"),
-    apns: rows.filter((row) => row.platform === "ios"),
-    fcm: rows.filter((row) => row.platform === "android"),
+    fcm: rows.filter((row) => row.platform === "ios" || row.platform === "android"),
   }
 }
 
@@ -85,14 +86,22 @@ export class PushService {
   ) {}
 
   async send(input: SendPushInput): Promise<SendPushResult> {
-    const subscriptions = await this.repository.listSubscriptions(input.userIds)
-    if (subscriptions.length === 0) {
-      return { sent: 0, failed: 0, pruned: 0, skipped: 0 }
+    const requestedUserIds = unique(input.userIds)
+    const subscriptions = await this.repository.listSubscriptions(requestedUserIds)
+    const matchedUserIds = new Set(subscriptions.map((subscription) => subscription.userId))
+    const result: SendPushResult = {
+      requestedRecipients: requestedUserIds.length,
+      matchedRecipients: matchedUserIds.size,
+      unmatchedRecipients: requestedUserIds.length - matchedUserIds.size,
+      sent: 0,
+      failed: 0,
+      pruned: 0,
+      skipped: 0,
     }
+    if (subscriptions.length === 0) return result
 
     const credentials = await this.resolveCredentials()
     const groups = partition(subscriptions)
-    const result: SendPushResult = { sent: 0, failed: 0, pruned: 0, skipped: 0 }
     const expiredIds: string[] = []
 
     if (!credentials.vapid) {
@@ -100,13 +109,6 @@ export class PushService {
       this.logSkipped("web", groups.web.length)
     } else {
       await this.sendWeb(groups.web, credentials.vapid, input, result, expiredIds)
-    }
-
-    if (!credentials.apns) {
-      result.skipped += groups.apns.length
-      this.logSkipped("apns", groups.apns.length)
-    } else {
-      await this.sendApns(groups.apns, credentials.apns, input, result, expiredIds)
     }
 
     if (!credentials.fcm) {
@@ -117,7 +119,7 @@ export class PushService {
     }
 
     if (expiredIds.length > 0) {
-      const uniqueExpiredIds = [...new Set(expiredIds)]
+      const uniqueExpiredIds = unique(expiredIds)
       try {
         await this.repository.deleteExpiredSubscriptions(uniqueExpiredIds)
         result.pruned = uniqueExpiredIds.length
@@ -128,7 +130,10 @@ export class PushService {
     }
 
     this.logger.log(
-      `push delivery complete: sent=${result.sent} failed=${result.failed} pruned=${result.pruned} skipped=${result.skipped}`
+      `push delivery complete: requested=${result.requestedRecipients} ` +
+        `matched=${result.matchedRecipients} unmatched=${result.unmatchedRecipients} ` +
+        `sent=${result.sent} failed=${result.failed} pruned=${result.pruned} ` +
+        `skipped=${result.skipped}`
     )
     return result
   }
@@ -151,23 +156,6 @@ export class PushService {
         ? { privateKey: vapidPrivateKey, publicKey: vapidPublicKey, subject: vapidSubject }
         : undefined
 
-    const apnsTeamId = value("apns_team_id", "APNS_TEAM_ID")
-    const apnsKeyId = value("apns_key_id", "APNS_KEY_ID")
-    const apnsPrivateKey = value("apns_private_key", "APNS_PRIVATE_KEY")
-    const apnsBundleId = value("apns_bundle_id", "APNS_BUNDLE_ID") || DEFAULT_APNS_BUNDLE_ID
-    const apnsEnvironment = value("apns_environment", "APNS_ENVIRONMENT")
-    const apns =
-      apnsTeamId && apnsKeyId && apnsPrivateKey && apnsBundleId
-        ? {
-            teamId: apnsTeamId,
-            keyId: apnsKeyId,
-            privateKey: apnsPrivateKey,
-            bundleId: apnsBundleId,
-            environment:
-              apnsEnvironment === "sandbox" ? ("sandbox" as const) : ("production" as const),
-          }
-        : undefined
-
     let fcm: FcmCredentials | undefined
     try {
       const parsed = parseFcmServiceAccount(
@@ -177,7 +165,7 @@ export class PushService {
     } catch {
       this.logger.warn("push credentials invalid: category=fcm_json")
     }
-    return { vapid, apns, fcm }
+    return { vapid, fcm }
   }
 
   private async sendWeb(
@@ -196,6 +184,11 @@ export class PushService {
       if (!subscription.endpoint || !subscription.p256dh || !subscription.authKey) {
         result.failed++
         this.logger.warn("web push failed: category=invalid_subscription")
+        continue
+      }
+      if (!isTrustedWebPushEndpoint(subscription.endpoint)) {
+        result.failed++
+        this.logger.warn("web push failed: category=untrusted_endpoint")
         continue
       }
       try {
@@ -221,57 +214,11 @@ export class PushService {
           },
           { resolve: this.dependencies.resolve }
         )
-        this.recordResponse("web", response, [404, 410], subscription.id, result, expiredIds)
+        this.recordWebResponse(response, subscription.id, result, expiredIds)
       } catch (error) {
         result.failed++
         const category = error instanceof SsrfRejectedError ? "ssrf_rejected" : "crypto_network"
         this.logger.warn(`web push failed: category=${category}`)
-      }
-    }
-  }
-
-  private async sendApns(
-    subscriptions: PushSubscriptionRow[],
-    credentials: ApnsCredentials,
-    input: SendPushInput,
-    result: SendPushResult,
-    expiredIds: string[]
-  ): Promise<void> {
-    if (subscriptions.length === 0) return
-    let jwt: string
-    try {
-      jwt = await (this.dependencies.signApnsJwt ?? signApnsJwt)(credentials, this.dependencies.now)
-    } catch {
-      result.failed += subscriptions.length
-      this.logger.warn(
-        `apns push failed: category=credential_signing count=${subscriptions.length}`
-      )
-      return
-    }
-    for (const subscription of subscriptions) {
-      if (!subscription.token) {
-        result.failed++
-        this.logger.warn("apns push failed: category=invalid_subscription")
-        continue
-      }
-      try {
-        const request = buildApnsRequest({
-          token: subscription.token,
-          jwt,
-          bundleId: credentials.bundleId,
-          environment: credentials.environment,
-          payload: input,
-        })
-        const response = await (this.dependencies.fetch ?? fetch)(request.url, {
-          method: "POST",
-          headers: request.headers,
-          body: request.body,
-          signal: AbortSignal.timeout(PUSH_TIMEOUT_MS),
-        })
-        this.recordResponse("apns", response, [400, 410], subscription.id, result, expiredIds)
-      } catch {
-        result.failed++
-        this.logger.warn("apns push failed: category=network_timeout")
       }
     }
   }
@@ -296,7 +243,7 @@ export class PushService {
       return
     }
     for (const subscription of subscriptions) {
-      if (!subscription.token) {
+      if (!subscription.token || subscription.platform === "web") {
         result.failed++
         this.logger.warn("fcm push failed: category=invalid_subscription")
         continue
@@ -313,6 +260,7 @@ export class PushService {
             body: JSON.stringify(
               buildFcmMessage({
                 token: subscription.token,
+                platform: subscription.platform,
                 title: input.title,
                 body: input.body,
                 url: input.url,
@@ -321,7 +269,15 @@ export class PushService {
             signal: AbortSignal.timeout(PUSH_TIMEOUT_MS),
           }
         )
-        this.recordResponse("fcm", response, [400, 404], subscription.id, result, expiredIds)
+        if (response.ok) {
+          result.sent++
+        } else if (await isFcmUnregisteredResponse(response)) {
+          expiredIds.push(subscription.id)
+          this.logger.log(`fcm push expired: status=${response.status}`)
+        } else {
+          result.failed++
+          this.logger.warn(`fcm push rejected: status=${response.status}`)
+        }
       } catch {
         result.failed++
         this.logger.warn("fcm push failed: category=network_timeout")
@@ -329,26 +285,24 @@ export class PushService {
     }
   }
 
-  private recordResponse(
-    provider: "web" | "apns" | "fcm",
+  private recordWebResponse(
     response: Response,
-    pruneStatuses: number[],
     subscriptionId: string,
     result: SendPushResult,
     expiredIds: string[]
   ): void {
     if (response.ok) {
       result.sent++
-    } else if (pruneStatuses.includes(response.status)) {
+    } else if (response.status === 404 || response.status === 410) {
       expiredIds.push(subscriptionId)
-      this.logger.log(`${provider} push expired: status=${response.status}`)
+      this.logger.log(`web push expired: status=${response.status}`)
     } else {
       result.failed++
-      this.logger.warn(`${provider} push rejected: status=${response.status}`)
+      this.logger.warn(`web push rejected: status=${response.status}`)
     }
   }
 
-  private logSkipped(provider: "web" | "apns" | "fcm", count: number): void {
+  private logSkipped(provider: "web" | "fcm", count: number): void {
     if (count > 0) {
       this.logger.warn(`${provider} push skipped: category=missing_credentials count=${count}`)
     }

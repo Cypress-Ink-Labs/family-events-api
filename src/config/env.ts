@@ -5,11 +5,6 @@ const optionalNonEmptyString = z.preprocess(
   (value) => (value === "" ? undefined : value),
   z.string().min(1).optional()
 )
-const optionalApnsEnvironment = z.preprocess(
-  (value) => (value === "" ? undefined : value),
-  z.enum(["sandbox", "production"]).optional()
-)
-
 export const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   PORT: z.coerce.number().int().positive().default(3001),
@@ -42,13 +37,7 @@ export const envSchema = z.object({
   VAPID_PRIVATE_KEY: optionalNonEmptyString,
   VAPID_PUBLIC_KEY: optionalNonEmptyString,
   VAPID_SUBJECT: optionalNonEmptyString,
-  /** APNs token credentials. PushService applies legacy bundle and environment defaults. */
-  APNS_TEAM_ID: optionalNonEmptyString,
-  APNS_KEY_ID: optionalNonEmptyString,
-  APNS_PRIVATE_KEY: optionalNonEmptyString,
-  APNS_BUNDLE_ID: optionalNonEmptyString,
-  APNS_ENVIRONMENT: optionalApnsEnvironment,
-  /** JSON-encoded Google service account used for FCM HTTP v1. */
+  /** JSON-encoded Google service account used for iOS and Android FCM tokens. */
   FCM_SERVICE_ACCOUNT_JSON: optionalNonEmptyString,
   /** Public origin of the web app; enables CORS for its browser calls. Unset = no CORS headers. */
   WEB_ORIGIN: z

@@ -4,6 +4,25 @@ export interface VapidCredentials {
   subject: string
 }
 
+const TRUSTED_WEB_PUSH_HOSTS = new Set([
+  "fcm.googleapis.com",
+  "updates.push.services.mozilla.com",
+  "web.push.apple.com",
+])
+
+export function isTrustedWebPushEndpoint(endpoint: string): boolean {
+  try {
+    const url = new URL(endpoint)
+    const hostname = url.hostname.toLowerCase()
+    return (
+      url.protocol === "https:" &&
+      (TRUSTED_WEB_PUSH_HOSTS.has(hostname) || hostname.endsWith(".notify.windows.com"))
+    )
+  } catch {
+    return false
+  }
+}
+
 export function base64urlEncode(data: Uint8Array): string {
   let binary = ""
   for (const byte of data) binary += String.fromCharCode(byte)

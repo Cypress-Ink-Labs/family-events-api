@@ -26,12 +26,16 @@ export interface ChannelCounts {
 
 export interface NotificationQueueRunResult {
   ok: boolean
+  lockAcquired: boolean
+  skipped: boolean
+  skipReason: "lock_not_acquired" | null
   processed: number
+  refreshed: number
   persistenceFailed: boolean
   channels: {
     email: ChannelCounts
     inApp: ChannelCounts
-    push: ChannelCounts & { pruned: number }
+    push: ChannelCounts & { pruned: number; unmatchedRecipients: number }
   }
 }
 
@@ -60,12 +64,16 @@ function emptyCounts(): ChannelCounts {
 function emptyResult(): NotificationQueueRunResult {
   return {
     ok: true,
+    lockAcquired: true,
+    skipped: false,
+    skipReason: null,
     processed: 0,
+    refreshed: 0,
     persistenceFailed: false,
     channels: {
       email: emptyCounts(),
       inApp: emptyCounts(),
-      push: { ...emptyCounts(), pruned: 0 },
+      push: { ...emptyCounts(), pruned: 0, unmatchedRecipients: 0 },
     },
   }
 }
@@ -121,6 +129,19 @@ export class NotificationQueueService {
   ) {}
 
   async processRun(now: Date): Promise<NotificationQueueRunResult> {
+    const exclusive = await this.repository.withExclusiveRun(() => this.processExclusiveRun(now))
+    if (!exclusive.acquired) {
+      return {
+        ...emptyResult(),
+        lockAcquired: false,
+        skipped: true,
+        skipReason: "lock_not_acquired",
+      }
+    }
+    return exclusive.value
+  }
+
+  private async processExclusiveRun(now: Date): Promise<NotificationQueueRunResult> {
     const result = emptyResult()
     const cutoff = new Date(now.getTime() - DEBOUNCE_MS).toISOString()
     const entries = await this.repository.listPending(cutoff)
@@ -173,11 +194,8 @@ export class NotificationQueueService {
     await this.sendPushes(prepared, result.channels.push)
 
     try {
-      await this.repository.markProcessed(
-        entries.map((entry) => entry.id),
-        now.toISOString()
-      )
-      result.processed = entries.length
+      result.processed = await this.repository.markProcessed(entries, now.toISOString())
+      result.refreshed = entries.length - result.processed
     } catch {
       result.ok = false
       result.persistenceFailed = true
@@ -247,7 +265,7 @@ export class NotificationQueueService {
 
   private async sendPushes(
     prepared: PreparedNotification[],
-    counts: ChannelCounts & { pruned: number }
+    counts: ChannelCounts & { pruned: number; unmatchedRecipients: number }
   ): Promise<void> {
     const groups = new Map<string, PushGroup>()
     for (const item of prepared) {
@@ -276,9 +294,7 @@ export class NotificationQueueService {
         counts.failed += response.failed
         counts.skipped += response.skipped
         counts.pruned += response.pruned
-        if (response.sent + response.failed + response.pruned + response.skipped === 0) {
-          counts.skipped += group.userIds.length
-        }
+        counts.unmatchedRecipients += response.unmatchedRecipients
       } catch {
         counts.failed += group.userIds.length
         this.logger.warn(

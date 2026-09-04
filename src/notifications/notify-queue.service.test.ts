@@ -41,8 +41,9 @@ describe("NotifyQueueService", () => {
 
   it("installs nothing when the production flag is not exactly true", () => {
     const registerQueue = vi.fn()
+    const registerScheduleRemoval = vi.fn()
     const queue = new NotifyQueueService(
-      { registerQueue } as unknown as JobsService,
+      { registerQueue, registerScheduleRemoval } as unknown as JobsService,
       { processRun: vi.fn() } as unknown as NotificationQueueService,
       { NODE_ENV: "production" }
     )
@@ -50,18 +51,35 @@ describe("NotifyQueueService", () => {
     queue.onModuleInit()
 
     expect(registerQueue).not.toHaveBeenCalled()
+    expect(registerScheduleRemoval).toHaveBeenCalledWith("notify", "process-notification-queue")
+  })
+
+  it("fails closed at runtime when production ownership is disabled", async () => {
+    const processRun = vi.fn()
+    const queue = new NotifyQueueService(
+      { registerQueue: vi.fn(), registerScheduleRemoval: vi.fn() } as unknown as JobsService,
+      { processRun } as unknown as NotificationQueueService,
+      { NODE_ENV: "production" }
+    )
+
+    await expect(queue.handleJob({ task: "process" })).rejects.toThrow(/disabled/)
+    expect(processRun).not.toHaveBeenCalled()
   })
 
   it("runs process jobs directly without CronGate and logs only counts", async () => {
     const rawId = "11111111-1111-4111-8111-111111111111"
     const processRun = vi.fn(async () => ({
       ok: true,
+      lockAcquired: true,
+      skipped: false,
+      skipReason: null,
       processed: 1,
+      refreshed: 0,
       persistenceFailed: false,
       channels: {
         email: { sent: 1, failed: 0, skipped: 0 },
         inApp: { sent: 1, failed: 0, skipped: 0 },
-        push: { sent: 1, failed: 0, skipped: 0, pruned: 0 },
+        push: { sent: 1, failed: 0, skipped: 0, pruned: 0, unmatchedRecipients: 0 },
       },
     }))
     const log = vi.spyOn(Logger.prototype, "log").mockImplementation(() => undefined)

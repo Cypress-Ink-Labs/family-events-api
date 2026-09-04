@@ -2,6 +2,11 @@ import { Injectable } from "@nestjs/common"
 
 import { DbService } from "../db/db.service.js"
 
+// Stable signed 64-bit namespace key reserved for the U30 notification queue.
+export const NOTIFICATION_QUEUE_LOCK_ID = "564679841717855333"
+
+export type ExclusiveRunResult<T> = { acquired: false } | { acquired: true; value: T }
+
 export type NotificationChangeType =
   | "time_changed"
   | "venue_changed"
@@ -101,12 +106,30 @@ FROM UNNEST(
 `
 
 const MARK_PROCESSED_SQL = `
-UPDATE public.notification_queue
-SET processed = TRUE,
-    processed_at = $2::timestamptz
-WHERE id = ANY($1::uuid[])
-  AND processed IS FALSE
+WITH selected AS (
+  SELECT *
+  FROM UNNEST($1::uuid[], $2::timestamptz[]) AS row(id, created_at)
+), updated AS (
+  UPDATE public.notification_queue AS queue
+  SET processed = TRUE,
+      processed_at = $3::timestamptz
+  FROM selected
+  WHERE queue.id = selected.id
+    AND queue.created_at = selected.created_at
+    AND queue.processed IS FALSE
+  RETURNING queue.id
+)
+SELECT COUNT(*)::integer AS "markedCount"
+FROM updated
 `
+
+interface AdvisoryLockRow {
+  acquired: boolean
+}
+
+interface MarkedCountRow {
+  markedCount: number
+}
 
 function unique(values: string[]): string[] {
   return [...new Set(values)]
@@ -115,6 +138,28 @@ function unique(values: string[]): string[] {
 @Injectable()
 export class NotificationQueueRepository {
   constructor(private readonly db: DbService) {}
+
+  async withExclusiveRun<T>(work: () => Promise<T>): Promise<ExclusiveRunResult<T>> {
+    const client = await this.db.pool.connect()
+    let acquired = false
+    try {
+      const lock = await client.query<AdvisoryLockRow>(
+        "SELECT pg_try_advisory_lock($1::bigint) AS acquired",
+        [NOTIFICATION_QUEUE_LOCK_ID]
+      )
+      acquired = lock.rows[0]?.acquired === true
+      if (!acquired) return { acquired: false }
+      return { acquired: true, value: await work() }
+    } finally {
+      try {
+        if (acquired) {
+          await client.query("SELECT pg_advisory_unlock($1::bigint)", [NOTIFICATION_QUEUE_LOCK_ID])
+        }
+      } finally {
+        client.release()
+      }
+    }
+  }
 
   async listPending(cutoff: string): Promise<NotificationQueueEntry[]> {
     return this.db.query<NotificationQueueEntry>(LIST_PENDING_SQL, [cutoff])
@@ -153,9 +198,17 @@ export class NotificationQueueRepository {
     await this.insertInAppNotifications([row])
   }
 
-  async markProcessed(ids: string[], processedAt: string): Promise<void> {
-    const uniqueIds = unique(ids)
-    if (uniqueIds.length === 0) return
-    await this.db.query(MARK_PROCESSED_SQL, [uniqueIds, processedAt])
+  async markProcessed(
+    entries: Pick<NotificationQueueEntry, "id" | "createdAt">[],
+    processedAt: string
+  ): Promise<number> {
+    const uniqueEntries = [...new Map(entries.map((entry) => [entry.id, entry])).values()]
+    if (uniqueEntries.length === 0) return 0
+    const rows = await this.db.query<MarkedCountRow>(MARK_PROCESSED_SQL, [
+      uniqueEntries.map((entry) => entry.id),
+      uniqueEntries.map((entry) => entry.createdAt),
+      processedAt,
+    ])
+    return rows[0]?.markedCount ?? 0
   }
 }

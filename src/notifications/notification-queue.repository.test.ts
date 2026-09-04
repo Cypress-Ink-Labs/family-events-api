@@ -2,15 +2,25 @@ import { describe, expect, it, vi } from "vitest"
 
 import type { DbService } from "../db/db.service.js"
 import {
+  NOTIFICATION_QUEUE_LOCK_ID,
   NotificationQueueRepository,
   type InAppNotificationRow,
+  type NotificationQueueEntry,
 } from "./notification-queue.repository.js"
 
 function makeRepository() {
   const query = vi.fn<(text: string, params?: unknown[]) => Promise<unknown[]>>(async () => [])
+  const client = {
+    query: vi.fn(async () => ({ rows: [{ acquired: true }] })),
+    release: vi.fn(),
+  }
   return {
     query,
-    repository: new NotificationQueueRepository({ query } as unknown as DbService),
+    client,
+    repository: new NotificationQueueRepository({
+      query,
+      pool: { connect: vi.fn(async () => client) },
+    } as unknown as DbService),
   }
 }
 
@@ -44,8 +54,9 @@ describe("NotificationQueueRepository", () => {
     ])
   })
 
-  it("parameterizes bulk in-app rows and the processed marker", async () => {
+  it("parameterizes bulk in-app rows and matches finalization by id and selected timestamp", async () => {
     const { query, repository } = makeRepository()
+    query.mockResolvedValueOnce([]).mockResolvedValueOnce([{ markedCount: 2 }])
     const rows: InAppNotificationRow[] = [
       {
         userId: "user-1",
@@ -64,7 +75,12 @@ describe("NotificationQueueRepository", () => {
     ]
 
     await repository.insertInAppNotifications(rows)
-    await repository.markProcessed(["queue-1", "queue-1", "queue-2"], "2026-09-05T15:00:00Z")
+    const selected: Pick<NotificationQueueEntry, "id" | "createdAt">[] = [
+      { id: "queue-1", createdAt: "2026-09-05T13:00:00Z" },
+      { id: "queue-1", createdAt: "2026-09-05T13:00:00Z" },
+      { id: "queue-2", createdAt: "2026-09-05T13:30:00Z" },
+    ]
+    await expect(repository.markProcessed(selected, "2026-09-05T15:00:00Z")).resolves.toBe(2)
 
     const [insertSql, insertParams] = query.mock.calls[0]!
     expect(insertSql).toContain("UNNEST")
@@ -77,7 +93,43 @@ describe("NotificationQueueRepository", () => {
       ["event-1", "event-1"],
     ])
     const [markSql, markParams] = query.mock.calls[1]!
-    expect(markSql).toContain("processed_at = $2::timestamptz")
-    expect(markParams).toEqual([["queue-1", "queue-2"], "2026-09-05T15:00:00Z"])
+    expect(markSql).toContain("UNNEST($1::uuid[], $2::timestamptz[])")
+    expect(markSql).toContain("queue.created_at = selected.created_at")
+    expect(markParams).toEqual([
+      ["queue-1", "queue-2"],
+      ["2026-09-05T13:00:00Z", "2026-09-05T13:30:00Z"],
+      "2026-09-05T15:00:00Z",
+    ])
+  })
+
+  it("holds and releases one session advisory lock around the run", async () => {
+    const { client, repository } = makeRepository()
+    const work = vi.fn(async () => "complete")
+
+    await expect(repository.withExclusiveRun(work)).resolves.toEqual({
+      acquired: true,
+      value: "complete",
+    })
+
+    expect(client.query).toHaveBeenNthCalledWith(
+      1,
+      "SELECT pg_try_advisory_lock($1::bigint) AS acquired",
+      [NOTIFICATION_QUEUE_LOCK_ID]
+    )
+    expect(client.query).toHaveBeenNthCalledWith(2, "SELECT pg_advisory_unlock($1::bigint)", [
+      NOTIFICATION_QUEUE_LOCK_ID,
+    ])
+    expect(client.release).toHaveBeenCalledTimes(1)
+  })
+
+  it("does no work when another session owns the advisory lock", async () => {
+    const { client, repository } = makeRepository()
+    client.query.mockResolvedValueOnce({ rows: [{ acquired: false }] })
+    const work = vi.fn(async () => "complete")
+
+    await expect(repository.withExclusiveRun(work)).resolves.toEqual({ acquired: false })
+    expect(work).not.toHaveBeenCalled()
+    expect(client.query).toHaveBeenCalledTimes(1)
+    expect(client.release).toHaveBeenCalledTimes(1)
   })
 })

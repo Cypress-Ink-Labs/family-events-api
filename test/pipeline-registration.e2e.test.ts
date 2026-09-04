@@ -14,6 +14,7 @@ interface RegisteredQueue {
 
 class FakeJobs {
   registered: RegisteredQueue[] = []
+  scheduleRemovals: Array<{ queue: string; key: string }> = []
 
   registerQueue(
     name: string,
@@ -27,6 +28,10 @@ class FakeJobs {
       schedules: config.schedules ?? [],
       localConcurrency: config.localConcurrency ?? 1,
     })
+  }
+
+  registerScheduleRemoval(queue: string, key: string): void {
+    this.scheduleRemovals.push({ queue, key })
   }
 
   async send(): Promise<string | null> {
@@ -98,6 +103,9 @@ describe.sequential("pipeline family bootstrap", () => {
     const { app, jobs } = await boot({})
     try {
       expect(jobs.registered).toEqual([])
+      expect(jobs.scheduleRemovals).toEqual([
+        { queue: "notify", key: "process-notification-queue" },
+      ])
     } finally {
       await app.close()
     }
@@ -163,6 +171,7 @@ describe.sequential("pipeline family bootstrap", () => {
           key: "process-notification-queue",
         },
       ])
+      expect(jobs.scheduleRemovals).toEqual([])
     } finally {
       await app.close()
     }

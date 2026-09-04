@@ -1,24 +1,12 @@
-import { base64urlEncode, derToRawSignature } from "./web-push.js"
-
-export interface MobilePushPayload {
-  title: string
-  body: string
-  url?: string
-}
-
-export interface ApnsCredentials {
-  teamId: string
-  keyId: string
-  privateKey: string
-  bundleId: string
-  environment: "sandbox" | "production"
-}
+import { base64urlEncode } from "./web-push.js"
 
 export interface FcmCredentials {
   projectId: string
   clientEmail: string
   privateKey: string
 }
+
+export type FcmPlatform = "ios" | "android"
 
 export function pemToArrayBuffer(pem: string): ArrayBuffer {
   const normalized = pem
@@ -30,39 +18,9 @@ export function pemToArrayBuffer(pem: string): ArrayBuffer {
   for (let index = 0; index < binary.length; index++) bytes[index] = binary.charCodeAt(index)
   return bytes.buffer
 }
-
-export function buildApnsRequest(input: {
-  token: string
-  jwt: string
-  bundleId: string
-  environment: "sandbox" | "production"
-  payload: MobilePushPayload
-}): { url: string; headers: Record<string, string>; body: string } {
-  const origin =
-    input.environment === "production"
-      ? "https://api.push.apple.com"
-      : "https://api.sandbox.push.apple.com"
-  return {
-    url: `${origin}/3/device/${encodeURIComponent(input.token)}`,
-    headers: {
-      authorization: `bearer ${input.jwt}`,
-      "apns-topic": input.bundleId,
-      "apns-push-type": "alert",
-      "apns-priority": "10",
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({
-      aps: {
-        alert: { title: input.payload.title, body: input.payload.body },
-        sound: "default",
-      },
-      ...(input.payload.url ? { url: input.payload.url } : {}),
-    }),
-  }
-}
-
 export function buildFcmMessage(input: {
   token: string
+  platform: FcmPlatform
   title: string
   body: string
   url?: string
@@ -71,7 +29,8 @@ export function buildFcmMessage(input: {
     token: string
     notification: { title: string; body: string }
     data: Record<string, string>
-    android: { priority: "HIGH"; notification: { channel_id: string } }
+    android?: { priority: "HIGH"; notification: { channel_id: string } }
+    apns?: { payload: { aps: { sound: "default" } } }
   }
 } {
   return {
@@ -79,46 +38,32 @@ export function buildFcmMessage(input: {
       token: input.token,
       notification: { title: input.title, body: input.body },
       data: input.url ? { url: input.url } : {},
-      android: {
-        priority: "HIGH",
-        notification: { channel_id: "family_events" },
-      },
+      ...(input.platform === "android"
+        ? {
+            android: {
+              priority: "HIGH" as const,
+              notification: { channel_id: "family_events" },
+            },
+          }
+        : { apns: { payload: { aps: { sound: "default" as const } } } }),
     },
+  }
+}
+
+export async function isFcmUnregisteredResponse(response: Response): Promise<boolean> {
+  if (response.status !== 400 && response.status !== 404) return false
+  try {
+    const body = (await response.json()) as {
+      error?: { details?: Array<{ errorCode?: unknown }> }
+    }
+    return body.error?.details?.some((detail) => detail.errorCode === "UNREGISTERED") ?? false
+  } catch {
+    return false
   }
 }
 
 export function buildFcmEndpoint(projectId: string): string {
   return `https://fcm.googleapis.com/v1/projects/${encodeURIComponent(projectId)}/messages:send`
-}
-
-export async function signApnsJwt(
-  credentials: ApnsCredentials,
-  now: () => number = Date.now
-): Promise<string> {
-  const header = base64urlEncode(
-    new TextEncoder().encode(JSON.stringify({ alg: "ES256", kid: credentials.keyId }))
-  )
-  const payload = base64urlEncode(
-    new TextEncoder().encode(
-      JSON.stringify({ iss: credentials.teamId, iat: Math.floor(now() / 1_000) })
-    )
-  )
-  const signingInput = `${header}.${payload}`
-  const key = await crypto.subtle.importKey(
-    "pkcs8",
-    pemToArrayBuffer(credentials.privateKey),
-    { name: "ECDSA", namedCurve: "P-256" },
-    false,
-    ["sign"]
-  )
-  const signature = new Uint8Array(
-    await crypto.subtle.sign(
-      { name: "ECDSA", hash: "SHA-256" },
-      key,
-      new TextEncoder().encode(signingInput)
-    )
-  )
-  return `${signingInput}.${base64urlEncode(derToRawSignature(signature))}`
 }
 
 export function parseFcmServiceAccount(raw: string): FcmCredentials | undefined {

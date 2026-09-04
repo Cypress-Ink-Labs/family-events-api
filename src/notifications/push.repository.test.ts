@@ -50,7 +50,7 @@ describe("PushRepository", () => {
   it("loads only the named non-empty vault credentials with a parameterized query", async () => {
     const query = vi.fn<(text: string, params?: unknown[]) => Promise<unknown[]>>(async () => [
       { name: "vapid_public_key", decryptedSecret: "vault-public" },
-      { name: "apns_team_id", decryptedSecret: "" },
+      { name: "fcm_service_account_json", decryptedSecret: "" },
       { name: "unrelated_secret", decryptedSecret: "ignore-me" },
     ])
     const repository = new PushRepository({ query } as unknown as DbService)

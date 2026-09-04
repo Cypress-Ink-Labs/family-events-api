@@ -1,45 +1,18 @@
 import { describe, expect, it } from "vitest"
 
 import {
-  buildApnsRequest,
   buildFcmEndpoint,
   buildFcmMessage,
+  isFcmUnregisteredResponse,
   parseFcmServiceAccount,
 } from "./mobile-push.js"
 
 describe("mobile push helpers", () => {
-  it("builds the legacy APNs alert payload against the selected fixed origin", () => {
-    const request = buildApnsRequest({
-      token: "device/token",
-      jwt: "signed-jwt",
-      bundleId: "com.example.family",
-      environment: "sandbox",
-      payload: { title: "Tonight", body: "Storytime at 6", url: "/events/1" },
-    })
-
-    expect(request).toEqual({
-      url: "https://api.sandbox.push.apple.com/3/device/device%2Ftoken",
-      headers: {
-        authorization: "bearer signed-jwt",
-        "apns-topic": "com.example.family",
-        "apns-push-type": "alert",
-        "apns-priority": "10",
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
-        aps: {
-          alert: { title: "Tonight", body: "Storytime at 6" },
-          sound: "default",
-        },
-        url: "/events/1",
-      }),
-    })
-  })
-
-  it("builds the legacy FCM notification, data, and Android channel payload", () => {
+  it("adds Android options only for Android FCM tokens", () => {
     expect(
       buildFcmMessage({
         token: "device-token",
+        platform: "android",
         title: "Tomorrow",
         body: "Museum opens at 9",
         url: "/events/2",
@@ -55,9 +28,46 @@ describe("mobile push helpers", () => {
         },
       },
     })
+  })
+
+  it("adds APNs payload options only for iOS FCM tokens", () => {
+    expect(
+      buildFcmMessage({
+        token: "ios-token",
+        platform: "ios",
+        title: "Tomorrow",
+        body: "Museum opens at 9",
+        url: "/events/2",
+      })
+    ).toEqual({
+      message: {
+        token: "ios-token",
+        notification: { title: "Tomorrow", body: "Museum opens at 9" },
+        data: { url: "/events/2" },
+        apns: { payload: { aps: { sound: "default" } } },
+      },
+    })
+
     const endpoint = new URL(buildFcmEndpoint("family/events?redirect=https://example.com"))
     expect(endpoint.origin).toBe("https://fcm.googleapis.com")
     expect(endpoint.pathname).toContain("family%2Fevents%3Fredirect%3Dhttps%3A%2F%2Fexample.com")
+  })
+
+  it("recognizes only explicit FCM UNREGISTERED provider details", async () => {
+    await expect(
+      isFcmUnregisteredResponse(
+        new Response(JSON.stringify({ error: { details: [{ errorCode: "UNREGISTERED" }] } }), {
+          status: 404,
+        })
+      )
+    ).resolves.toBe(true)
+    await expect(
+      isFcmUnregisteredResponse(
+        new Response(JSON.stringify({ error: { details: [{ errorCode: "INVALID_ARGUMENT" }] } }), {
+          status: 400,
+        })
+      )
+    ).resolves.toBe(false)
   })
 
   it("parses complete FCM service account credentials and rejects incomplete shapes", () => {
