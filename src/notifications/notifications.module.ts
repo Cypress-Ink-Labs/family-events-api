@@ -6,6 +6,8 @@ import { DigestQueueService } from "./digest-queue.service.js"
 import { DigestRepository } from "./digest.repository.js"
 import { DigestService } from "./digest.service.js"
 import { MailService } from "./mail.service.js"
+import { PushRepository } from "./push.repository.js"
+import { PushService } from "./push.service.js"
 import { ReminderQueueService } from "./reminder-queue.service.js"
 import { ReminderRepository } from "./reminder.repository.js"
 import { ReminderService } from "./reminder.service.js"
@@ -17,10 +19,12 @@ import { ReminderService } from "./reminder.service.js"
     DigestRepository,
     DigestService,
     MailService,
+    PushRepository,
+    PushService,
     ReminderQueueService,
     ReminderRepository,
     ReminderService,
   ],
-  exports: [MailService],
+  exports: [MailService, PushService],
 })
 export class NotificationsModule {}

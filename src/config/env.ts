@@ -1,6 +1,14 @@
 import { z } from "zod"
 
 const cutoverFlag = z.string().optional()
+const optionalNonEmptyString = z.preprocess(
+  (value) => (value === "" ? undefined : value),
+  z.string().min(1).optional()
+)
+const optionalApnsEnvironment = z.preprocess(
+  (value) => (value === "" ? undefined : value),
+  z.enum(["sandbox", "production"]).optional()
+)
 
 export const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
@@ -30,6 +38,18 @@ export const envSchema = z.object({
   RESEND_FROM: z.string().optional(),
   /** Public app URL used in notification links; notification services apply the legacy default. */
   APP_URL: z.string().optional(),
+  /** Web Push VAPID credentials. PushService applies the legacy subject default when unset. */
+  VAPID_PRIVATE_KEY: optionalNonEmptyString,
+  VAPID_PUBLIC_KEY: optionalNonEmptyString,
+  VAPID_SUBJECT: optionalNonEmptyString,
+  /** APNs token credentials. PushService applies legacy bundle and environment defaults. */
+  APNS_TEAM_ID: optionalNonEmptyString,
+  APNS_KEY_ID: optionalNonEmptyString,
+  APNS_PRIVATE_KEY: optionalNonEmptyString,
+  APNS_BUNDLE_ID: optionalNonEmptyString,
+  APNS_ENVIRONMENT: optionalApnsEnvironment,
+  /** JSON-encoded Google service account used for FCM HTTP v1. */
+  FCM_SERVICE_ACCOUNT_JSON: optionalNonEmptyString,
   /** Public origin of the web app; enables CORS for its browser calls. Unset = no CORS headers. */
   WEB_ORIGIN: z
     .url()
