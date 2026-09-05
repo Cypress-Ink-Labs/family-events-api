@@ -1,7 +1,7 @@
 # NestJS backend rewrite plan (reconstructed) — units U20–U33
 
-**Status:** U20–U29 done. U30 email delivery is merged; its event-change
-notification queue, in-app delivery, Web Push, and FCM path are in review.
+**Status:** U20–U29 done. U30 email delivery and its event-change
+notification queue, in-app delivery, Web Push, and FCM path are merged.
 Reminder push/in-app delivery and Telegram digest remain, followed by U31–U33.
 Railway configuration is merged and empty `api` / `app` shadow services exist,
 but neither service is deployed because production database and Clerk variables
@@ -208,7 +208,7 @@ history contain no scheduler, while tag-event already embeds routine writes inli
 Boot tests pin both flag directions so safe production defaults install no ownership
 before U33.
 
-### U30 — Notifications port 🟡 (event-change family in review)
+### U30 — Notifications port 🟡 (event-change family landed in #30)
 
 Daily reminders and the weekly digest are implemented as strictly serial, no-retry
 pg-boss families behind `CUTOVER_REMINDERS` / `CUTOVER_DIGEST` plus the atomic
