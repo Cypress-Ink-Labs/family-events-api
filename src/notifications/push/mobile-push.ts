@@ -6,6 +6,14 @@ export interface FcmCredentials {
   privateKey: string
 }
 
+interface CachedFcmToken {
+  token: string
+  reuseUntilMs: number
+}
+
+const fcmTokenCache = new Map<string, CachedFcmToken>()
+const FCM_TOKEN_REFRESH_SKEW_MS = 5 * 60 * 1_000
+
 export type FcmPlatform = "ios" | "android"
 
 export function pemToArrayBuffer(pem: string): ArrayBuffer {
@@ -91,7 +99,10 @@ export async function getFcmAccessToken(
   credentials: FcmCredentials,
   options: { fetch?: typeof fetch; now?: () => number } = {}
 ): Promise<string> {
-  const now = Math.floor((options.now ?? Date.now)() / 1_000)
+  const nowMs = (options.now ?? Date.now)()
+  const cached = fcmTokenCache.get(credentials.clientEmail)
+  if (cached && nowMs < cached.reuseUntilMs) return cached.token
+  const now = Math.floor(nowMs / 1_000)
   const header = base64urlEncode(
     new TextEncoder().encode(JSON.stringify({ alg: "RS256", typ: "JWT" }))
   )
@@ -128,9 +139,19 @@ export async function getFcmAccessToken(
     signal: AbortSignal.timeout(10_000),
   })
   if (!response.ok) throw new Error(`FCM OAuth token request failed: ${response.status}`)
-  const body = (await response.json()) as { access_token?: unknown }
+  const body = (await response.json()) as { access_token?: unknown; expires_in?: unknown }
   if (typeof body.access_token !== "string") {
     throw new Error("FCM OAuth token response missing access_token")
   }
+  const expiresInSeconds =
+    typeof body.expires_in === "number" && body.expires_in > 0 ? body.expires_in : 3_600
+  fcmTokenCache.set(credentials.clientEmail, {
+    token: body.access_token,
+    reuseUntilMs: nowMs + expiresInSeconds * 1_000 - FCM_TOKEN_REFRESH_SKEW_MS,
+  })
   return body.access_token
+}
+
+export function clearFcmTokenCacheForTest(): void {
+  fcmTokenCache.clear()
 }

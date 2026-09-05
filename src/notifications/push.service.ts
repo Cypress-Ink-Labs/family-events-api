@@ -7,6 +7,7 @@ import {
   SsrfRejectedError,
   type PublicIpResolver,
 } from "../pipeline/ingestion/guarded-fetch.js"
+import { resolveAndCheckPublicIp } from "../pipeline/ingestion/url-resolve.js"
 import {
   PushRepository,
   type PushSubscriptionRow,
@@ -29,6 +30,7 @@ import {
 } from "./push/web-push.js"
 
 const PUSH_TIMEOUT_MS = 10_000
+const PUSH_CONCURRENCY = 10
 const DEFAULT_VAPID_SUBJECT = "mailto:push@cypress-ink-labs.org"
 
 export interface SendPushInput {
@@ -63,6 +65,22 @@ interface ResolvedCredentials {
 
 function unique(values: string[]): string[] {
   return [...new Set(values)]
+}
+
+async function forEachConcurrent<T>(
+  items: T[],
+  concurrency: number,
+  work: (item: T) => Promise<void>
+): Promise<void> {
+  let nextIndex = 0
+  await Promise.all(
+    Array.from({ length: Math.min(items.length, concurrency) }, async () => {
+      while (nextIndex < items.length) {
+        const item = items[nextIndex++]
+        if (item !== undefined) await work(item)
+      }
+    })
+  )
 }
 
 function partition(rows: PushSubscriptionRow[]): {
@@ -119,7 +137,7 @@ export class PushService {
     }
 
     if (expiredIds.length > 0) {
-      const uniqueExpiredIds = unique(expiredIds)
+      const uniqueExpiredIds = unique(expiredIds).toSorted()
       try {
         await this.repository.deleteExpiredSubscriptions(uniqueExpiredIds)
         result.pruned = uniqueExpiredIds.length
@@ -180,16 +198,16 @@ export class PushService {
       body: input.body,
       ...(input.url ? { url: input.url } : {}),
     })
-    for (const subscription of subscriptions) {
+    await forEachConcurrent(subscriptions, PUSH_CONCURRENCY, async (subscription) => {
       if (!subscription.endpoint || !subscription.p256dh || !subscription.authKey) {
         result.failed++
         this.logger.warn("web push failed: category=invalid_subscription")
-        continue
+        return
       }
       if (!isTrustedWebPushEndpoint(subscription.endpoint)) {
         result.failed++
         this.logger.warn("web push failed: category=untrusted_endpoint")
-        continue
+        return
       }
       try {
         const authorization = await buildVapidAuth(
@@ -198,6 +216,12 @@ export class PushService {
           this.dependencies.now
         )
         const encrypted = await encryptPayload(payload, subscription.p256dh, subscription.authKey)
+        const resolver: PublicIpResolver = async (url) => {
+          if (!isTrustedWebPushEndpoint(url)) {
+            return { ok: false, reason: "untrusted or non-HTTPS push provider" }
+          }
+          return (this.dependencies.resolve ?? resolveAndCheckPublicIp)(url)
+        }
         const response = await (this.dependencies.guardedFetch ?? guardedFetch)(
           subscription.endpoint,
           {
@@ -212,7 +236,7 @@ export class PushService {
             body: webPushBody(encrypted),
             signal: AbortSignal.timeout(PUSH_TIMEOUT_MS),
           },
-          { resolve: this.dependencies.resolve }
+          { resolve: resolver }
         )
         this.recordWebResponse(response, subscription.id, result, expiredIds)
       } catch (error) {
@@ -220,7 +244,7 @@ export class PushService {
         const category = error instanceof SsrfRejectedError ? "ssrf_rejected" : "crypto_network"
         this.logger.warn(`web push failed: category=${category}`)
       }
-    }
+    })
   }
 
   private async sendFcm(
@@ -242,11 +266,11 @@ export class PushService {
       this.logger.warn(`fcm push failed: category=access_token count=${subscriptions.length}`)
       return
     }
-    for (const subscription of subscriptions) {
+    await forEachConcurrent(subscriptions, PUSH_CONCURRENCY, async (subscription) => {
       if (!subscription.token || subscription.platform === "web") {
         result.failed++
         this.logger.warn("fcm push failed: category=invalid_subscription")
-        continue
+        return
       }
       try {
         const response = await (this.dependencies.fetch ?? fetch)(
@@ -282,7 +306,7 @@ export class PushService {
         result.failed++
         this.logger.warn("fcm push failed: category=network_timeout")
       }
-    }
+    })
   }
 
   private recordWebResponse(

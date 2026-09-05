@@ -166,7 +166,7 @@ describe("PushService", () => {
     expect(guarded).toHaveBeenCalledWith(
       "https://fcm.googleapis.com/wp/web-sub",
       expect.objectContaining({ method: "POST", signal: expect.any(AbortSignal) }),
-      { resolve: undefined }
+      { resolve: expect.any(Function) }
     )
   })
 
@@ -214,6 +214,26 @@ describe("PushService", () => {
     expect(logs).not.toContain("web-secret")
     expect(logs).not.toContain(endpoint)
     expect(logs).not.toContain("token-secret")
+  })
+
+  it("rejects an HTTPS provider redirect that downgrades to HTTP", async () => {
+    const web = await makeWebMaterial()
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(null, {
+          status: 302,
+          headers: { location: "http://fcm.googleapis.com/private" },
+        })
+    )
+    vi.stubGlobal("fetch", fetchMock)
+    const { service } = makeService([web.subscription("redirect")], {}, web.credentials, {
+      resolve: async () => ({ ok: true }),
+    })
+
+    await expect(
+      service.send({ userIds: ["user-1"], title: "T", body: "B" })
+    ).resolves.toMatchObject({ sent: 0, failed: 1 })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
   it("prunes web 404 and 410 responses", async () => {
@@ -277,8 +297,8 @@ describe("PushService", () => {
       service.send({ userIds: ["user-1", "user-2", "user-3", "user-4"], title: "T", body: "B" })
     ).resolves.toMatchObject({ failed: 2, pruned: 2 })
     expect(repo.deleteExpiredSubscriptions).toHaveBeenCalledWith([
-      "ios-unregistered",
       "android-unregistered",
+      "ios-unregistered",
     ])
     const logs = warn.mock.calls.flat().join(" ")
     expect(logs).not.toContain("do not log this body")
@@ -304,5 +324,32 @@ describe("PushService", () => {
       pruned: 0,
       skipped: 0,
     })
+  })
+
+  it("delivers with bounded concurrency when some provider requests stall", async () => {
+    let active = 0
+    let maximumActive = 0
+    const providerFetch = vi.fn<typeof fetch>(async () => {
+      active++
+      maximumActive = Math.max(maximumActive, active)
+      await new Promise((resolve) => setTimeout(resolve, 5))
+      active--
+      return new Response(null, { status: 200 })
+    })
+    const rows = Array.from({ length: 25 }, (_, index) => mobile(`sub-${index}`, `user-${index}`))
+    const { service } = makeService(rows, {}, fcmVault, {
+      fetch: providerFetch,
+      getFcmAccessToken: async () => "access-token",
+    })
+
+    await expect(
+      service.send({
+        userIds: rows.map((row) => row.userId),
+        title: "T",
+        body: "B",
+      })
+    ).resolves.toMatchObject({ sent: 25, failed: 0 })
+    expect(maximumActive).toBeGreaterThan(1)
+    expect(maximumActive).toBeLessThanOrEqual(10)
   })
 })

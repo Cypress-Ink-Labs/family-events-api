@@ -1,12 +1,17 @@
-import { describe, expect, it, vi } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 
 import {
   buildFcmEndpoint,
   buildFcmMessage,
+  clearFcmTokenCacheForTest,
   getFcmAccessToken,
   isFcmUnregisteredResponse,
   parseFcmServiceAccount,
 } from "./mobile-push.js"
+
+afterEach(() => {
+  clearFcmTokenCacheForTest()
+})
 
 describe("mobile push helpers", () => {
   it("adds Android options only for Android FCM tokens", () => {
@@ -106,6 +111,7 @@ describe("mobile push helpers", () => {
       .toString("base64")
       .match(/.{1,64}/g)!
       .join("\n")
+    let tokenNumber = 0
     const fetchMock = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
       const form = init?.body as URLSearchParams
       const assertion = form.get("assertion")!
@@ -131,22 +137,32 @@ describe("mobile push helpers", () => {
           new TextEncoder().encode(`${header}.${payload}`)
         )
       ).resolves.toBe(true)
-      return new Response(JSON.stringify({ access_token: "access-token" }), { status: 200 })
+      tokenNumber++
+      return new Response(
+        JSON.stringify({ access_token: `access-token-${tokenNumber}`, expires_in: 3600 }),
+        { status: 200 }
+      )
     })
+    let now = Date.parse("2026-09-04T12:00:00.000Z")
+    const credentials = {
+      projectId: "family-events",
+      clientEmail: "push@example.iam.gserviceaccount.com",
+      privateKey: `-----BEGIN PRIVATE KEY-----\n${encoded}\n-----END PRIVATE KEY-----`,
+    }
 
     await expect(
-      getFcmAccessToken(
-        {
-          projectId: "family-events",
-          clientEmail: "push@example.iam.gserviceaccount.com",
-          privateKey: `-----BEGIN PRIVATE KEY-----\n${encoded}\n-----END PRIVATE KEY-----`,
-        },
-        {
-          fetch: fetchMock as typeof fetch,
-          now: () => Date.parse("2026-09-04T12:00:00.000Z"),
-        }
-      )
-    ).resolves.toBe("access-token")
+      getFcmAccessToken(credentials, { fetch: fetchMock as typeof fetch, now: () => now })
+    ).resolves.toBe("access-token-1")
+    now += 54 * 60 * 1_000
+    await expect(
+      getFcmAccessToken(credentials, { fetch: fetchMock as typeof fetch, now: () => now })
+    ).resolves.toBe("access-token-1")
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    now += 2 * 60 * 1_000
+    await expect(
+      getFcmAccessToken(credentials, { fetch: fetchMock as typeof fetch, now: () => now })
+    ).resolves.toBe("access-token-2")
+    expect(fetchMock).toHaveBeenCalledTimes(2)
     expect(fetchMock).toHaveBeenCalledWith(
       "https://oauth2.googleapis.com/token",
       expect.objectContaining({ method: "POST" })

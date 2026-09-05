@@ -38,6 +38,12 @@ describe("isTrustedWebPushEndpoint", () => {
 })
 
 describe("Web Push cryptography", () => {
+  it("rejects payloads whose ciphertext would exceed the 4096-byte record size", async () => {
+    await expect(encryptPayload("x".repeat(4_080), "unused", "unused")).rejects.toThrow(
+      /4096-byte record size/
+    )
+  })
+
   it("creates a verifiable VAPID JWT with the expected audience and lifetime", async () => {
     const keys = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, [
       "sign",

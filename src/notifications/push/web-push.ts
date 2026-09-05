@@ -110,6 +110,12 @@ export async function encryptPayload(
   authSecret: string
 ): Promise<Uint8Array> {
   const encoder = new TextEncoder()
+  const payloadBytes = encoder.encode(payload)
+  // RFC 8188 record size counts ciphertext, including the one-byte final
+  // delimiter and the 16-byte AES-GCM authentication tag.
+  if (payloadBytes.byteLength + 1 + 16 > 4_096) {
+    throw new RangeError("Web Push payload exceeds the 4096-byte record size")
+  }
   const localKeyPair = await crypto.subtle.generateKey(
     { name: "ECDH", namedCurve: "P-256" },
     true,
@@ -177,7 +183,7 @@ export async function encryptPayload(
     await crypto.subtle.encrypt(
       { name: "AES-GCM", iv: nonce, tagLength: 128 },
       aesKey,
-      new Uint8Array([...encoder.encode(payload), 2])
+      new Uint8Array([...payloadBytes, 2])
     )
   )
   const recordSize = new Uint8Array(4)
