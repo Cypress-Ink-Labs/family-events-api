@@ -1,8 +1,9 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 
 import {
   buildFcmEndpoint,
   buildFcmMessage,
+  getFcmAccessToken,
   isFcmUnregisteredResponse,
   parseFcmServiceAccount,
 } from "./mobile-push.js"
@@ -87,5 +88,68 @@ describe("mobile push helpers", () => {
     expect(parseFcmServiceAccount(" ")).toBeUndefined()
     expect(parseFcmServiceAccount('{"project_id":"only"}')).toBeUndefined()
     expect(() => parseFcmServiceAccount("not-json")).toThrow()
+  })
+
+  it("signs and exchanges a verifiable RS256 OAuth assertion", async () => {
+    const keys = await crypto.subtle.generateKey(
+      {
+        name: "RSASSA-PKCS1-v1_5",
+        modulusLength: 2048,
+        publicExponent: new Uint8Array([1, 0, 1]),
+        hash: "SHA-256",
+      },
+      true,
+      ["sign", "verify"]
+    )
+    const privatePkcs8 = await crypto.subtle.exportKey("pkcs8", keys.privateKey)
+    const encoded = Buffer.from(privatePkcs8)
+      .toString("base64")
+      .match(/.{1,64}/g)!
+      .join("\n")
+    const fetchMock = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      const form = init?.body as URLSearchParams
+      const assertion = form.get("assertion")!
+      const [header, payload, signature] = assertion.split(".")
+      const claims = JSON.parse(Buffer.from(payload!, "base64url").toString()) as {
+        iss: string
+        aud: string
+        scope: string
+        iat: number
+        exp: number
+      }
+      expect(claims).toMatchObject({
+        iss: "push@example.iam.gserviceaccount.com",
+        aud: "https://oauth2.googleapis.com/token",
+        scope: "https://www.googleapis.com/auth/firebase.messaging",
+      })
+      expect(claims.exp - claims.iat).toBe(3600)
+      await expect(
+        crypto.subtle.verify(
+          "RSASSA-PKCS1-v1_5",
+          keys.publicKey,
+          Buffer.from(signature!, "base64url"),
+          new TextEncoder().encode(`${header}.${payload}`)
+        )
+      ).resolves.toBe(true)
+      return new Response(JSON.stringify({ access_token: "access-token" }), { status: 200 })
+    })
+
+    await expect(
+      getFcmAccessToken(
+        {
+          projectId: "family-events",
+          clientEmail: "push@example.iam.gserviceaccount.com",
+          privateKey: `-----BEGIN PRIVATE KEY-----\n${encoded}\n-----END PRIVATE KEY-----`,
+        },
+        {
+          fetch: fetchMock as typeof fetch,
+          now: () => Date.parse("2026-09-04T12:00:00.000Z"),
+        }
+      )
+    ).resolves.toBe("access-token")
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://oauth2.googleapis.com/token",
+      expect.objectContaining({ method: "POST" })
+    )
   })
 })
