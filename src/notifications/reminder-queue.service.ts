@@ -2,7 +2,7 @@ import { Injectable, Logger, type OnModuleInit } from "@nestjs/common"
 
 import { JobsService } from "../jobs/jobs.service.js"
 import { CronGateService } from "../pipeline/cron-gate.service.js"
-import { FAMILIES } from "../pipeline/families.js"
+import { FAMILIES, isLegacyReplacementSchedule } from "../pipeline/families.js"
 import { isFamilyEnabled } from "../pipeline/flags.js"
 import { ReminderService } from "./reminder.service.js"
 
@@ -54,7 +54,9 @@ export class ReminderQueueService implements OnModuleInit {
       throw new Error(`unknown reminders task: ${String(data.task)}`)
     }
     const schedule = FAMILIES.reminders.schedules[0]
-    if (!schedule) throw new Error("reminders family schedule missing")
+    if (!schedule || !isLegacyReplacementSchedule(schedule)) {
+      throw new Error("reminders legacy schedule missing")
+    }
     await this.gate.runGated(schedule, async () => {
       const summary = await this.reminders.processRun(new Date())
       this.logger.log(

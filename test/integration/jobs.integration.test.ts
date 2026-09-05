@@ -24,12 +24,14 @@ describe("JobsService queue reconciliation", () => {
       retryLimit: 0,
       retryDelay: 30,
     })
+    service.registerScheduleRemoval("email", "stale-email-schedule")
 
     let seed: PgBoss | null = new PgBoss({ connectionString, schema })
     const cleanup = new Pool({ connectionString })
     try {
       await seed.start()
       await seed.createQueue("email", { retryLimit: 3, retryDelay: 60 })
+      await seed.schedule("email", "0 * * * *", {}, { key: "stale-email-schedule" })
       await seed.stop({ close: true })
       seed = null
 
@@ -41,6 +43,7 @@ describe("JobsService queue reconciliation", () => {
           retryLimit: 0,
           retryDelay: 30,
         })
+        await expect(inspector.getSchedules("email", "stale-email-schedule")).resolves.toEqual([])
       } finally {
         await inspector.stop({ close: true })
       }

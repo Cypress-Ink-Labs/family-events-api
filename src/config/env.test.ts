@@ -48,6 +48,29 @@ describe("validateEnv", () => {
     })
   })
 
+  it("accepts optional push provider settings without applying defaults", () => {
+    const withoutPush = validateEnv(base)
+    expect(withoutPush.VAPID_PRIVATE_KEY).toBeUndefined()
+    expect(withoutPush.VAPID_PUBLIC_KEY).toBeUndefined()
+    expect(withoutPush.VAPID_SUBJECT).toBeUndefined()
+    expect(withoutPush.FCM_SERVICE_ACCOUNT_JSON).toBeUndefined()
+
+    expect(
+      validateEnv({
+        ...base,
+        VAPID_PRIVATE_KEY: "private",
+        VAPID_PUBLIC_KEY: "public",
+        VAPID_SUBJECT: "mailto:push@example.com",
+        FCM_SERVICE_ACCOUNT_JSON: '{"project_id":"project"}',
+      })
+    ).toMatchObject({
+      VAPID_PRIVATE_KEY: "private",
+      VAPID_PUBLIC_KEY: "public",
+      VAPID_SUBJECT: "mailto:push@example.com",
+      FCM_SERVICE_ACCOUNT_JSON: '{"project_id":"project"}',
+    })
+  })
+
   it("accepts an optional WEB_ORIGIN, normalizes a trailing slash, and rejects a non-URL", () => {
     expect(validateEnv(base).WEB_ORIGIN).toBeUndefined()
     expect(validateEnv({ ...base, WEB_ORIGIN: "https://events.example.com" }).WEB_ORIGIN).toBe(

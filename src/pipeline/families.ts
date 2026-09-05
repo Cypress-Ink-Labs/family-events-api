@@ -1,8 +1,8 @@
 // Queue registry, ported verbatim from family-events-app src/worker/families.ts
 // (U12) — the topology the API inherits when it absorbs the worker. One queue
 // per job family plus one dead-letter queue per family (U13's alerting and
-// KTD10's triage consume the DLQs). Cron schedules replace the Railway cron
-// containers' definitions — the mapping from
+// KTD10's triage consume the DLQs). Seven schedules replace Railway cron
+// containers. Internal schedules use replaces=null. Legacy mapping from
 // family-events-backend/infra/railway-cron-drift/cron-services.json:
 //
 //   cron-scrape-sources   0 * * * *      -> scrape    key=scrape-due-sources
@@ -16,20 +16,37 @@
 //     maintenance stays on the old pipeline until U18, then moves to pg_cron
 //     or a dedicated maintenance schedule (decided at U18, not here).
 //
-// The notify family has no cron: it is fed by other jobs (event-driven).
+// Notify polls the transactional notification_queue every five minutes. This
+// internal schedule has no legacy Railway owner.
 
 export const JOB_FAMILIES = ["scrape", "tag", "review", "digest", "reminders", "notify"] as const
 
 export type JobFamily = (typeof JOB_FAMILIES)[number]
 
-export interface FamilySchedule {
+interface FamilyScheduleBase {
   /** Unique per queue; pg-boss keys multiple schedules on one queue by this. */
   key: string
   cron: string
   /** Payload discriminator: the family's handler dispatches on data.task. */
   task: string
-  /** The Railway cron service this schedule replaces (mapping doc above). */
+}
+
+export interface LegacyReplacementSchedule extends FamilyScheduleBase {
+  /** The Railway cron service this schedule replaces. */
   replaces: string
+}
+
+export interface InternalFamilySchedule extends FamilyScheduleBase {
+  /** Internal schedules have no legacy Railway owner. */
+  replaces: null
+}
+
+export type FamilySchedule = LegacyReplacementSchedule | InternalFamilySchedule
+
+export function isLegacyReplacementSchedule(
+  schedule: FamilySchedule
+): schedule is LegacyReplacementSchedule {
+  return schedule.replaces !== null
 }
 
 export interface FamilyConfig {
@@ -141,8 +158,16 @@ export const FAMILIES: Record<JobFamily, FamilyConfig> = {
   notify: {
     queue: queueName("notify"),
     deadLetter: deadLetterName("notify"),
-    concurrency: 4,
+    concurrency: 1,
     ...RETRY_DEFAULTS,
-    schedules: [],
+    retryLimit: 0,
+    schedules: [
+      {
+        key: "process-notification-queue",
+        cron: "*/5 * * * *",
+        task: "process",
+        replaces: null,
+      },
+    ],
   },
 }

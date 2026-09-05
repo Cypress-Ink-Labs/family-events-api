@@ -23,6 +23,8 @@ the pipeline's `process.env` seams noted below. `.env.example` mirrors both.
 | `AI_PROVIDER` / `AI_BASE_URL` / `AI_MODEL` / `AI_API_KEY` / `OPENAI_API_KEY` | no | LLM extraction fallback, tagging, review, and embeddings (`src/pipeline/llm-config.ts`; `OPENAI_API_KEY` also read directly by tag-event embeddings). Unset leaves LLM paths unconfigured. |
 | `UNSPLASH_ACCESS_KEY` / `PEXELS_API_KEY` / `PIXABAY_API_KEY` | no | Stock-image enrichment (U29); unset providers are skipped in fallback order. Unsplash key is shared by search, download tracking, and attribution backfill. |
 | `SCRAPER_IMAGE_HOST_ALLOWLIST` | no | Comma-separated extra ingest image hosts appended to the built-in CDN allowlist. |
+| `VAPID_PRIVATE_KEY` / `VAPID_PUBLIC_KEY` / `VAPID_SUBJECT` | required for web push | Environment fallback for Web Push credentials. Vault names `vapid_private_key`, `vapid_public_key`, and `vapid_subject` take precedence. |
+| `FCM_SERVICE_ACCOUNT_JSON` | required for mobile push | JSON service account fallback for FCM HTTP v1. Both iOS and Android subscription tokens use FCM. Vault name `fcm_service_account_json` takes precedence. |
 | `NODE_VERSION` | yes | `22` — Railway service variable, not a `.env` entry. |
 
 Note: the `AI_*`, stock-image, and allowlist variables are read through
@@ -72,3 +74,36 @@ Operator checklist before flipping a flag:
    with `digest_email = true`.
 5. Disable the matching legacy cron through the U33 atomic handoff, then watch
    the first scheduled run summary. Repeat independently for reminders.
+
+## Event-change notification queue
+
+`CUTOVER_NOTIFY` installs an internal five-minute pg-boss schedule. It does not
+replace a Railway cron and does not use `CronGateService`. The existing
+`public.notification_queue` table remains the durable one-hour debounce buffer.
+When the flag is off, bootstrap removes the durable `process-notification-queue`
+schedule if a prior deployment installed it. The runtime handler also rejects
+work while the flag is off.
+
+Checklist before setting `CUTOVER_NOTIFY="true"`:
+
+1. Confirm the existing notification queue, preference, in-app notification,
+   and push subscription tables are deployed. No new API migration is required.
+2. Create the Resend hosted template `family-events-event-change`, then set
+   `RESEND_API_KEY`, a verified `RESEND_FROM`, and `APP_URL`.
+3. Confirm every `ios` and `android` row in `public.push_subscriptions` contains
+   a current FCM registration token. Direct APNs tokens are not supported.
+4. Confirm stored Web Push endpoints use HTTPS and one of the trusted provider
+   hosts: `fcm.googleapis.com`, `updates.push.services.mozilla.com`,
+   `web.push.apple.com`, or a subdomain of `notify.windows.com`.
+5. Add Web Push and FCM credentials to `vault.decrypted_secrets`, or set the
+   environment fallback variables listed above. Missing provider credentials
+   soft-skip only that provider.
+6. Set `CUTOVER_NOTIFY="true"` and redeploy. Confirm `notify`, `notify.dlq`, and
+   one `process-notification-queue` schedule exist with concurrency 1 and no retries.
+7. Do not create or disable a `private.cron_enabled` label for notify. Monitor the
+   first run counts, lock skips, refreshed rows, unmatched push recipients, and
+   any `persistenceFailed` result.
+
+Direct APNs delivery remains deferred until the schema has a provider
+discriminator and existing tokens have been migrated. Reminder push and in-app
+delivery, plus Telegram digest delivery, also remain deferred.

@@ -1,11 +1,11 @@
 # NestJS backend rewrite plan (reconstructed) — units U20–U33
 
-**Status:** U20–U29 done (U24 read-API tail closed by #25; U29 pg-boss
-registration closed by #26; U21 contract emitted, drift-checked, and consumed by
-the app's generated client); U30 has only the pure weekend-window logic; U30–U33
-remain. The 2026-08-31 migration-review plans (`docs/superpowers/plans/`) carry
-the next slices: consumer correctness landed as #27, deployment (005) and the
-U30 email slice (006) are ready.
+**Status:** U20–U29 done. U30 email delivery is merged; its event-change
+notification queue, in-app delivery, Web Push, and FCM path are in review.
+Reminder push/in-app delivery and Telegram digest remain, followed by U31–U33.
+Railway configuration is merged and empty `api` / `app` shadow services exist,
+but neither service is deployed because production database and Clerk variables
+have not been supplied.
 **Supersedes:** old U13–U18 of `2026-08-14-001` (production-readiness plan), per the mid-session
 redirect: *everything server-side moves to NestJS*.
 
@@ -208,15 +208,18 @@ history contain no scheduler, while tag-event already embeds routine writes inli
 Boot tests pin both flag directions so safe production defaults install no ownership
 before U33.
 
-### U30 — Notifications port 🟡 (email slice landed in #29)
+### U30 — Notifications port 🟡 (event-change family in review)
 
 Daily reminders and the weekly digest are implemented as strictly serial, no-retry
 pg-boss families behind `CUTOVER_REMINDERS` / `CUTOVER_DIGEST` plus the atomic
 legacy-cron handoff. The slice includes recipient keyset pagination, Chicago day/weekend
 windows, soft-fail Resend delivery, the hosted reminder template, and raw branded digest
-HTML. Remaining: `notification_queue` processing with fail-before-side-effects hydration
-semantics (032), web push (VAPID) + APNs + FCM, Telegram digest +
-`digest_telegram` prefs.
+HTML. The event-change slice keeps `notification_queue` as its transactional
+one-hour debounce buffer and adds a serial internal poller, fail-before-side-effects
+hydration (032), in-app notifications, trusted-provider Web Push, and FCM for the
+deployed iOS/Android token contract. Direct APNs is deferred until subscriptions
+carry an explicit provider discriminator. Remaining: reminder push/in-app delivery
+and Telegram digest + `digest_telegram` preferences.
 
 ### U31 — Admin API port
 The ~30 `admin_*` RPCs as operator-guarded endpoints: review queue (cursor

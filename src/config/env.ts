@@ -1,7 +1,10 @@
 import { z } from "zod"
 
 const cutoverFlag = z.string().optional()
-
+const optionalNonEmptyString = z.preprocess(
+  (value) => (value === "" ? undefined : value),
+  z.string().min(1).optional()
+)
 export const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   PORT: z.coerce.number().int().positive().default(3001),
@@ -30,6 +33,12 @@ export const envSchema = z.object({
   RESEND_FROM: z.string().optional(),
   /** Public app URL used in notification links; notification services apply the legacy default. */
   APP_URL: z.string().optional(),
+  /** Web Push VAPID credentials. PushService applies the legacy subject default when unset. */
+  VAPID_PRIVATE_KEY: optionalNonEmptyString,
+  VAPID_PUBLIC_KEY: optionalNonEmptyString,
+  VAPID_SUBJECT: optionalNonEmptyString,
+  /** JSON-encoded Google service account used for iOS and Android FCM tokens. */
+  FCM_SERVICE_ACCOUNT_JSON: optionalNonEmptyString,
   /** Public origin of the web app; enables CORS for its browser calls. Unset = no CORS headers. */
   WEB_ORIGIN: z
     .url()

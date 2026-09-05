@@ -3,13 +3,17 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest"
 import type { DbService } from "../../src/db/db.service.js"
 import { createIntegrationDb } from "./db.js"
 import { CronGateService, nestGateLabel } from "../../src/pipeline/cron-gate.service.js"
-import { FAMILIES } from "../../src/pipeline/families.js"
+import { FAMILIES, isLegacyReplacementSchedule } from "../../src/pipeline/families.js"
 
 /**
  * Runs against a real Postgres (DATABASE_URL). Creates the same private-schema
  * objects the legacy migrations define, scoped to this test database.
  */
-const SCHEDULE = FAMILIES.scrape.schedules[0]!
+const scheduleCandidate = FAMILIES.scrape.schedules[0]
+if (!scheduleCandidate || !isLegacyReplacementSchedule(scheduleCandidate)) {
+  throw new Error("scrape legacy schedule fixture missing")
+}
+const SCHEDULE = scheduleCandidate
 
 describe("CronGateService (integration)", () => {
   let db: DbService

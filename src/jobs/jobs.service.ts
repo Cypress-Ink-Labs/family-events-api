@@ -28,15 +28,21 @@ interface QueueRegistration {
   localConcurrency: number
 }
 
+interface ScheduleRemovalRegistration {
+  queue: string
+  key: string
+}
+
 /**
  * pg-boss lifecycle owner. Domain modules register queues before application
  * bootstrap; this service starts pg-boss once, creates the queues, attaches
- * workers, and installs cron schedules (replacing the Railway cron runner).
+ * workers, and installs both legacy-replacement and internal schedules.
  */
 @Injectable()
 export class JobsService implements OnApplicationBootstrap, OnApplicationShutdown {
   private readonly logger = new Logger(JobsService.name)
   private readonly registrations: QueueRegistration[] = []
+  private readonly scheduleRemovals: ScheduleRemovalRegistration[] = []
   private boss: PgBoss | null = null
 
   constructor(private readonly config: ConfigService<Env, true>) {}
@@ -59,6 +65,13 @@ export class JobsService implements OnApplicationBootstrap, OnApplicationShutdow
     })
   }
 
+  registerScheduleRemoval(queue: string, key: string): void {
+    if (this.boss !== null) {
+      throw new Error(`schedule removal for "${queue}" registered after pg-boss start`)
+    }
+    this.scheduleRemovals.push({ queue, key })
+  }
+
   async send(name: string, data: object, options?: SendOptions): Promise<string | null> {
     return this.requireBoss().send(name, data, options ?? {})
   }
@@ -73,40 +86,49 @@ export class JobsService implements OnApplicationBootstrap, OnApplicationShutdow
     })
     boss.on("error", (error) => this.logger.error(`pg-boss error: ${error.message}`))
     await boss.start()
-    for (const registration of this.registrations) {
-      await boss.createQueue(registration.name, registration.options)
-      // createQueue is intentionally a no-op for an existing queue. Reconcile
-      // mutable options as well so a queue previously created by the old
-      // worker or an operator cannot retain stale retry/delivery semantics.
-      const {
-        name: _name,
-        policy: _policy,
-        partition: _partition,
-        ...mutableOptions
-      } = registration.options
-      if (Object.keys(mutableOptions).length > 0) {
-        await boss.updateQueue(registration.name, mutableOptions)
-      }
-      const { handler } = registration
-      if (handler !== null) {
-        await boss.work(
-          registration.name,
-          { batchSize: 1, localConcurrency: registration.localConcurrency },
-          async ([job]) => {
-            if (job) await handler(job.data as never, job.id)
-          }
-        )
-      }
-      for (const schedule of registration.schedules) {
-        await boss.schedule(
-          registration.name,
-          schedule.cron,
-          schedule.data ?? {},
-          schedule.key === undefined ? {} : { key: schedule.key }
-        )
-      }
-    }
     this.boss = boss
+    try {
+      for (const removal of this.scheduleRemovals) {
+        await boss.unschedule(removal.queue, removal.key)
+      }
+      for (const registration of this.registrations) {
+        await boss.createQueue(registration.name, registration.options)
+        // createQueue is intentionally a no-op for an existing queue. Reconcile
+        // mutable options as well so a queue previously created by the old
+        // worker or an operator cannot retain stale retry/delivery semantics.
+        const {
+          name: _name,
+          policy: _policy,
+          partition: _partition,
+          ...mutableOptions
+        } = registration.options
+        if (Object.keys(mutableOptions).length > 0) {
+          await boss.updateQueue(registration.name, mutableOptions)
+        }
+        const { handler } = registration
+        if (handler !== null) {
+          await boss.work(
+            registration.name,
+            { batchSize: 1, localConcurrency: registration.localConcurrency },
+            async ([job]) => {
+              if (job) await handler(job.data as never, job.id)
+            }
+          )
+        }
+        for (const schedule of registration.schedules) {
+          await boss.schedule(
+            registration.name,
+            schedule.cron,
+            schedule.data ?? {},
+            schedule.key === undefined ? {} : { key: schedule.key }
+          )
+        }
+      }
+    } catch (error) {
+      this.boss = null
+      await boss.stop({ close: true }).catch(() => undefined)
+      throw error
+    }
     this.logger.log(`pg-boss started with ${this.registrations.length} queue(s)`)
   }
 

@@ -3,9 +3,13 @@ import { describe, expect, it, vi } from "vitest"
 import type { DbService } from "../db/db.service.js"
 import { CronGateService, nestGateLabel, type CronGateState } from "./cron-gate.service.js"
 import type { FailurePingService } from "./failure-ping.service.js"
-import { FAMILIES } from "./families.js"
+import { FAMILIES, isLegacyReplacementSchedule } from "./families.js"
 
-const SCHEDULE = FAMILIES.scrape.schedules[0]!
+const scheduleCandidate = FAMILIES.scrape.schedules[0]
+if (!scheduleCandidate || !isLegacyReplacementSchedule(scheduleCandidate)) {
+  throw new Error("scrape legacy schedule fixture missing")
+}
+const SCHEDULE = scheduleCandidate
 
 function makeService(
   queryResults: CronGateState[],
