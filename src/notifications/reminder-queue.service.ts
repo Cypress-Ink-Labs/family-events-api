@@ -5,6 +5,7 @@ import { CronGateService } from "../pipeline/cron-gate.service.js"
 import { FAMILIES, isLegacyReplacementSchedule } from "../pipeline/families.js"
 import { isFamilyEnabled } from "../pipeline/flags.js"
 import { ReminderService } from "./reminder.service.js"
+import { SCHEDULED_NOTIFICATION_EXPIRE_SECONDS } from "./scheduled-notification.js"
 
 export interface ReminderJobData {
   task?: unknown
@@ -29,10 +30,11 @@ export class ReminderQueueService implements OnModuleInit {
     this.jobs.registerQueue(family.deadLetter, null)
     this.jobs.registerQueue<ReminderJobData>(
       family.queue,
-      (data) => this.handleJob(data),
+      (data, _jobId, signal) => this.handleJob(data, signal),
       {
         name: family.queue,
         deadLetter: family.deadLetter,
+        expireInSeconds: SCHEDULED_NOTIFICATION_EXPIRE_SECONDS,
         retryLimit: 0,
         retryDelay: family.retryDelay,
         retryBackoff: family.retryBackoff,
@@ -49,7 +51,8 @@ export class ReminderQueueService implements OnModuleInit {
     this.logger.log("reminders family registered (queue, dlq, schedule; no retries)")
   }
 
-  async handleJob(data: ReminderJobData): Promise<void> {
+  async handleJob(data: ReminderJobData, signal?: AbortSignal): Promise<void> {
+    signal?.throwIfAborted()
     if (data.task !== "send") {
       throw new Error(`unknown reminders task: ${String(data.task)}`)
     }
@@ -58,7 +61,9 @@ export class ReminderQueueService implements OnModuleInit {
       throw new Error("reminders legacy schedule missing")
     }
     await this.gate.runGated(schedule, async () => {
-      const summary = await this.reminders.processRun(new Date())
+      signal?.throwIfAborted()
+      const summary = await this.reminders.processRun(new Date(), signal)
+      signal?.throwIfAborted()
       this.logger.log(
         `reminder run complete: total=${summary.total} ` +
           Object.entries(summary.channels)

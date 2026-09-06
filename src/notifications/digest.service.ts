@@ -1,4 +1,6 @@
-import { Injectable, Logger } from "@nestjs/common"
+import { setTimeout as delay } from "node:timers/promises"
+
+import { Inject, Injectable, Logger } from "@nestjs/common"
 import { ConfigService } from "@nestjs/config"
 
 import type { Env } from "../config/env.js"
@@ -12,6 +14,13 @@ import { TelegramService } from "./telegram.service.js"
 
 const DIGEST_TZ = "America/Chicago"
 const PAGE_SIZE = 1000
+const BATCH_SIZE = 5
+export const DIGEST_SLEEP = Symbol("DIGEST_SLEEP")
+export type DigestSleep = (ms: number, signal?: AbortSignal) => Promise<void>
+export const digestSleep: DigestSleep = async (ms, signal) => {
+  signal?.throwIfAborted()
+  await delay(ms, undefined, { signal })
+}
 const DEFAULT_APP_URL = "https://family-events.up.railway.app"
 
 export interface DigestSummary {
@@ -43,26 +52,45 @@ export class DigestService {
     private readonly plans: PlanRepository,
     private readonly mail: MailService,
     private readonly config: ConfigService<Env, true>,
-    private readonly telegram: TelegramService
+    private readonly telegram: TelegramService,
+    @Inject(DIGEST_SLEEP) private readonly sleep: DigestSleep = digestSleep
   ) {}
 
-  async processRun(now: Date, testEmail?: string): Promise<DigestSummary> {
+  async processRun(now: Date, testEmail?: string, signal?: AbortSignal): Promise<DigestSummary> {
+    signal?.throwIfAborted()
     const normalizedTestEmail = testEmail?.trim().toLowerCase()
     if (testEmail !== undefined) {
       if (!normalizedTestEmail) throw new Error("digest testEmail must not be blank")
       const user = await this.repository.findDigestUserByEmail(normalizedTestEmail)
+      signal?.throwIfAborted()
       if (!user) return emptySummary()
       // The existing test-email operation must never send to a stored Telegram destination.
-      return this.processUsers([user], now, true)
+      return this.processUsers([user], now, true, null, signal)
     }
 
+    let token: string | null | undefined
     const summary = emptySummary()
+    let processed = 0
     let after: string | null = null
     while (true) {
+      signal?.throwIfAborted()
       const users = await this.repository.listDigestUsers(after, PAGE_SIZE)
-      const page = await this.processUsers(users, now)
-      for (const key of Object.keys(summary) as (keyof DigestSummary)[]) {
-        summary[key] += page[key]
+      signal?.throwIfAborted()
+      for (const user of users) {
+        // Count every user, even empty plans, and carry pacing across page boundaries.
+        if (processed > 0 && processed % BATCH_SIZE === 0) {
+          await this.sleep(500, signal)
+          signal?.throwIfAborted()
+        }
+        if (user.digestTelegram && token === undefined) {
+          token = await this.telegram.resolveBotToken(signal)
+          signal?.throwIfAborted()
+        }
+        const page = await this.processUsers([user], now, false, token ?? null, signal)
+        processed += 1
+        for (const key of Object.keys(summary) as (keyof DigestSummary)[]) {
+          summary[key] += page[key]
+        }
       }
       if (users.length < PAGE_SIZE) break
       const nextAfter = users.at(-1)?.userId
@@ -77,7 +105,9 @@ export class DigestService {
   private async processUsers(
     users: DigestUser[],
     now: Date,
-    emailOnly = false
+    emailOnly = false,
+    token: string | null = null,
+    signal?: AbortSignal
   ): Promise<DigestSummary> {
     const weekend = weekendWindowUtc(now, DIGEST_TZ)
     const dateFrom = new Date(Math.max(now.getTime(), weekend.from.getTime())).toISOString()
@@ -89,6 +119,7 @@ export class DigestService {
     const summary = emptySummary()
 
     for (const user of users) {
+      signal?.throwIfAborted()
       const emailEnabled = user.digestEmail
       const telegramEnabled = !emailOnly && user.digestTelegram
       if (!emailEnabled && !telegramEnabled) continue
@@ -105,6 +136,7 @@ export class DigestService {
           weatherFit: "neutral",
           limit: 5,
         })
+        signal?.throwIfAborted()
         if (planned.length === 0) {
           if (emailEnabled) summary.skipped += 1
           if (telegramEnabled) summary.telegramSkipped += 1
@@ -122,12 +154,14 @@ export class DigestService {
           explanation: buildExplanation(event),
         }))
       } catch {
+        signal?.throwIfAborted()
         if (emailEnabled) summary.failed += 1
         if (telegramEnabled) summary.telegramFailed += 1
         this.logger.warn("digest delivery failed: planning_or_render_error")
         continue
       }
 
+      signal?.throwIfAborted()
       if (emailEnabled) {
         if (!user.email?.trim()) {
           summary.skipped += 1
@@ -135,30 +169,38 @@ export class DigestService {
           try {
             const rendered = renderDigestEmail({ user, events, appUrl })
             const result = await this.mail.send({
+              ...(signal ? { signal } : {}),
               to: user.email,
               subject: rendered.subject,
               html: rendered.html,
             })
+            signal?.throwIfAborted()
             if (result.sent) summary.emailed += 1
             else if (result.dev) summary.skipped += 1
             else summary.failed += 1
           } catch {
+            signal?.throwIfAborted()
             summary.failed += 1
             this.logger.warn("digest email delivery failed")
           }
         }
       }
 
+      signal?.throwIfAborted()
       if (telegramEnabled) {
         try {
           const response = await this.telegram.send({
+            token,
+            ...(signal ? { signal } : {}),
             chatId: user.telegramChatId,
             text: renderDigestTelegram({ user, events, appUrl }),
           })
+          signal?.throwIfAborted()
           if (response.sent) summary.telegramSent += 1
           else if (response.reason === "missing_configuration") summary.telegramSkipped += 1
           else summary.telegramFailed += 1
         } catch {
+          signal?.throwIfAborted()
           summary.telegramFailed += 1
           this.logger.warn("digest Telegram delivery failed")
         }

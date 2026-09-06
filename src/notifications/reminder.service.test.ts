@@ -42,6 +42,8 @@ function makeService() {
       requestedRecipients: 1,
       matchedRecipients: 1,
       unmatchedRecipients: 0,
+      failedBatches: 0,
+      failedBatchRecipients: 0,
       sent: 1,
       failed: 0,
       pruned: 0,
@@ -71,6 +73,8 @@ function successfulChannels(sent: number) {
       skippedSubscriptions: 0,
       prunedSubscriptions: 0,
       unmatchedRecipients: 0,
+      failedBatches: 0,
+      failedBatchRecipients: 0,
       skippedRecipients: 0,
       failedDispatches: 0,
     },
@@ -135,6 +139,8 @@ describe("ReminderService", () => {
           skippedSubscriptions: 0,
           prunedSubscriptions: 0,
           unmatchedRecipients: 0,
+          failedBatches: 0,
+          failedBatchRecipients: 0,
           skippedRecipients: 1,
           failedDispatches: 0,
         },
@@ -172,7 +178,8 @@ describe("ReminderService", () => {
         body: "Sunday, August 16 at 10:30 AM at Main Library",
         url: "https://events.example.com/events/22222222-2222-4222-8222-222222222222",
       },
-      expect.any(Object)
+      expect.any(Object),
+      undefined
     )
   })
 
@@ -214,6 +221,8 @@ describe("ReminderService", () => {
           skippedSubscriptions: 0,
           prunedSubscriptions: 0,
           unmatchedRecipients: 0,
+          failedBatches: 1,
+          failedBatchRecipients: 1,
           skippedRecipients: 0,
           failedDispatches: 1,
         },
@@ -229,6 +238,8 @@ describe("ReminderService", () => {
       requestedRecipients: 1,
       matchedRecipients: 1,
       unmatchedRecipients: 0,
+      failedBatches: 0,
+      failedBatchRecipients: 0,
       sent: 2,
       failed: 1,
       pruned: 1,
@@ -242,6 +253,8 @@ describe("ReminderService", () => {
       skippedSubscriptions: 1,
       prunedSubscriptions: 1,
       unmatchedRecipients: 0,
+      failedBatches: 0,
+      failedBatchRecipients: 0,
       skippedRecipients: 0,
       failedDispatches: 0,
     })

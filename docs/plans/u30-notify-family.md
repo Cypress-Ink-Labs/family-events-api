@@ -33,3 +33,12 @@ In-app notifications use one bulk insert first, then isolated per-row inserts if
 ## Deferred
 
 Direct APNs delivery is deferred until `push_subscriptions` has a provider discriminator and existing tokens have been migrated. The deployed contract currently stores FCM tokens for both iOS and Android. Reminder push/in-app delivery and Telegram digest delivery are owned by their existing scheduled U30 families rather than the event-change family described in this document.
+
+Push delivery centrally deduplicates recipients and bounds lookups to 1,000 IDs.
+Failed lookups and thrown dispatches are recorded as `failedBatches` and
+`failedBatchRecipients`, separately from subscription delivery failures; later
+chunks continue. Complete Web Push and FCM JSON payloads fit within 3,000 UTF-8
+bytes without splitting Unicode code points. Provider calls combine cancellation
+with their 10-second timeouts. Scheduled reminder/digest pacing, the shared
+12-hour queue budget, Vault precedence, and email-only `testEmail` safety are
+specified in [deployment details](../DEPLOYMENT.md#scheduled-reminders-and-digest-staged).

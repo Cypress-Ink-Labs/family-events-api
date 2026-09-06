@@ -167,5 +167,62 @@ describe("mobile push helpers", () => {
       "https://oauth2.googleapis.com/token",
       expect.objectContaining({ method: "POST" })
     )
+    clearFcmTokenCacheForTest()
+    const controller = new AbortController()
+    const reason = new Error("shutdown")
+    const cancelledFetch = vi.fn(async (_url, init) => {
+      expect(init.signal).not.toBe(controller.signal)
+      expect(init.signal.aborted).toBe(false)
+      controller.abort(reason)
+      expect(init.signal.aborted).toBe(true)
+      throw reason
+    })
+    await expect(
+      getFcmAccessToken(credentials, { fetch: cancelledFetch, signal: controller.signal })
+    ).rejects.toBe(reason)
+    expect(cancelledFetch).toHaveBeenCalledTimes(1)
+  })
+
+  it.each(["ios", "android"] as const)(
+    "bounds complete %s serialization including escaped multibyte text and envelope",
+    (platform) => {
+      const input = {
+        token: "token".repeat(100),
+        platform,
+        title: '🌍"\\'.repeat(3000),
+        body: "家族🎉".repeat(3000),
+        url: "https://events.example.com/events/1",
+      }
+      const payload = buildFcmMessage(input)
+      expect(Buffer.byteLength(JSON.stringify(payload), "utf8")).toBeLessThanOrEqual(3000)
+      expect(payload.message.data.url).toBe(input.url)
+      expect(payload.message.token).toBe(input.token)
+      expect(Buffer.from(payload.message.notification.title, "utf8").toString("utf8")).toBe(
+        payload.message.notification.title
+      )
+      expect(Buffer.from(payload.message.notification.body, "utf8").toString("utf8")).toBe(
+        payload.message.notification.body
+      )
+      expect(payload.message.notification.title.length).toBeGreaterThan(0)
+      expect(payload.message.notification.body.length).toBeGreaterThan(0)
+    }
+  )
+
+  it("rejects fixed URL or token overhead that cannot fit without changing identity", () => {
+    const input = { token: "token", platform: "ios" as const, title: "T", body: "B" }
+    expect(() => buildFcmMessage({ ...input, url: "🌍".repeat(2000) })).toThrow(RangeError)
+    expect(() => buildFcmMessage({ ...input, token: "token".repeat(2000) })).toThrow(RangeError)
+  })
+
+  it("rejects an already-cancelled OAuth request before crypto or fetch", async () => {
+    const reason = new Error("shutdown")
+    const fetchMock = vi.fn()
+    await expect(
+      getFcmAccessToken(
+        { projectId: "project", clientEmail: "email", privateKey: "invalid" },
+        { signal: AbortSignal.abort(reason), fetch: fetchMock }
+      )
+    ).rejects.toBe(reason)
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 })

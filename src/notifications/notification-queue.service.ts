@@ -35,7 +35,12 @@ export interface NotificationQueueRunResult {
   channels: {
     email: ChannelCounts
     inApp: ChannelCounts
-    push: ChannelCounts & { pruned: number; unmatchedRecipients: number }
+    push: ChannelCounts & {
+      pruned: number
+      unmatchedRecipients: number
+      failedBatches: number
+      failedBatchRecipients: number
+    }
   }
 }
 
@@ -73,7 +78,13 @@ function emptyResult(): NotificationQueueRunResult {
     channels: {
       email: emptyCounts(),
       inApp: emptyCounts(),
-      push: { ...emptyCounts(), pruned: 0, unmatchedRecipients: 0 },
+      push: {
+        ...emptyCounts(),
+        pruned: 0,
+        unmatchedRecipients: 0,
+        failedBatches: 0,
+        failedBatchRecipients: 0,
+      },
     },
   }
 }
@@ -265,7 +276,7 @@ export class NotificationQueueService {
 
   private async sendPushes(
     prepared: PreparedNotification[],
-    counts: ChannelCounts & { pruned: number; unmatchedRecipients: number }
+    counts: NotificationQueueRunResult["channels"]["push"]
   ): Promise<void> {
     const groups = new Map<string, PushGroup>()
     for (const item of prepared) {
@@ -295,8 +306,11 @@ export class NotificationQueueService {
         counts.skipped += response.skipped
         counts.pruned += response.pruned
         counts.unmatchedRecipients += response.unmatchedRecipients
+        counts.failedBatches += response.failedBatches
+        counts.failedBatchRecipients += response.failedBatchRecipients
       } catch {
-        counts.failed += group.userIds.length
+        counts.failedBatches++
+        counts.failedBatchRecipients += group.userIds.length
         this.logger.warn(
           `notification push failed: category=internal count=${group.userIds.length}`
         )

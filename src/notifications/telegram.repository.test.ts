@@ -1,3 +1,7 @@
+import { ConfigService } from "@nestjs/config"
+
+import type { Env } from "../config/env.js"
+import { TelegramService } from "./telegram.service.js"
 import { describe, expect, it, vi } from "vitest"
 
 import type { DbService } from "../db/db.service.js"
@@ -24,5 +28,61 @@ describe("TelegramRepository", () => {
     })
     const repository = new TelegramRepository({ query } as unknown as DbService)
     await expect(repository.loadBotToken()).resolves.toBeNull()
+  })
+})
+
+describe("TelegramRepository bounded Vault waiting", () => {
+  it("uses the environment fallback when a Vault query never settles", async () => {
+    const query = vi.fn(() => new Promise<never>(() => {}))
+    const repository = new TelegramRepository({ query } as unknown as DbService, { timeoutMs: 10 })
+    const service = new TelegramService(
+      repository,
+      new ConfigService({
+        TELEGRAM_BOT_TOKEN: "123:environment",
+      }) as ConfigService<Env, true>
+    )
+    await expect(service.resolveBotToken()).resolves.toBe("123:environment")
+    expect(query).toHaveBeenCalledOnce()
+  })
+
+  it("rejects explicit cancellation promptly instead of using the environment fallback", async () => {
+    const controller = new AbortController()
+    const reason = new Error("job expired")
+    const query = vi.fn(() => new Promise<never>(() => {}))
+    const repository = new TelegramRepository({ query } as unknown as DbService)
+    const service = new TelegramService(
+      repository,
+      new ConfigService({
+        TELEGRAM_BOT_TOKEN: "123:environment",
+      }) as ConfigService<Env, true>
+    )
+    const pending = service.resolveBotToken(controller.signal)
+    const rejected = expect(pending).rejects.toBe(reason)
+    await vi.waitFor(() => expect(query).toHaveBeenCalledOnce())
+    controller.abort(reason)
+    await rejected
+  })
+
+  it("observes a late query rejection after a timeout", async () => {
+    let rejectQuery!: (error: Error) => void
+    const query = vi.fn(
+      () =>
+        new Promise<never>((_resolve, reject) => {
+          rejectQuery = reject
+        })
+    )
+    const repository = new TelegramRepository({ query } as unknown as DbService, { timeoutMs: 10 })
+    await expect(repository.loadBotToken()).resolves.toBeNull()
+    rejectQuery(new Error("late database failure"))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  })
+
+  it("rejects before querying when already cancelled", async () => {
+    const query = vi.fn()
+    const repository = new TelegramRepository({ query } as unknown as DbService)
+    await expect(repository.loadBotToken(AbortSignal.abort())).rejects.toMatchObject({
+      name: "AbortError",
+    })
+    expect(query).not.toHaveBeenCalled()
   })
 })

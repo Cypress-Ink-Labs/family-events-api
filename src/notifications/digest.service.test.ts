@@ -54,6 +54,7 @@ function makeService() {
     get: (key: keyof Env) => (key === "APP_URL" ? "https://events.example.com" : undefined),
   } as ConfigService<Env, true>
   const telegram = {
+    resolveBotToken: vi.fn(async () => "123:token"),
     send: vi.fn(async (): Promise<SendTelegramResult> => ({ sent: true })),
   }
   return {
@@ -62,7 +63,8 @@ function makeService() {
       plans as unknown as PlanRepository,
       mail as unknown as MailService,
       config,
-      telegram as unknown as TelegramService
+      telegram as unknown as TelegramService,
+      vi.fn(async () => {})
     ),
     repository,
     plans,
@@ -187,6 +189,7 @@ describe("DigestService", () => {
     expect(plans.planForRange).toHaveBeenCalledTimes(1)
     expect(mail.send).toHaveBeenCalledTimes(1)
     expect(telegram.send).toHaveBeenCalledWith({
+      token: "123:token",
       chatId: "-100123",
       text: expect.stringContaining("Storytime"),
     })

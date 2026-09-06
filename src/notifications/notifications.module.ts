@@ -4,7 +4,7 @@ import { DataModule } from "../data/data.module.js"
 import { PipelineModule } from "../pipeline/pipeline.module.js"
 import { DigestQueueService } from "./digest-queue.service.js"
 import { DigestRepository } from "./digest.repository.js"
-import { DigestService } from "./digest.service.js"
+import { DIGEST_SLEEP, digestSleep, DigestService } from "./digest.service.js"
 import { MailService } from "./mail.service.js"
 import { NotificationQueueRepository } from "./notification-queue.repository.js"
 import { NotificationQueueService } from "./notification-queue.service.js"
@@ -23,6 +23,7 @@ import { TelegramService } from "./telegram.service.js"
     DigestQueueService,
     DigestRepository,
     DigestService,
+    { provide: DIGEST_SLEEP, useValue: digestSleep },
     MailService,
     NotificationQueueRepository,
     NotificationQueueService,

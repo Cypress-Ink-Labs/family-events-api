@@ -12,6 +12,8 @@ const TELEGRAM_TOKEN = /^\d+:[A-Za-z0-9_-]+$/
 export interface SendTelegramInput {
   chatId: string | null
   text: string
+  token?: string | null
+  signal?: AbortSignal
 }
 
 export type SendTelegramResult =
@@ -29,9 +31,12 @@ export class TelegramService {
   ) {}
 
   async send(input: SendTelegramInput): Promise<SendTelegramResult> {
-    const token = await this.botToken()
+    input.signal?.throwIfAborted()
+    const token =
+      input.token === undefined ? await this.resolveBotToken(input.signal) : input.token?.trim()
+    input.signal?.throwIfAborted()
     const chatId = input.chatId?.trim()
-    if (!token || !chatId) {
+    if (!token || !TELEGRAM_TOKEN.test(token) || !chatId) {
       this.logger.warn("Telegram digest skipped: missing token or chat ID")
       return { sent: false, reason: "missing_configuration" }
     }
@@ -47,9 +52,13 @@ export class TelegramService {
           disable_web_page_preview: true,
         }),
         redirect: "error",
-        signal: AbortSignal.timeout(TELEGRAM_TIMEOUT_MS),
+        signal: input.signal
+          ? AbortSignal.any([input.signal, AbortSignal.timeout(TELEGRAM_TIMEOUT_MS)])
+          : AbortSignal.timeout(TELEGRAM_TIMEOUT_MS),
       })
+      input.signal?.throwIfAborted()
       const body: unknown = await response.json()
+      input.signal?.throwIfAborted()
       if (
         response.ok &&
         body !== null &&
@@ -61,17 +70,20 @@ export class TelegramService {
       }
       this.logger.warn("Telegram digest delivery rejected")
     } catch {
+      input.signal?.throwIfAborted()
       // Transport errors can contain the token-bearing URL. Never log them.
       this.logger.warn("Telegram digest delivery failed")
     }
     return { sent: false, reason: "failed" }
   }
 
-  private async botToken(): Promise<string | null> {
+  async resolveBotToken(signal?: AbortSignal): Promise<string | null> {
+    signal?.throwIfAborted()
     if (this.cachedToken && this.cachedToken.expiresAt > Date.now()) {
       return this.cachedToken.value
     }
-    const token = await this.resolveBotToken()
+    const token = await this.loadBotToken(signal)
+    signal?.throwIfAborted()
     // Do not cache missing or invalid configuration: a transient Vault outage
     // must recover without requiring a process restart.
     this.cachedToken = token
@@ -80,8 +92,9 @@ export class TelegramService {
     return token
   }
 
-  private async resolveBotToken(): Promise<string | null> {
-    const vaultToken = await this.repository.loadBotToken()
+  private async loadBotToken(signal?: AbortSignal): Promise<string | null> {
+    const vaultToken = await this.repository.loadBotToken(signal)
+    signal?.throwIfAborted()
     const token =
       vaultToken || (this.config.get("TELEGRAM_BOT_TOKEN", { infer: true })?.trim() ?? "")
     if (!token) return null

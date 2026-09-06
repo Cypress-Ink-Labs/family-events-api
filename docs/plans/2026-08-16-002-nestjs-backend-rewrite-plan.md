@@ -1,8 +1,8 @@
 # NestJS backend rewrite plan (reconstructed) — units U20–U33
 
-**Status:** U20–U29 done. U30 email delivery and its event-change
-notification queue, in-app delivery, Web Push, and FCM path are merged.
-Reminder push/in-app delivery and Telegram digest remain, followed by U31–U33.
+**Status:** U20–U30 done. Reminder email/in-app/push, digest email/Telegram, and
+event-change email/in-app/Web Push/FCM are merged. Only direct APNs is deferred
+within U30; U31–U33 follow.
 Railway configuration is merged and empty `api` / `app` shadow services exist,
 but neither service is deployed because production database and Clerk variables
 have not been supplied.
@@ -220,7 +220,13 @@ hydration (032), in-app notifications, trusted-provider Web Push, and FCM for th
 deployed iOS/Android token contract. Reminder runs also create in-app rows and
 send push independently of email preferences; weekly digests honor
 `digest_telegram` and use the per-user chat ID. Direct APNs remains deferred
-until subscriptions carry an explicit provider discriminator.
+until subscriptions carry an explicit provider discriminator. Scheduled reminders
+pace batches of 10 with 300ms between batches; digests pace batches of 5 with
+500ms between batches, including empty plans and page boundaries. Both reconcile
+a 12-hour expiration budget and propagate cancellation through provider timeouts.
+Vault credentials take precedence over environment fallbacks. Scheduled digests
+resolve the validated Telegram token once per run; `testEmail` stays email-only,
+without token lookup or pacing. See [deployment details](../DEPLOYMENT.md).
 
 ### U31 — Admin API port
 The ~30 `admin_*` RPCs as operator-guarded endpoints: review queue (cursor

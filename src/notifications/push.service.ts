@@ -1,6 +1,7 @@
 import { Injectable, Logger, Optional } from "@nestjs/common"
 import { ConfigService } from "@nestjs/config"
 
+import { abortable } from "../common/abortable.js"
 import type { Env } from "../config/env.js"
 import {
   guardedFetch,
@@ -9,6 +10,7 @@ import {
 } from "../pipeline/ingestion/guarded-fetch.js"
 import { resolveAndCheckPublicIp } from "../pipeline/ingestion/url-resolve.js"
 import {
+  MAX_PUSH_USER_IDS,
   PushRepository,
   type PushSubscriptionRow,
   type PushVaultCredentials,
@@ -29,6 +31,8 @@ import {
   type VapidCredentials,
 } from "./push/web-push.js"
 
+import { boundedPushPayload } from "./push/payload.js"
+
 const PUSH_TIMEOUT_MS = 10_000
 const PUSH_CONCURRENCY = 10
 const DEFAULT_VAPID_SUBJECT = "mailto:push@cypress-ink-labs.org"
@@ -42,8 +46,13 @@ export interface SendPushInput {
 
 export interface SendPushResult {
   requestedRecipients: number
+  // Matched/unmatched totals only include batches whose lookup succeeded.
   matchedRecipients: number
   unmatchedRecipients: number
+  // Lookup failures have unknown subscription counts and stay separate.
+  failedBatches: number
+  failedBatchRecipients: number
+  // These outcomes count subscriptions, not requested users.
   sent: number
   failed: number
   pruned: number
@@ -51,6 +60,7 @@ export interface SendPushResult {
 }
 
 export interface PushServiceDependencies {
+  dbTimeoutMs?: number
   fetch?: typeof fetch
   resolve?: PublicIpResolver
   guardedFetch?: typeof guardedFetch
@@ -112,55 +122,83 @@ export class PushService {
     return { subscriptions: new Map() }
   }
 
-  async send(input: SendPushInput, context?: PushSendContext): Promise<SendPushResult> {
+  async send(
+    input: SendPushInput,
+    context?: PushSendContext,
+    signal?: AbortSignal
+  ): Promise<SendPushResult> {
+    signal?.throwIfAborted()
     const requestedUserIds = unique(input.userIds)
-    const subscriptions = await this.subscriptions(requestedUserIds, context)
-    const matchedUserIds = new Set(subscriptions.map((subscription) => subscription.userId))
     const result: SendPushResult = {
       requestedRecipients: requestedUserIds.length,
-      matchedRecipients: matchedUserIds.size,
-      unmatchedRecipients: requestedUserIds.length - matchedUserIds.size,
+      matchedRecipients: 0,
+      unmatchedRecipients: 0,
+      failedBatches: 0,
+      failedBatchRecipients: 0,
       sent: 0,
       failed: 0,
       pruned: 0,
       skipped: 0,
     }
-    if (subscriptions.length === 0) return result
-
-    const credentials = await this.credentials(context)
-    const groups = partition(subscriptions)
-    const expiredIds: string[] = []
-
-    if (!credentials.vapid) {
-      result.skipped += groups.web.length
-      this.logSkipped("web", groups.web.length)
-    } else {
-      await this.sendWeb(groups.web, credentials.vapid, input, result, expiredIds)
-    }
-
-    if (!credentials.fcm) {
-      result.skipped += groups.fcm.length
-      this.logSkipped("fcm", groups.fcm.length)
-    } else {
-      await this.sendFcm(groups.fcm, credentials.fcm, input, result, expiredIds)
-    }
-
-    if (expiredIds.length > 0) {
-      const uniqueExpiredIds = unique(expiredIds).toSorted()
+    let credentials: ResolvedCredentials | undefined
+    for (let offset = 0; offset < requestedUserIds.length; offset += MAX_PUSH_USER_IDS) {
+      signal?.throwIfAborted()
+      const userIds = requestedUserIds.slice(offset, offset + MAX_PUSH_USER_IDS)
+      let subscriptions: PushSubscriptionRow[]
       try {
-        await this.repository.deleteExpiredSubscriptions(uniqueExpiredIds)
-        result.pruned = uniqueExpiredIds.length
+        subscriptions = await this.waitForDb(() => this.subscriptions(userIds, context), signal)
+        signal?.throwIfAborted()
       } catch {
-        result.failed += uniqueExpiredIds.length
-        this.logger.warn(`push prune failed: category=database count=${uniqueExpiredIds.length}`)
+        signal?.throwIfAborted()
+        result.failedBatches++
+        result.failedBatchRecipients += userIds.length
+        this.logger.warn(`push batch failed: category=database recipients=${userIds.length}`)
+        continue
+      }
+      const matched = new Set(subscriptions.map((subscription) => subscription.userId)).size
+      result.matchedRecipients += matched
+      result.unmatchedRecipients += userIds.length - matched
+      if (subscriptions.length === 0) continue
+      credentials ??= await this.credentials(context, signal)
+      signal?.throwIfAborted()
+      const groups = partition(subscriptions)
+      const expiredIds: string[] = []
+      if (!credentials.vapid) {
+        result.skipped += groups.web.length
+        this.logSkipped("web", groups.web.length)
+      } else {
+        await this.sendWeb(groups.web, credentials.vapid, input, result, expiredIds, signal)
+      }
+      signal?.throwIfAborted()
+      if (!credentials.fcm) {
+        result.skipped += groups.fcm.length
+        this.logSkipped("fcm", groups.fcm.length)
+      } else {
+        await this.sendFcm(groups.fcm, credentials.fcm, input, result, expiredIds, signal)
+      }
+      signal?.throwIfAborted()
+      if (expiredIds.length > 0) {
+        const uniqueExpiredIds = unique(expiredIds).toSorted()
+        try {
+          await this.waitForDb(
+            () => this.repository.deleteExpiredSubscriptions(uniqueExpiredIds),
+            signal
+          )
+          signal?.throwIfAborted()
+          result.pruned += uniqueExpiredIds.length
+        } catch {
+          signal?.throwIfAborted()
+          result.failed += uniqueExpiredIds.length
+          this.logger.warn(`push prune failed: category=database count=${uniqueExpiredIds.length}`)
+        }
       }
     }
-
     this.logger.log(
       `push delivery complete: requested=${result.requestedRecipients} ` +
         `matched=${result.matchedRecipients} unmatched=${result.unmatchedRecipients} ` +
         `sent=${result.sent} failed=${result.failed} pruned=${result.pruned} ` +
-        `skipped=${result.skipped}`
+        `skipped=${result.skipped} failed_batches=${result.failedBatches} ` +
+        `failed_batch_recipients=${result.failedBatchRecipients}`
     )
     return result
   }
@@ -178,19 +216,36 @@ export class PushService {
     return pending
   }
 
-  private credentials(context?: PushSendContext): Promise<ResolvedCredentials> {
-    if (!context) return this.resolveCredentials()
-    context.credentials ??= this.resolveCredentials()
-    return context.credentials
+  private waitForDb<T>(work: () => Promise<T>, signal?: AbortSignal): Promise<T> {
+    signal?.throwIfAborted()
+    const timeout = AbortSignal.timeout(this.dependencies.dbTimeoutMs ?? 10_000)
+    return abortable(work, signal ? AbortSignal.any([signal, timeout]) : timeout)
+  }
+
+  private async credentials(
+    context?: PushSendContext,
+    signal?: AbortSignal
+  ): Promise<ResolvedCredentials> {
+    try {
+      return await this.waitForDb(() => {
+        if (!context) return this.resolveCredentials()
+        context.credentials ??= this.resolveCredentials()
+        return context.credentials
+      }, signal)
+    } catch {
+      signal?.throwIfAborted()
+      this.logger.warn("push credential lookup failed: vault_unavailable")
+      const fallback = this.parseCredentials({})
+      if (context) context.credentials = Promise.resolve(fallback)
+      return fallback
+    }
   }
 
   private async resolveCredentials(): Promise<ResolvedCredentials> {
-    let vault: PushVaultCredentials = {}
-    try {
-      vault = await this.repository.loadCredentials()
-    } catch {
-      this.logger.warn("push credential lookup failed: vault_unavailable")
-    }
+    return this.parseCredentials(await this.repository.loadCredentials())
+  }
+
+  private parseCredentials(vault: PushVaultCredentials): ResolvedCredentials {
     const value = (vaultName: keyof PushVaultCredentials, envName: keyof Env): string =>
       vault[vaultName] || ((this.config.get(envName, { infer: true }) as string | undefined) ?? "")
 
@@ -219,14 +274,11 @@ export class PushService {
     credentials: VapidCredentials,
     input: SendPushInput,
     result: SendPushResult,
-    expiredIds: string[]
+    expiredIds: string[],
+    signal?: AbortSignal
   ): Promise<void> {
-    const payload = JSON.stringify({
-      title: input.title,
-      body: input.body,
-      ...(input.url ? { url: input.url } : {}),
-    })
     await forEachConcurrent(subscriptions, PUSH_CONCURRENCY, async (subscription) => {
+      signal?.throwIfAborted()
       if (!subscription.endpoint || !subscription.p256dh || !subscription.authKey) {
         result.failed++
         this.logger.warn("web push failed: category=invalid_subscription")
@@ -238,17 +290,27 @@ export class PushService {
         return
       }
       try {
+        const payload = JSON.stringify(
+          boundedPushPayload(input.title, input.body, (title, body) => ({
+            title,
+            body,
+            ...(input.url ? { url: input.url } : {}),
+          }))
+        )
         const authorization = await buildVapidAuth(
           subscription.endpoint,
           credentials,
           this.dependencies.now
         )
         const encrypted = await encryptPayload(payload, subscription.p256dh, subscription.authKey)
-        const resolver: PublicIpResolver = async (url) => {
+        signal?.throwIfAborted()
+        const resolver: PublicIpResolver = async (url, requestSignal) => {
+          requestSignal?.throwIfAborted()
           if (!isTrustedWebPushEndpoint(url)) {
             return { ok: false, reason: "untrusted or non-HTTPS push provider" }
           }
-          return (this.dependencies.resolve ?? resolveAndCheckPublicIp)(url)
+          const resolve: PublicIpResolver = this.dependencies.resolve ?? resolveAndCheckPublicIp
+          return resolve(url, requestSignal)
         }
         const response = await (this.dependencies.guardedFetch ?? guardedFetch)(
           subscription.endpoint,
@@ -262,12 +324,16 @@ export class PushService {
               Urgency: "normal",
             },
             body: webPushBody(encrypted),
-            signal: AbortSignal.timeout(PUSH_TIMEOUT_MS),
+            signal: signal
+              ? AbortSignal.any([signal, AbortSignal.timeout(PUSH_TIMEOUT_MS)])
+              : AbortSignal.timeout(PUSH_TIMEOUT_MS),
           },
           { resolve: resolver }
         )
+        signal?.throwIfAborted()
         this.recordWebResponse(response, subscription.id, result, expiredIds)
       } catch (error) {
+        signal?.throwIfAborted()
         result.failed++
         const category = error instanceof SsrfRejectedError ? "ssrf_rejected" : "crypto_network"
         this.logger.warn(`web push failed: category=${category}`)
@@ -280,7 +346,8 @@ export class PushService {
     credentials: FcmCredentials,
     input: SendPushInput,
     result: SendPushResult,
-    expiredIds: string[]
+    expiredIds: string[],
+    signal?: AbortSignal
   ): Promise<void> {
     if (subscriptions.length === 0) return
     let accessToken: string
@@ -288,13 +355,16 @@ export class PushService {
       accessToken = await (this.dependencies.getFcmAccessToken ?? getFcmAccessToken)(credentials, {
         fetch: this.dependencies.fetch,
         now: this.dependencies.now,
+        signal,
       })
     } catch {
+      signal?.throwIfAborted()
       result.failed += subscriptions.length
       this.logger.warn(`fcm push failed: category=access_token count=${subscriptions.length}`)
       return
     }
     await forEachConcurrent(subscriptions, PUSH_CONCURRENCY, async (subscription) => {
+      signal?.throwIfAborted()
       if (!subscription.token || subscription.platform === "web") {
         result.failed++
         this.logger.warn("fcm push failed: category=invalid_subscription")
@@ -318,12 +388,16 @@ export class PushService {
                 url: input.url,
               })
             ),
-            signal: AbortSignal.timeout(PUSH_TIMEOUT_MS),
+            signal: signal
+              ? AbortSignal.any([signal, AbortSignal.timeout(PUSH_TIMEOUT_MS)])
+              : AbortSignal.timeout(PUSH_TIMEOUT_MS),
           }
         )
+        signal?.throwIfAborted()
         if (response.ok) {
           result.sent++
         } else if (await isFcmUnregisteredResponse(response)) {
+          signal?.throwIfAborted()
           expiredIds.push(subscription.id)
           this.logger.log(`fcm push expired: status=${response.status}`)
         } else {
@@ -331,6 +405,7 @@ export class PushService {
           this.logger.warn(`fcm push rejected: status=${response.status}`)
         }
       } catch {
+        signal?.throwIfAborted()
         result.failed++
         this.logger.warn("fcm push failed: category=network_timeout")
       }

@@ -10,10 +10,14 @@
 // with redirect: "manual", and on a 3xx re-validates the Location target before
 // following it, up to a bounded depth.
 
+import { abortable } from "../../common/abortable.js"
 import { resolveAndCheckPublicIp } from "./url-resolve.js"
 
 /** SSRF resolver/range-check seam. Defaults to {@link resolveAndCheckPublicIp}. */
-export type PublicIpResolver = (url: string) => Promise<{ ok: boolean; reason?: string }>
+export type PublicIpResolver = (
+  url: string,
+  signal?: AbortSignal
+) => Promise<{ ok: boolean; reason?: string }>
 
 export interface GuardedFetchOptions {
   /** Max redirect hops to follow (each re-validated). Default 3. */
@@ -81,18 +85,27 @@ export async function guardedFetch(
   let currentInit: RequestInit = init
 
   for (let hop = 0; hop <= maxRedirects; hop++) {
-    const check = await resolve(currentUrl)
+    currentInit.signal?.throwIfAborted()
+    const check = await abortable(
+      () => resolve(currentUrl, currentInit.signal ?? undefined),
+      currentInit.signal
+    )
+    currentInit.signal?.throwIfAborted()
     if (!check.ok) {
       throw new SsrfRejectedError(check.reason ?? "unknown reason")
     }
 
+    currentInit.signal?.throwIfAborted()
     const response = await fetch(currentUrl, { ...currentInit, redirect: "manual" })
 
+    currentInit.signal?.throwIfAborted()
     if (response.status >= 300 && response.status < 400) {
+      currentInit.signal?.throwIfAborted()
       const location = response.headers.get("location")
       if (!location) return response
       // Release the redirect response body before following the next hop.
-      await response.body?.cancel().catch(() => {})
+      await abortable(async () => response.body?.cancel().catch(() => {}), currentInit.signal)
+      currentInit.signal?.throwIfAborted()
       const nextUrl = new URL(location, currentUrl)
       currentInit = nextInit(currentInit, response.status, new URL(currentUrl), nextUrl)
       currentUrl = nextUrl.toString()

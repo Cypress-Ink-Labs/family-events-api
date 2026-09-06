@@ -9,7 +9,11 @@ import { PgBoss, type Queue, type SendOptions } from "pg-boss"
 
 import type { Env } from "../config/env.js"
 
-export type JobHandler<Data extends object> = (data: Data, jobId: string) => Promise<void>
+export type JobHandler<Data extends object> = (
+  data: Data,
+  jobId: string,
+  signal?: AbortSignal
+) => Promise<void>
 
 export interface QueueSchedule {
   cron: string
@@ -111,7 +115,7 @@ export class JobsService implements OnApplicationBootstrap, OnApplicationShutdow
             registration.name,
             { batchSize: 1, localConcurrency: registration.localConcurrency },
             async ([job]) => {
-              if (job) await handler(job.data as never, job.id)
+              if (job) await handler(job.data as never, job.id, job.signal)
             }
           )
         }

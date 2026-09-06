@@ -122,6 +122,8 @@ describe("PushService", () => {
       requestedRecipients: 2,
       matchedRecipients: 0,
       unmatchedRecipients: 2,
+      failedBatches: 0,
+      failedBatchRecipients: 0,
       sent: 0,
       failed: 0,
       pruned: 0,
@@ -158,6 +160,8 @@ describe("PushService", () => {
       requestedRecipients: 1,
       matchedRecipients: 1,
       unmatchedRecipients: 0,
+      failedBatches: 0,
+      failedBatchRecipients: 0,
       sent: 0,
       failed: 0,
       pruned: 0,
@@ -231,6 +235,52 @@ describe("PushService", () => {
     expect(logs).not.toContain("web-secret")
     expect(logs).not.toContain(endpoint)
     expect(logs).not.toContain("token-secret")
+  })
+
+  it("passes the same combined timeout and job signal through real guarded fetch and DNS", async () => {
+    const web = await makeWebMaterial()
+    const controller = new AbortController()
+    const resolve = vi.fn(async (_url: string, _signal?: AbortSignal) => ({ ok: true }))
+    const fetchMock = vi.fn(
+      async (_url: string, _init?: RequestInit) => new Response(null, { status: 201 })
+    )
+    vi.stubGlobal("fetch", fetchMock)
+    const timeout = vi.spyOn(AbortSignal, "timeout")
+    const { service } = makeService([web.subscription("signal")], {}, web.credentials, { resolve })
+
+    await expect(
+      service.send({ userIds: ["user-1"], title: "T", body: "B" }, undefined, controller.signal)
+    ).resolves.toMatchObject({ sent: 1 })
+    expect(timeout).toHaveBeenCalledWith(10_000)
+    const requestSignal = fetchMock.mock.calls[0]![1]!.signal
+    expect(requestSignal).toBeInstanceOf(AbortSignal)
+    expect(requestSignal).not.toBe(controller.signal)
+    expect(resolve).toHaveBeenCalledWith(web.subscription("signal").endpoint, requestSignal)
+    controller.abort()
+    expect(requestSignal!.aborted).toBe(true)
+  })
+
+  it("aborts a stalled DNS lookup through real guarded fetch without sending", async () => {
+    const web = await makeWebMaterial()
+    const controller = new AbortController()
+    const reason = new Error("job cancelled during DNS")
+    const resolve = vi.fn(
+      (_url: string, _signal?: AbortSignal) => new Promise<{ ok: boolean }>(() => {})
+    )
+    const fetchMock = vi.fn()
+    vi.stubGlobal("fetch", fetchMock)
+    const { service } = makeService([web.subscription("stalled")], {}, web.credentials, { resolve })
+    const pending = service.send(
+      { userIds: ["user-1"], title: "T", body: "B" },
+      undefined,
+      controller.signal
+    )
+    const rejected = expect(pending).rejects.toBe(reason)
+    await vi.waitFor(() => expect(resolve).toHaveBeenCalledOnce())
+    controller.abort(reason)
+    await rejected
+    expect(resolve.mock.calls[0]![1]!.aborted).toBe(true)
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 
   it("rejects an HTTPS provider redirect that downgrades to HTTP", async () => {
@@ -336,6 +386,8 @@ describe("PushService", () => {
       requestedRecipients: 2,
       matchedRecipients: 1,
       unmatchedRecipients: 1,
+      failedBatches: 0,
+      failedBatchRecipients: 0,
       sent: 1,
       failed: 0,
       pruned: 0,
@@ -369,4 +421,308 @@ describe("PushService", () => {
     expect(maximumActive).toBeGreaterThan(1)
     expect(maximumActive).toBeLessThanOrEqual(10)
   })
+
+  it.each([false, true])(
+    "chunks 1001 recipients and continues when the first lookup fails: %s",
+    async (firstFails) => {
+      const userIds = Array.from({ length: 1001 }, (_, index) => `user-${index}`)
+      const providerFetch = vi.fn(async () => new Response(null, { status: 200 }))
+      const { service, repo } = makeService([], {}, fcmVault, {
+        fetch: providerFetch,
+        getFcmAccessToken: async () => "access-token",
+      })
+      if (firstFails) repo.listSubscriptions.mockRejectedValueOnce(new Error("database failed"))
+      else repo.listSubscriptions.mockResolvedValueOnce([mobile("first", userIds[0]!)])
+      repo.listSubscriptions.mockResolvedValueOnce([mobile("last", userIds[1000]!)])
+
+      const result = await service.send({
+        userIds: [...userIds, userIds[0]!],
+        title: "T",
+        body: "B",
+      })
+
+      expect(repo.listSubscriptions).toHaveBeenNthCalledWith(1, userIds.slice(0, 1000))
+      expect(repo.listSubscriptions).toHaveBeenNthCalledWith(2, [userIds[1000]])
+      expect(repo.listSubscriptions).toHaveBeenCalledTimes(2)
+      expect(providerFetch).toHaveBeenCalledTimes(firstFails ? 1 : 2)
+      expect(result).toEqual({
+        requestedRecipients: 1001,
+        matchedRecipients: firstFails ? 1 : 2,
+        unmatchedRecipients: firstFails ? 0 : 999,
+        failedBatches: firstFails ? 1 : 0,
+        failedBatchRecipients: firstFails ? 1000 : 0,
+        sent: firstFails ? 1 : 2,
+        failed: 0,
+        skipped: 0,
+        pruned: 0,
+      })
+    }
+  )
+
+  it("cancels before any lookup and after a pending lookup without sending", async () => {
+    const controller = new AbortController()
+    const { service, repo } = makeService([mobile("first", "user-1")])
+    const reason = new Error("shutdown")
+    repo.listSubscriptions.mockImplementationOnce(async () => {
+      controller.abort(reason)
+      return [mobile("first", "user-1")]
+    })
+    await expect(
+      service.send({ userIds: ["user-1"], title: "T", body: "B" }, undefined, controller.signal)
+    ).rejects.toBe(reason)
+    expect(repo.loadCredentials).not.toHaveBeenCalled()
+    await expect(
+      service.send({ userIds: ["user-1"], title: "T", body: "B" }, undefined, controller.signal)
+    ).rejects.toBe(reason)
+    expect(repo.listSubscriptions).toHaveBeenCalledTimes(1)
+  })
+
+  it("propagates OAuth cancellation without sending providers or later chunks", async () => {
+    const controller = new AbortController()
+    const reason = new Error("shutdown")
+    const providerFetch = vi.fn()
+    const getToken = vi.fn(async (_credentials, options) => {
+      expect(options?.signal).toBe(controller.signal)
+      controller.abort(reason)
+      throw reason
+    })
+    const { service, repo } = makeService([mobile("first", "user-0")], {}, fcmVault, {
+      fetch: providerFetch,
+      getFcmAccessToken: getToken,
+    })
+    await expect(
+      service.send(
+        {
+          userIds: Array.from({ length: 1001 }, (_, index) => `user-${index}`),
+          title: "T",
+          body: "B",
+        },
+        undefined,
+        controller.signal
+      )
+    ).rejects.toBe(reason)
+    expect(providerFetch).not.toHaveBeenCalled()
+    expect(repo.listSubscriptions).toHaveBeenCalledTimes(1)
+  })
+
+  it.each(["web", "fcm"])(
+    "propagates %s provider cancellation through its combined timeout signal",
+    async (provider) => {
+      const controller = new AbortController()
+      const reason = new Error("shutdown")
+      const web = await makeWebMaterial()
+      const providerFetch = vi.fn(async (_url, init) => {
+        expect(init.signal).not.toBe(controller.signal)
+        expect(init.signal.aborted).toBe(false)
+        controller.abort(reason)
+        expect(init.signal.aborted).toBe(true)
+        throw reason
+      })
+      const { service, repo } =
+        provider === "web"
+          ? makeService([web.subscription("web-sub")], {}, web.credentials, {
+              guardedFetch: providerFetch,
+            })
+          : makeService([mobile("first", "user-1")], {}, fcmVault, {
+              fetch: providerFetch,
+              getFcmAccessToken: async () => "token",
+            })
+      await expect(
+        service.send({ userIds: ["user-1"], title: "T", body: "B" }, undefined, controller.signal)
+      ).rejects.toBe(reason)
+      expect(repo.deleteExpiredSubscriptions).not.toHaveBeenCalled()
+    }
+  )
+
+  it("keeps encrypted Web Push below provider limits for long Unicode text", async () => {
+    const web = await makeWebMaterial()
+    const guarded = vi.fn(async (_url, init) => {
+      expect((init.body as ArrayBuffer).byteLength).toBeLessThan(4096)
+      return new Response(null, { status: 201 })
+    })
+    const { service } = makeService([web.subscription("web-sub")], {}, web.credentials, {
+      guardedFetch: guarded,
+    })
+    await expect(
+      service.send({
+        userIds: ["user-1"],
+        title: '🌍"\\'.repeat(3000),
+        body: "家族🎉".repeat(3000),
+        url: "https://events.example.com/events/1",
+      })
+    ).resolves.toMatchObject({ sent: 1, failed: 0 })
+    expect(guarded).toHaveBeenCalledTimes(1)
+  })
+
+  it.each(["web", "fcm"])(
+    "soft-fails impossible URL overhead before %s delivery",
+    async (provider) => {
+      const web = await makeWebMaterial()
+      const providerFetch = vi.fn()
+      const { service } =
+        provider === "web"
+          ? makeService([web.subscription("web-sub")], {}, web.credentials, {
+              guardedFetch: providerFetch,
+            })
+          : makeService([mobile("first", "user-1")], {}, fcmVault, {
+              fetch: providerFetch,
+              getFcmAccessToken: async () => "token",
+            })
+      await expect(
+        service.send({
+          userIds: ["user-1"],
+          title: "T",
+          body: "B",
+          url: `https://events.example.com/${"🌍".repeat(3000)}`,
+        })
+      ).resolves.toMatchObject({ sent: 0, failed: 1 })
+      expect(providerFetch).not.toHaveBeenCalled()
+    }
+  )
+})
+
+describe("PushService bounded database waits", () => {
+  const input = { userIds: ["user-1"], title: "T", body: "B" }
+
+  function dbHarness(dbTimeoutMs = 10_000) {
+    const provider = vi.fn(async () => new Response(null, { status: 200 }))
+    const { service, repo } = makeService(
+      [mobile("sub-1", "user-1")],
+      { FCM_SERVICE_ACCOUNT_JSON: fcmVault.fcm_service_account_json },
+      fcmVault,
+      { dbTimeoutMs, fetch: provider, getFcmAccessToken: async () => "token" }
+    )
+    return { service, repo, provider }
+  }
+
+  it.each(["listSubscriptions", "loadCredentials", "deleteExpiredSubscriptions"] as const)(
+    "promptly cancels a never-settling %s without reporting a failure or fallback",
+    async (method) => {
+      const { service, repo, provider } = dbHarness()
+      const warn = vi.spyOn(Logger.prototype, "warn").mockImplementation(() => {})
+      const controller = new AbortController()
+      const reason = new Error("job cancelled")
+      repo[method].mockImplementation(() => new Promise<never>(() => {}))
+      if (method === "deleteExpiredSubscriptions") {
+        provider.mockImplementation(
+          async () => new Response(providerErrorBody("UNREGISTERED"), { status: 404 })
+        )
+      }
+      const pending = service.send(input, service.createSendContext(), controller.signal)
+      const rejected = expect(pending).rejects.toBe(reason)
+      await vi.waitFor(() => expect(repo[method]).toHaveBeenCalledOnce())
+      controller.abort(reason)
+      await rejected
+      expect(warn).not.toHaveBeenCalled()
+      if (method !== "deleteExpiredSubscriptions") expect(provider).not.toHaveBeenCalled()
+    }
+  )
+
+  it("reports a timed-out subscription chunk separately and continues later chunks", async () => {
+    const { service, repo, provider } = dbHarness(10)
+    const userIds = Array.from({ length: 1001 }, (_, i) => `user-${i}`)
+    repo.listSubscriptions
+      .mockImplementationOnce(() => new Promise<never>(() => {}))
+      .mockResolvedValueOnce([mobile("last", "user-1000")])
+    await expect(service.send({ ...input, userIds })).resolves.toMatchObject({
+      requestedRecipients: 1001,
+      matchedRecipients: 1,
+      unmatchedRecipients: 0,
+      failedBatches: 1,
+      failedBatchRecipients: 1000,
+      sent: 1,
+      failed: 0,
+    })
+    expect(repo.listSubscriptions).toHaveBeenCalledTimes(2)
+    expect(provider).toHaveBeenCalledOnce()
+  })
+
+  it.each(["timeout", "database error"])(
+    "uses cached environment credentials after Vault %s",
+    async (failure) => {
+      const { service, repo, provider } = dbHarness(10)
+      const warn = vi.spyOn(Logger.prototype, "warn").mockImplementation(() => {})
+      if (failure === "timeout")
+        repo.loadCredentials.mockImplementation(() => new Promise<never>(() => {}))
+      else repo.loadCredentials.mockRejectedValue(new Error("private database credentials"))
+      const context = service.createSendContext()
+      await expect(service.send(input, context)).resolves.toMatchObject({
+        sent: 1,
+        failed: 0,
+        failedBatches: 0,
+      })
+      await expect(service.send(input, context)).resolves.toMatchObject({ sent: 1, failed: 0 })
+      expect(repo.loadCredentials).toHaveBeenCalledOnce()
+      expect(repo.listSubscriptions).toHaveBeenCalledOnce()
+      expect(provider).toHaveBeenCalledTimes(2)
+      expect(warn.mock.calls).toEqual([["push credential lookup failed: vault_unavailable"]])
+    }
+  )
+
+  it("retains failed/pruned accounting when expired-subscription deletion times out", async () => {
+    const { service, repo, provider } = dbHarness(10)
+    const warn = vi.spyOn(Logger.prototype, "warn").mockImplementation(() => {})
+    provider.mockImplementation(
+      async () => new Response(providerErrorBody("UNREGISTERED"), { status: 404 })
+    )
+    repo.deleteExpiredSubscriptions.mockImplementation(() => new Promise<never>(() => {}))
+    await expect(service.send(input)).resolves.toMatchObject({
+      sent: 0,
+      failed: 1,
+      pruned: 0,
+      failedBatches: 0,
+      failedBatchRecipients: 0,
+    })
+    expect(warn.mock.calls).toEqual([["push prune failed: category=database count=1"]])
+  })
+
+  it.each(["listSubscriptions", "loadCredentials"] as const)(
+    "cancels waiting on cached %s without duplicating or cancelling another waiter's query",
+    async (method) => {
+      const { service, repo, provider } = dbHarness()
+      let complete!: () => void
+      const query = new Promise<never>((resolve) => {
+        complete = () =>
+          resolve(
+            (method === "listSubscriptions" ? [mobile("sub-1", "user-1")] : fcmVault) as never
+          )
+      })
+      repo[method].mockImplementation(() => query)
+      const context = service.createSendContext()
+      const first = service.send(input, context)
+      await vi.waitFor(() => expect(repo[method]).toHaveBeenCalledOnce())
+      const controller = new AbortController()
+      const second = service.send(input, context, controller.signal)
+      const rejected = expect(second).rejects.toThrow("cancel cached waiter")
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      controller.abort(new Error("cancel cached waiter"))
+      await rejected
+      complete()
+      await expect(first).resolves.toMatchObject({ sent: 1 })
+      expect(repo[method]).toHaveBeenCalledOnce()
+      expect(provider).toHaveBeenCalledOnce()
+    }
+  )
+
+  it.each(["listSubscriptions", "loadCredentials", "deleteExpiredSubscriptions"] as const)(
+    "observes late rejection after %s times out",
+    async (method) => {
+      const { service, repo, provider } = dbHarness(10)
+      let rejectQuery!: (error: Error) => void
+      repo[method].mockImplementation(
+        () =>
+          new Promise<never>((_resolve, reject) => {
+            rejectQuery = reject
+          })
+      )
+      if (method === "deleteExpiredSubscriptions") {
+        provider.mockImplementation(
+          async () => new Response(providerErrorBody("UNREGISTERED"), { status: 404 })
+        )
+      }
+      await service.send(input, service.createSendContext())
+      rejectQuery(new Error("late private database failure"))
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    }
+  )
 })

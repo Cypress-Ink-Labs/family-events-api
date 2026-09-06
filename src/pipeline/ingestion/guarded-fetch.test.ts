@@ -164,3 +164,101 @@ describe("guardedFetch — redirect re-validation", () => {
     expect("body" in secondInit && secondInit.body !== undefined).toBe(false)
   })
 })
+
+describe("guardedFetch cancellation during DNS", () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+    vi.unstubAllGlobals()
+  })
+
+  it("cancels a resolver that never settles without calling fetch and removes its listener", async () => {
+    const controller = new AbortController()
+    const reason = new Error("job cancelled")
+    const remove = vi.spyOn(controller.signal, "removeEventListener")
+    const resolve = vi.fn(() => new Promise<{ ok: boolean }>(() => {}))
+    const fetchMock = vi.fn()
+    vi.stubGlobal("fetch", fetchMock)
+    const pending = guardedFetch("https://example.com", { signal: controller.signal }, { resolve })
+    const rejected = expect(pending).rejects.toBe(reason)
+    await vi.waitFor(() => expect(resolve).toHaveBeenCalledOnce())
+    expect(resolve).toHaveBeenCalledWith("https://example.com", controller.signal)
+    controller.abort(reason)
+    await rejected
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(remove).toHaveBeenCalledWith("abort", expect.any(Function))
+  })
+
+  it("times out a resolver that never settles without calling fetch", async () => {
+    const signal = AbortSignal.timeout(10)
+    const resolve = vi.fn(() => new Promise<{ ok: boolean }>(() => {}))
+    const fetchMock = vi.fn()
+    vi.stubGlobal("fetch", fetchMock)
+    await expect(
+      guardedFetch("https://example.com", { signal }, { resolve })
+    ).rejects.toMatchObject({
+      name: "TimeoutError",
+    })
+    expect(resolve).toHaveBeenCalledWith("https://example.com", signal)
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it("races redirect DNS with the same signal and observes a late rejection", async () => {
+    const controller = new AbortController()
+    let rejectDns!: (error: Error) => void
+    const resolve = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true })
+      .mockImplementationOnce(
+        () =>
+          new Promise((_resolve, reject) => {
+            rejectDns = reject
+          })
+      )
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(makeRedirectResponse("https://example.com/next"))
+    vi.stubGlobal("fetch", fetchMock)
+    const pending = guardedFetch("https://example.com", { signal: controller.signal }, { resolve })
+    const rejected = expect(pending).rejects.toMatchObject({ name: "AbortError" })
+    await vi.waitFor(() => expect(resolve).toHaveBeenCalledTimes(2))
+    controller.abort()
+    await rejected
+    rejectDns(new Error("late DNS failure"))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(resolve).toHaveBeenLastCalledWith("https://example.com/next", controller.signal)
+    expect(fetchMock).toHaveBeenCalledOnce()
+  })
+
+  it("rejects pre-cancelled work before resolver or fetch", async () => {
+    const resolve = vi.fn()
+    const fetchMock = vi.fn()
+    vi.stubGlobal("fetch", fetchMock)
+    await expect(
+      guardedFetch("https://example.com", { signal: AbortSignal.abort() }, { resolve })
+    ).rejects.toMatchObject({ name: "AbortError" })
+    expect(resolve).not.toHaveBeenCalled()
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it.each([false, true])(
+    "cleans up resolver listeners after settlement, rejected=%s",
+    async (rejected) => {
+      const controller = new AbortController()
+      const add = vi.spyOn(controller.signal, "addEventListener")
+      const remove = vi.spyOn(controller.signal, "removeEventListener")
+      const resolve = vi.fn(async () => {
+        if (rejected) throw new Error("DNS failed")
+        return { ok: true }
+      })
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue(makeOkResponse()))
+      const pending = guardedFetch(
+        "https://example.com",
+        { signal: controller.signal },
+        { resolve }
+      )
+      if (rejected) await expect(pending).rejects.toThrow("DNS failed")
+      else await expect(pending).resolves.toBeInstanceOf(Response)
+      expect(remove).toHaveBeenCalledWith("abort", add.mock.calls[0]![1])
+    }
+  )
+})
