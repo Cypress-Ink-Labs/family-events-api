@@ -4,7 +4,10 @@ import { DbService } from "../db/db.service.js"
 
 export interface DigestUser {
   userId: string
-  email: string
+  email: string | null
+  digestEmail: boolean
+  digestTelegram: boolean
+  telegramChatId: string | null
   displayName: string | null
   childAge: number | null
   cityName: string
@@ -26,6 +29,9 @@ const DIGEST_USERS_SELECT = `
 SELECT
   unp.user_id AS "userId",
   p.email,
+  COALESCE(unp.digest_email, false) AS "digestEmail",
+  COALESCE(unp.digest_telegram, false) AS "digestTelegram",
+  unp.telegram_chat_id AS "telegramChatId",
   p.display_name AS "displayName",
   p.child_age AS "childAge",
   p.city_preference_id AS "primaryCityId",
@@ -34,9 +40,8 @@ SELECT
   c.longitude::double precision AS lng
 FROM public.user_notification_preferences unp
 JOIN public.user_profiles p ON p.id = unp.user_id
-  AND nullif(p.email, '') IS NOT NULL
 JOIN public.cities c ON c.id = p.city_preference_id
-WHERE unp.digest_email IS TRUE
+WHERE (unp.digest_email IS TRUE OR unp.digest_telegram IS TRUE)
 `
 
 @Injectable()
@@ -59,6 +64,8 @@ export class DigestRepository {
   async findDigestUserByEmail(email: string): Promise<DigestUser | null> {
     const rows = await this.db.query<DigestUserRow>(
       `${DIGEST_USERS_SELECT}
+       AND unp.digest_email IS TRUE
+       AND nullif(p.email, '') IS NOT NULL
        AND lower(p.email) = lower($1)
        ORDER BY unp.user_id
        LIMIT 1`,

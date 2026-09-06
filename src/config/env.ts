@@ -21,7 +21,7 @@ export const envSchema = z.object({
   CUTOVER_DIGEST: cutoverFlag,
   CUTOVER_REMINDERS: cutoverFlag,
   CUTOVER_NOTIFY: cutoverFlag,
-  /** Shared with user Telegram notifications. Unset disables operator failure pings. */
+  /** Shared by user digest delivery and operator failure pings. Vault wins for digests. */
   TELEGRAM_BOT_TOKEN: z.string().optional(),
   /** Operator chat/channel for pipeline failure pings (U3). */
   TELEGRAM_FAILURE_CHAT_ID: z.string().optional(),

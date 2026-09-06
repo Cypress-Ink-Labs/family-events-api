@@ -11,7 +11,14 @@ function makeQueueService() {
     runGated: vi.fn(async (_schedule, work: () => Promise<string>) => work()),
   }
   const digest = {
-    processRun: vi.fn(async () => ({ emailed: 1, skipped: 0, failed: 0 })),
+    processRun: vi.fn(async () => ({
+      emailed: 1,
+      skipped: 0,
+      failed: 0,
+      telegramSent: 0,
+      telegramFailed: 0,
+      telegramSkipped: 0,
+    })),
   }
   return {
     queue: new DigestQueueService(

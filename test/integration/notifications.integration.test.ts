@@ -45,21 +45,22 @@ describe("notification repositories", () => {
     notificationQueue = moduleRef.get(NotificationQueueRepository)
     pushSubscriptions = moduleRef.get(PushRepository)
     await ensureCatalogSchema(db)
+    await db.query("DROP TABLE IF EXISTS public.user_notification_preferences")
     await db.query(`
-      CREATE TABLE IF NOT EXISTS public.user_notification_preferences (
+      CREATE TABLE public.user_notification_preferences (
         user_id uuid PRIMARY KEY,
-        reminder_email boolean,
-        digest_email boolean NOT NULL DEFAULT false,
+        reminder_email boolean NOT NULL DEFAULT true,
+        reminder_push boolean NOT NULL DEFAULT true,
+        digest_email boolean NOT NULL DEFAULT true,
+        digest_telegram boolean NOT NULL DEFAULT false,
+        telegram_chat_id text,
         change_email boolean NOT NULL DEFAULT true,
-        change_push boolean NOT NULL DEFAULT true
+        change_push boolean NOT NULL DEFAULT true,
+        CONSTRAINT telegram_chat_id_required_when_enabled CHECK (
+          NOT digest_telegram OR NULLIF(btrim(telegram_chat_id), '') IS NOT NULL
+        )
       )
     `)
-    await db.query(
-      "ALTER TABLE public.user_notification_preferences ADD COLUMN IF NOT EXISTS change_email boolean NOT NULL DEFAULT true"
-    )
-    await db.query(
-      "ALTER TABLE public.user_notification_preferences ADD COLUMN IF NOT EXISTS change_push boolean NOT NULL DEFAULT true"
-    )
     await db.query(
       "DROP TABLE IF EXISTS public.user_notifications, public.notification_queue, public.push_subscriptions"
     )
@@ -223,7 +224,7 @@ describe("notification repositories", () => {
     await moduleRef.close()
   })
 
-  it("finds opted-in published favorites with profiles and excludes opt-outs", async () => {
+  it("finds every published favorite without filtering by email or channel preference", async () => {
     const cityId = randomUUID()
     const userA = randomUUID()
     const userB = randomUUID()
@@ -241,8 +242,9 @@ describe("notification repositories", () => {
       [userA, userB]
     )
     await db.query(
-      `INSERT INTO public.user_notification_preferences (user_id, reminder_email)
-       VALUES ($1, false)`,
+      `INSERT INTO public.user_notification_preferences
+       (user_id, reminder_email, reminder_push)
+       VALUES ($1, false, false)`,
       [userB]
     )
     const published = randomUUID()
@@ -261,19 +263,36 @@ describe("notification repositories", () => {
       [userA, userB, userWithoutProfile, published, draft]
     )
 
-    await expect(
-      reminders.findReminderTargets({
-        windowStart: start.toISOString(),
-        windowEnd: end.toISOString(),
-      })
-    ).resolves.toEqual([
-      expect.objectContaining({
-        userId: userA,
-        eventId: published,
-        email: "a@example.com",
-        reminderEmail: null,
-      }),
-    ])
+    const targets = await reminders.findReminderTargets({
+      windowStart: start.toISOString(),
+      windowEnd: end.toISOString(),
+    })
+    expect(targets).toHaveLength(3)
+    expect(targets).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          userId: userA,
+          eventId: published,
+          email: "a@example.com",
+          reminderEmail: null,
+          reminderPush: null,
+        }),
+        expect.objectContaining({
+          userId: userB,
+          eventId: published,
+          reminderEmail: false,
+          reminderPush: false,
+        }),
+        expect.objectContaining({
+          userId: userWithoutProfile,
+          eventId: published,
+          email: null,
+        }),
+      ])
+    )
+    expect(targets).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ eventId: draft })])
+    )
   })
 
   it("keyset-lists email digest opt-ins with preferred-city fallback", async () => {
@@ -309,6 +328,9 @@ describe("notification repositories", () => {
       {
         userId: optedIn,
         email: "digest@example.com",
+        digestEmail: true,
+        digestTelegram: false,
+        telegramChatId: null,
         displayName: "Digest Reader",
         childAge: 8,
         cityName: "Lafayette",
@@ -322,6 +344,71 @@ describe("notification repositories", () => {
       userId: optedIn,
       cityIds: [extraCity],
     })
+  })
+
+  it("lists Telegram-only digest recipients without requiring email", async () => {
+    const cityId = randomUUID()
+    const userId = randomUUID()
+    await db.query(
+      `INSERT INTO public.cities (id, name, slug, timezone)
+       VALUES ($1, 'Lafayette', $2, 'America/Chicago')`,
+      [cityId, `lafayette-${cityId}`]
+    )
+    await db.query(
+      `INSERT INTO public.user_profiles (id, email, city_preference_id)
+       VALUES ($1, null, $2)`,
+      [userId, cityId]
+    )
+    await db.query(
+      `INSERT INTO public.user_notification_preferences
+       (user_id, digest_email, digest_telegram, telegram_chat_id)
+       VALUES ($1, false, true, '-100123')`,
+      [userId]
+    )
+
+    await expect(digests.listDigestUsers(null, 1000)).resolves.toEqual([
+      expect.objectContaining({
+        userId,
+        email: null,
+        digestEmail: false,
+        digestTelegram: true,
+        telegramChatId: "-100123",
+      }),
+    ])
+  })
+
+  it("persists reminder inbox rows through the reminder repository", async () => {
+    const cityId = randomUUID()
+    const userId = randomUUID()
+    const eventId = randomUUID()
+    await db.query(
+      `INSERT INTO public.cities (id, name, slug, timezone)
+       VALUES ($1, 'Lafayette', $2, 'America/Chicago')`,
+      [cityId, `lafayette-${cityId}`]
+    )
+    await db.query("INSERT INTO public.user_profiles (id) VALUES ($1)", [userId])
+    await db.query(
+      `INSERT INTO public.events (id, title, start_datetime, city_id, status)
+       VALUES ($1, 'Reminder Event', '2026-09-06T16:30:00Z', $2, 'published')`,
+      [eventId, cityId]
+    )
+
+    const reminder = {
+      id: randomUUID(),
+      userId,
+      type: "reminder" as const,
+      title: "Reminder: Reminder Event is tomorrow",
+      body: "Sunday, September 6",
+      eventId,
+    }
+    await expect(reminders.insertInAppNotifications([reminder])).resolves.toBe(1)
+    await expect(reminders.insertInAppNotification(reminder)).resolves.toBe(0)
+
+    await expect(
+      db.query<{ type: string; eventId: string }>(
+        `SELECT type, event_id AS "eventId" FROM public.user_notifications`
+      )
+    ).resolves.toEqual([{ type: "reminder", eventId }])
   })
 
   it("filters, hydrates, inserts, and marks durable notification queue rows", async () => {

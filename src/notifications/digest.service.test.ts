@@ -7,10 +7,14 @@ import type { PlannedEvent } from "../data/types.js"
 import type { DigestRepository, DigestUser } from "./digest.repository.js"
 import { DigestService } from "./digest.service.js"
 import type { MailService, SendMailInput, SendMailResult } from "./mail.service.js"
+import type { SendTelegramResult, TelegramService } from "./telegram.service.js"
 
 const user = (id: string): DigestUser => ({
   userId: id,
   email: `${id}@example.com`,
+  digestEmail: true,
+  digestTelegram: false,
+  telegramChatId: null,
   displayName: id,
   childAge: 7,
   cityName: "Lafayette",
@@ -49,17 +53,28 @@ function makeService() {
   const config = {
     get: (key: keyof Env) => (key === "APP_URL" ? "https://events.example.com" : undefined),
   } as ConfigService<Env, true>
+  const telegram = {
+    send: vi.fn(async (): Promise<SendTelegramResult> => ({ sent: true })),
+  }
   return {
     service: new DigestService(
       repository as unknown as DigestRepository,
       plans as unknown as PlanRepository,
       mail as unknown as MailService,
-      config
+      config,
+      telegram as unknown as TelegramService
     ),
     repository,
     plans,
     mail,
+    telegram,
   }
+}
+
+const emptyTelegram = {
+  telegramSent: 0,
+  telegramFailed: 0,
+  telegramSkipped: 0,
 }
 
 describe("DigestService", () => {
@@ -114,6 +129,7 @@ describe("DigestService", () => {
     plans.planForRange.mockResolvedValueOnce([])
 
     await expect(service.processRun(new Date("2026-09-01T15:00:00Z"))).resolves.toEqual({
+      ...emptyTelegram,
       emailed: 0,
       skipped: 1,
       failed: 0,
@@ -130,7 +146,7 @@ describe("DigestService", () => {
 
     await expect(
       service.processRun(new Date("2026-09-01T15:00:00Z"), " TEST@example.com ")
-    ).resolves.toEqual({ emailed: 1, skipped: 0, failed: 0 })
+    ).resolves.toEqual({ ...emptyTelegram, emailed: 1, skipped: 0, failed: 0 })
     expect(repository.findDigestUserByEmail).toHaveBeenCalledWith("test@example.com")
     expect(repository.listDigestUsers).not.toHaveBeenCalled()
     expect(mail.send).toHaveBeenCalledWith({
@@ -147,9 +163,93 @@ describe("DigestService", () => {
     mail.send.mockResolvedValueOnce({ sent: false, dev: true })
 
     await expect(service.processRun(new Date("2026-09-01T15:00:00Z"))).resolves.toEqual({
+      ...emptyTelegram,
       emailed: 0,
-      skipped: 0,
-      failed: 1,
+      skipped: 1,
+      failed: 0,
     })
+  })
+
+  it("plans once and independently delivers email and Telegram", async () => {
+    const { service, repository, plans, mail, telegram } = makeService()
+    repository.listDigestUsers.mockResolvedValueOnce([
+      { ...user("u1"), digestTelegram: true, telegramChatId: "-100123" },
+    ])
+
+    await expect(service.processRun(new Date("2026-09-01T15:00:00Z"))).resolves.toEqual({
+      emailed: 1,
+      skipped: 0,
+      failed: 0,
+      telegramSent: 1,
+      telegramFailed: 0,
+      telegramSkipped: 0,
+    })
+    expect(plans.planForRange).toHaveBeenCalledTimes(1)
+    expect(mail.send).toHaveBeenCalledTimes(1)
+    expect(telegram.send).toHaveBeenCalledWith({
+      chatId: "-100123",
+      text: expect.stringContaining("Storytime"),
+    })
+  })
+
+  it("supports Telegram-only users without email", async () => {
+    const { service, repository, mail, telegram } = makeService()
+    repository.listDigestUsers.mockResolvedValueOnce([
+      {
+        ...user("u1"),
+        email: null,
+        digestEmail: false,
+        digestTelegram: true,
+        telegramChatId: "123",
+      },
+    ])
+
+    await expect(service.processRun(new Date("2026-09-01T15:00:00Z"))).resolves.toMatchObject({
+      emailed: 0,
+      telegramSent: 1,
+    })
+    expect(mail.send).not.toHaveBeenCalled()
+    expect(telegram.send).toHaveBeenCalledTimes(1)
+  })
+
+  it("continues Telegram after email fails and classifies missing Telegram configuration", async () => {
+    const { service, repository, mail, telegram } = makeService()
+    repository.listDigestUsers.mockResolvedValueOnce([
+      { ...user("u1"), digestTelegram: true, telegramChatId: "123" },
+      {
+        ...user("u2"),
+        digestEmail: false,
+        digestTelegram: true,
+        telegramChatId: null,
+      },
+    ])
+    mail.send.mockRejectedValueOnce(new Error("mail unavailable"))
+    telegram.send
+      .mockResolvedValueOnce({ sent: true })
+      .mockResolvedValueOnce({ sent: false, reason: "missing_configuration" })
+
+    await expect(service.processRun(new Date("2026-09-01T15:00:00Z"))).resolves.toMatchObject({
+      failed: 1,
+      telegramSent: 1,
+      telegramFailed: 0,
+      telegramSkipped: 1,
+    })
+    expect(telegram.send).toHaveBeenCalledTimes(2)
+  })
+
+  it("keeps test-email runs email-only and rejects blank test selectors", async () => {
+    const { service, repository, telegram } = makeService()
+    repository.findDigestUserByEmail.mockResolvedValueOnce({
+      ...user("u1"),
+      digestTelegram: true,
+      telegramChatId: "123",
+    })
+
+    await service.processRun(new Date("2026-09-01T15:00:00Z"), "u1@example.com")
+    expect(telegram.send).not.toHaveBeenCalled()
+    await expect(service.processRun(new Date("2026-09-01T15:00:00Z"), " ")).rejects.toThrow(
+      /must not be blank/
+    )
+    expect(repository.listDigestUsers).not.toHaveBeenCalled()
   })
 })
