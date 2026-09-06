@@ -87,6 +87,8 @@ function makeHarness(
   }
   const push = {
     send: vi.fn(async (): Promise<SendPushResult> => ({
+      failedBatches: 0,
+      failedBatchRecipients: 0,
       requestedRecipients: 1,
       matchedRecipients: 1,
       unmatchedRecipients: 0,
@@ -183,7 +185,15 @@ describe("NotificationQueueService", () => {
     expect(result.channels).toEqual({
       email: { sent: 1, failed: 0, skipped: 0 },
       inApp: { sent: 1, failed: 0, skipped: 0 },
-      push: { sent: 1, failed: 0, skipped: 0, pruned: 0, unmatchedRecipients: 0 },
+      push: {
+        sent: 1,
+        failed: 0,
+        skipped: 0,
+        pruned: 0,
+        unmatchedRecipients: 0,
+        failedBatches: 0,
+        failedBatchRecipients: 0,
+      },
     })
   })
 
@@ -280,6 +290,8 @@ describe("NotificationQueueService", () => {
   it("reports expired subscriptions as pruned rather than failed", async () => {
     const { service, push } = makeHarness()
     push.send.mockResolvedValueOnce({
+      failedBatches: 0,
+      failedBatchRecipients: 0,
       requestedRecipients: 1,
       matchedRecipients: 1,
       unmatchedRecipients: 0,
@@ -297,12 +309,16 @@ describe("NotificationQueueService", () => {
       skipped: 0,
       pruned: 1,
       unmatchedRecipients: 0,
+      failedBatches: 0,
+      failedBatchRecipients: 0,
     })
   })
 
   it("reports recipients without subscriptions separately from delivery counts", async () => {
     const { service, push } = makeHarness()
     push.send.mockResolvedValueOnce({
+      failedBatches: 0,
+      failedBatchRecipients: 0,
       requestedRecipients: 1,
       matchedRecipients: 0,
       unmatchedRecipients: 1,
@@ -320,7 +336,64 @@ describe("NotificationQueueService", () => {
       skipped: 0,
       pruned: 0,
       unmatchedRecipients: 1,
+      failedBatches: 0,
+      failedBatchRecipients: 0,
     })
+  })
+
+  it("preserves push subscription lookup failures in the run summary", async () => {
+    const { service, push } = makeHarness()
+    push.send.mockResolvedValueOnce({
+      requestedRecipients: 1,
+      matchedRecipients: 0,
+      unmatchedRecipients: 0,
+      failedBatches: 1,
+      failedBatchRecipients: 1,
+      sent: 0,
+      failed: 0,
+      pruned: 0,
+      skipped: 0,
+    })
+
+    const result = await service.processRun(NOW)
+
+    expect(result.channels.push).toEqual({
+      sent: 0,
+      failed: 0,
+      skipped: 0,
+      pruned: 0,
+      unmatchedRecipients: 0,
+      failedBatches: 1,
+      failedBatchRecipients: 1,
+    })
+    expect(result.processed).toBe(1)
+  })
+
+  it("counts thrown push dispatches as batch failures without inventing subscription outcomes", async () => {
+    const second = entry({
+      id: "33333333-3333-4333-8333-333333333334",
+      userId: "22222222-2222-4222-8222-222222222223",
+    })
+    const { service, push } = makeHarness({
+      entries: [entry(), second],
+      profiles: [profile(), profile({ id: second.userId, email: "second@example.com" })],
+      preferences: [preference(), preference({ userId: second.userId })],
+    })
+    push.send.mockRejectedValueOnce(new Error("push unavailable"))
+
+    const result = await service.processRun(NOW)
+
+    expect(push.send).toHaveBeenCalledTimes(1)
+    expect(result.channels.push).toEqual({
+      sent: 0,
+      failed: 0,
+      skipped: 0,
+      pruned: 0,
+      unmatchedRecipients: 0,
+      failedBatches: 1,
+      failedBatchRecipients: 2,
+    })
+    expect(result.processed).toBe(2)
   })
 
   it("falls back from one failed bulk in-app insert to isolated rows", async () => {

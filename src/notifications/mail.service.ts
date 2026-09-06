@@ -12,6 +12,7 @@ export interface SendMailInput {
   html?: string
   templateId?: string
   variables?: Record<string, string>
+  signal?: AbortSignal
 }
 
 export interface SendMailResult {
@@ -27,6 +28,7 @@ export class MailService {
   constructor(private readonly config: ConfigService<Env, true>) {}
 
   async send(input: SendMailInput): Promise<SendMailResult> {
+    input.signal?.throwIfAborted()
     if ((input.html === undefined) === (input.templateId === undefined)) {
       throw new Error("mail input must provide exactly one of html or templateId")
     }
@@ -54,14 +56,18 @@ export class MailService {
           "Content-Type": "application/json",
         },
         body: JSON.stringify(payload),
-        signal: AbortSignal.timeout(10_000),
+        signal: input.signal
+          ? AbortSignal.any([input.signal, AbortSignal.timeout(10_000)])
+          : AbortSignal.timeout(10_000),
       })
+      input.signal?.throwIfAborted()
       if (!response.ok) {
         this.logger.warn(`Resend rejected email: status=${response.status}`)
         return { sent: false, status: response.status }
       }
       return { sent: true, status: response.status }
     } catch {
+      input.signal?.throwIfAborted()
       this.logger.warn("Resend delivery failed: network_or_timeout")
       return { sent: false }
     }

@@ -1,3 +1,4 @@
+import { boundedPushPayload } from "./payload.js"
 import { base64urlEncode } from "./web-push.js"
 
 export interface FcmCredentials {
@@ -41,11 +42,12 @@ export function buildFcmMessage(input: {
     apns?: { payload: { aps: { sound: "default" } } }
   }
 } {
-  return {
+  const data: Record<string, string> = input.url ? { url: input.url } : {}
+  return boundedPushPayload(input.title, input.body, (title, body) => ({
     message: {
       token: input.token,
-      notification: { title: input.title, body: input.body },
-      data: input.url ? { url: input.url } : {},
+      notification: { title, body },
+      data,
       ...(input.platform === "android"
         ? {
             android: {
@@ -55,7 +57,7 @@ export function buildFcmMessage(input: {
           }
         : { apns: { payload: { aps: { sound: "default" as const } } } }),
     },
-  }
+  }))
 }
 
 export async function isFcmUnregisteredResponse(response: Response): Promise<boolean> {
@@ -97,8 +99,9 @@ export function parseFcmServiceAccount(raw: string): FcmCredentials | undefined 
 
 export async function getFcmAccessToken(
   credentials: FcmCredentials,
-  options: { fetch?: typeof fetch; now?: () => number } = {}
+  options: { fetch?: typeof fetch; now?: () => number; signal?: AbortSignal } = {}
 ): Promise<string> {
+  options.signal?.throwIfAborted()
   const nowMs = (options.now ?? Date.now)()
   const cached = fcmTokenCache.get(credentials.clientEmail)
   if (cached && nowMs < cached.reuseUntilMs) return cached.token
@@ -129,6 +132,7 @@ export async function getFcmAccessToken(
     await crypto.subtle.sign("RSASSA-PKCS1-v1_5", key, new TextEncoder().encode(signingInput))
   )
   const assertion = `${signingInput}.${base64urlEncode(signature)}`
+  options.signal?.throwIfAborted()
   const response = await (options.fetch ?? fetch)("https://oauth2.googleapis.com/token", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -136,10 +140,14 @@ export async function getFcmAccessToken(
       grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
       assertion,
     }),
-    signal: AbortSignal.timeout(10_000),
+    signal: options.signal
+      ? AbortSignal.any([options.signal, AbortSignal.timeout(10_000)])
+      : AbortSignal.timeout(10_000),
   })
+  options.signal?.throwIfAborted()
   if (!response.ok) throw new Error(`FCM OAuth token request failed: ${response.status}`)
   const body = (await response.json()) as { access_token?: unknown; expires_in?: unknown }
+  options.signal?.throwIfAborted()
   if (typeof body.access_token !== "string") {
     throw new Error("FCM OAuth token response missing access_token")
   }

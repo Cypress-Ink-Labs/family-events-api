@@ -7,7 +7,7 @@ const pgBoss = vi.hoisted(() => ({
     [
       name: string,
       options: Record<string, unknown>,
-      handler: (jobs: Array<{ id: string; data: object }>) => Promise<void>,
+      handler: (jobs: Array<{ id: string; data: object; signal?: AbortSignal }>) => Promise<void>,
     ]
   >,
   unscheduleCalls: [] as Array<[queue: string, key?: string]>,
@@ -32,7 +32,7 @@ vi.mock("pg-boss", () => ({
     async work(
       name: string,
       options: Record<string, unknown>,
-      handler: (jobs: Array<{ id: string; data: object }>) => Promise<void>
+      handler: (jobs: Array<{ id: string; data: object; signal?: AbortSignal }>) => Promise<void>
     ) {
       pgBoss.workCalls.push([name, options, handler])
       return `worker-${name}`
@@ -86,7 +86,26 @@ describe("JobsService", () => {
     expect(options).toEqual({ batchSize: 1, localConcurrency: 3 })
 
     await callback([{ id: "job-a", data: { eventId: "event-a" } }])
-    expect(handler).toHaveBeenCalledWith({ eventId: "event-a" }, "job-a")
+    expect(handler).toHaveBeenCalledWith({ eventId: "event-a" }, "job-a", undefined)
+  })
+
+  it("forwards the job cancellation signal to its registered handler", async () => {
+    const controller = new AbortController()
+    const handler = vi.fn(async (_data: object, _jobId: string, signal?: AbortSignal) => {
+      signal?.throwIfAborted()
+    })
+    const service = makeService("development")
+    service.registerQueue("reminders", handler)
+    await service.onApplicationBootstrap()
+    const callback = pgBoss.workCalls[0]![2]
+
+    await callback([{ id: "job-a", data: {}, signal: controller.signal }])
+    expect(handler).toHaveBeenCalledWith({}, "job-a", controller.signal)
+
+    controller.abort(new Error("job expired"))
+    await expect(callback([{ id: "job-b", data: {}, signal: controller.signal }])).rejects.toThrow(
+      "job expired"
+    )
   })
 
   it("reconciles mutable options when a queue already exists", async () => {
@@ -94,6 +113,7 @@ describe("JobsService", () => {
     service.registerQueue("email", null, {
       name: "email",
       policy: "standard",
+      expireInSeconds: 43_200,
       retryLimit: 0,
       retryDelay: 30,
       deadLetter: "email.dlq",
@@ -105,6 +125,7 @@ describe("JobsService", () => {
       [
         "email",
         {
+          expireInSeconds: 43_200,
           retryLimit: 0,
           retryDelay: 30,
           deadLetter: "email.dlq",

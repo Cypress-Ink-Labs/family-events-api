@@ -5,11 +5,12 @@ import { PgBoss } from "pg-boss"
 import { Pool } from "pg"
 import { describe, expect, it } from "vitest"
 
+import { SCHEDULED_NOTIFICATION_EXPIRE_SECONDS } from "../../src/notifications/scheduled-notification.js"
 import { JobsService } from "../../src/jobs/jobs.service.js"
 import { integrationDatabaseUrl } from "./db.js"
 
 describe("JobsService queue reconciliation", () => {
-  it("overwrites stale retry settings on a pre-existing queue", async () => {
+  it("overwrites stale retry and expiration settings on a pre-existing queue", async () => {
     const connectionString = integrationDatabaseUrl()
     const schema = `pgboss_test_${randomUUID().replaceAll("-", "").slice(0, 12)}`
     const service = new JobsService(
@@ -21,6 +22,7 @@ describe("JobsService queue reconciliation", () => {
     )
     service.registerQueue("email", null, {
       name: "email",
+      expireInSeconds: SCHEDULED_NOTIFICATION_EXPIRE_SECONDS,
       retryLimit: 0,
       retryDelay: 30,
     })
@@ -30,7 +32,7 @@ describe("JobsService queue reconciliation", () => {
     const cleanup = new Pool({ connectionString })
     try {
       await seed.start()
-      await seed.createQueue("email", { retryLimit: 3, retryDelay: 60 })
+      await seed.createQueue("email", { retryLimit: 3, retryDelay: 60, expireInSeconds: 60 })
       await seed.schedule("email", "0 * * * *", {}, { key: "stale-email-schedule" })
       await seed.stop({ close: true })
       seed = null
@@ -40,6 +42,7 @@ describe("JobsService queue reconciliation", () => {
       await inspector.start()
       try {
         await expect(inspector.getQueue("email")).resolves.toMatchObject({
+          expireInSeconds: SCHEDULED_NOTIFICATION_EXPIRE_SECONDS,
           retryLimit: 0,
           retryDelay: 30,
         })

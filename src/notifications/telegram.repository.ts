@@ -1,6 +1,11 @@
-import { Injectable, Logger } from "@nestjs/common"
+import { Injectable, Logger, Optional } from "@nestjs/common"
 
+import { abortable } from "../common/abortable.js"
 import { DbService } from "../db/db.service.js"
+
+export interface TelegramRepositoryDependencies {
+  timeoutMs?: number
+}
 
 interface TelegramCredentialRow {
   botToken: string | null
@@ -17,15 +22,24 @@ LIMIT 1
 export class TelegramRepository {
   private readonly logger = new Logger(TelegramRepository.name)
 
-  constructor(private readonly db: DbService) {}
+  constructor(
+    private readonly db: DbService,
+    @Optional() private readonly dependencies: TelegramRepositoryDependencies = {}
+  ) {}
 
-  async loadBotToken(): Promise<string | null> {
+  async loadBotToken(signal?: AbortSignal): Promise<string | null> {
+    signal?.throwIfAborted()
     try {
-      const rows = await this.db.query<TelegramCredentialRow>(LOAD_BOT_TOKEN_SQL, [
-        "telegram_bot_token",
-      ])
+      const timeout = AbortSignal.timeout(this.dependencies.timeoutMs ?? 2_000)
+      const querySignal = signal ? AbortSignal.any([signal, timeout]) : timeout
+      const rows = await abortable(
+        () => this.db.query<TelegramCredentialRow>(LOAD_BOT_TOKEN_SQL, ["telegram_bot_token"]),
+        querySignal
+      )
+      signal?.throwIfAborted()
       return rows[0]?.botToken?.trim() || null
     } catch {
+      signal?.throwIfAborted()
       this.logger.warn("Telegram credential lookup failed: vault_unavailable")
       return null
     }

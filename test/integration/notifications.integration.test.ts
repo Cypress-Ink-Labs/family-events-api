@@ -48,15 +48,19 @@ describe("notification repositories", () => {
     await db.query("DROP TABLE IF EXISTS public.user_notification_preferences")
     await db.query(`
       CREATE TABLE public.user_notification_preferences (
-        user_id uuid PRIMARY KEY,
+        id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id uuid NOT NULL UNIQUE REFERENCES public.user_profiles(id) ON DELETE CASCADE,
         reminder_email boolean NOT NULL DEFAULT true,
         reminder_push boolean NOT NULL DEFAULT true,
-        digest_email boolean NOT NULL DEFAULT true,
-        digest_telegram boolean NOT NULL DEFAULT false,
-        telegram_chat_id text,
         change_email boolean NOT NULL DEFAULT true,
         change_push boolean NOT NULL DEFAULT true,
-        CONSTRAINT telegram_chat_id_required_when_enabled CHECK (
+        digest_email boolean NOT NULL DEFAULT true,
+        digest_push boolean NOT NULL DEFAULT false,
+        digest_telegram boolean NOT NULL DEFAULT false,
+        telegram_chat_id text,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        updated_at timestamptz NOT NULL DEFAULT now(),
+        CONSTRAINT user_notification_preferences_telegram_chat_id_required_chk CHECK (
           NOT digest_telegram OR NULLIF(btrim(telegram_chat_id), '') IS NOT NULL
         )
       )
@@ -222,6 +226,71 @@ describe("notification repositories", () => {
 
   afterAll(async () => {
     await moduleRef.close()
+  })
+
+  it("uses production notification preference defaults and constraints", async () => {
+    const userId = randomUUID()
+    await db.query("INSERT INTO public.user_profiles (id) VALUES ($1)", [userId])
+    await db.query("INSERT INTO public.user_notification_preferences (user_id) VALUES ($1)", [
+      userId,
+    ])
+    await expect(
+      db.query(
+        `SELECT reminder_email, reminder_push, change_email, change_push,
+              digest_email, digest_push, digest_telegram, telegram_chat_id
+       FROM public.user_notification_preferences WHERE user_id = $1`,
+        [userId]
+      )
+    ).resolves.toEqual([
+      {
+        reminder_email: true,
+        reminder_push: true,
+        change_email: true,
+        change_push: true,
+        digest_email: true,
+        digest_push: false,
+        digest_telegram: false,
+        telegram_chat_id: null,
+      },
+    ])
+    for (const values of [
+      [null, true, true, false],
+      [true, null, true, false],
+      [true, true, null, false],
+      [true, true, true, null],
+    ]) {
+      await expect(
+        db.query(
+          `UPDATE public.user_notification_preferences SET reminder_email = $2,
+         reminder_push = $3, digest_email = $4, digest_telegram = $5 WHERE user_id = $1`,
+          [userId, ...values]
+        )
+      ).rejects.toMatchObject({ code: "23502" })
+    }
+    for (const chatId of [null, "", "   "]) {
+      await expect(
+        db.query(
+          `UPDATE public.user_notification_preferences
+         SET digest_telegram = true, telegram_chat_id = $2 WHERE user_id = $1`,
+          [userId, chatId]
+        )
+      ).rejects.toMatchObject({
+        code: "23514",
+        constraint: "user_notification_preferences_telegram_chat_id_required_chk",
+      })
+    }
+    await db.query(
+      `UPDATE public.user_notification_preferences
+       SET digest_telegram = true, telegram_chat_id = $2 WHERE user_id = $1`,
+      [userId, " -12345 "]
+    )
+    await expect(
+      db.query(
+        `SELECT digest_telegram, telegram_chat_id FROM public.user_notification_preferences
+       WHERE user_id = $1`,
+        [userId]
+      )
+    ).resolves.toEqual([{ digest_telegram: true, telegram_chat_id: " -12345 " }])
   })
 
   it("finds every published favorite without filtering by email or channel preference", async () => {

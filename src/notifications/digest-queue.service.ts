@@ -5,6 +5,7 @@ import { CronGateService } from "../pipeline/cron-gate.service.js"
 import { FAMILIES, isLegacyReplacementSchedule } from "../pipeline/families.js"
 import { isFamilyEnabled } from "../pipeline/flags.js"
 import { DigestService } from "./digest.service.js"
+import { SCHEDULED_NOTIFICATION_EXPIRE_SECONDS } from "./scheduled-notification.js"
 
 export interface DigestJobData {
   task?: unknown
@@ -30,10 +31,11 @@ export class DigestQueueService implements OnModuleInit {
     this.jobs.registerQueue(family.deadLetter, null)
     this.jobs.registerQueue<DigestJobData>(
       family.queue,
-      (data) => this.handleJob(data),
+      (data, _jobId, signal) => this.handleJob(data, signal),
       {
         name: family.queue,
         deadLetter: family.deadLetter,
+        expireInSeconds: SCHEDULED_NOTIFICATION_EXPIRE_SECONDS,
         retryLimit: 0,
         retryDelay: family.retryDelay,
         retryBackoff: family.retryBackoff,
@@ -50,7 +52,8 @@ export class DigestQueueService implements OnModuleInit {
     this.logger.log("digest family registered (queue, dlq, schedule; no retries)")
   }
 
-  async handleJob(data: DigestJobData): Promise<void> {
+  async handleJob(data: DigestJobData, signal?: AbortSignal): Promise<void> {
+    signal?.throwIfAborted()
     if (data.task !== "send" && data.task !== "test") {
       throw new Error(`unknown digest task: ${String(data.task)}`)
     }
@@ -60,7 +63,8 @@ export class DigestQueueService implements OnModuleInit {
     const testEmail = typeof data.testEmail === "string" ? data.testEmail : undefined
     if (data.task === "test") {
       if (!testEmail?.trim()) throw new Error("digest test task requires testEmail")
-      const summary = await this.digest.processRun(new Date(), testEmail)
+      const summary = await this.digest.processRun(new Date(), testEmail, signal)
+      signal?.throwIfAborted()
       this.logger.log(
         `digest test complete: emailed=${summary.emailed} skipped=${summary.skipped} failed=${summary.failed} telegramSent=${summary.telegramSent} telegramFailed=${summary.telegramFailed} telegramSkipped=${summary.telegramSkipped}`
       )
@@ -74,7 +78,9 @@ export class DigestQueueService implements OnModuleInit {
       throw new Error("digest legacy schedule missing")
     }
     await this.gate.runGated(schedule, async () => {
-      const summary = await this.digest.processRun(new Date())
+      signal?.throwIfAborted()
+      const summary = await this.digest.processRun(new Date(), undefined, signal)
+      signal?.throwIfAborted()
       this.logger.log(
         `digest run complete: emailed=${summary.emailed} skipped=${summary.skipped} failed=${summary.failed} telegramSent=${summary.telegramSent} telegramFailed=${summary.telegramFailed} telegramSkipped=${summary.telegramSkipped}`
       )

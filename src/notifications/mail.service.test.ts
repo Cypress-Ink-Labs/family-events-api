@@ -88,6 +88,29 @@ describe("MailService", () => {
     ).resolves.toEqual({ sent: false })
   })
 
+  it("propagates job cancellation through an in-flight request", async () => {
+    const controller = new AbortController()
+    const fetchMock = vi.fn(
+      async (_input: string, init: RequestInit): Promise<Response> =>
+        new Promise((_resolve, reject) => {
+          init.signal?.addEventListener("abort", () => reject(init.signal?.reason), { once: true })
+        })
+    )
+    vi.stubGlobal("fetch", fetchMock)
+    const mail = makeMailService({ RESEND_API_KEY: "re_test", RESEND_FROM: FROM })
+
+    const request = mail.send({
+      to: "user@example.com",
+      subject: "s",
+      html: "<p>x</p>",
+      signal: controller.signal,
+    })
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce())
+    controller.abort(new Error("job expired"))
+
+    await expect(request).rejects.toThrow("job expired")
+  })
+
   it("rejects ambiguous or empty content as a programmer error", async () => {
     const mail = makeMailService({ RESEND_API_KEY: "re_test", RESEND_FROM: FROM })
     await expect(
