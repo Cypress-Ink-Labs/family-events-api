@@ -14,6 +14,8 @@ import { PushService } from "./push.service.js"
 import { ReminderQueueService } from "./reminder-queue.service.js"
 import { ReminderRepository } from "./reminder.repository.js"
 import { ReminderService } from "./reminder.service.js"
+import { TelegramRepository } from "./telegram.repository.js"
+import { TelegramService } from "./telegram.service.js"
 
 @Module({
   imports: [DataModule, PipelineModule],
@@ -30,6 +32,8 @@ import { ReminderService } from "./reminder.service.js"
     ReminderQueueService,
     ReminderRepository,
     ReminderService,
+    TelegramRepository,
+    TelegramService,
   ],
   exports: [MailService, PushService],
 })

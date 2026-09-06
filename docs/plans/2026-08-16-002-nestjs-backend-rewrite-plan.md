@@ -208,7 +208,7 @@ history contain no scheduler, while tag-event already embeds routine writes inli
 Boot tests pin both flag directions so safe production defaults install no ownership
 before U33.
 
-### U30 — Notifications port 🟡 (event-change family landed in #30)
+### U30 — Notifications port ✅
 
 Daily reminders and the weekly digest are implemented as strictly serial, no-retry
 pg-boss families behind `CUTOVER_REMINDERS` / `CUTOVER_DIGEST` plus the atomic
@@ -217,9 +217,10 @@ windows, soft-fail Resend delivery, the hosted reminder template, and raw brande
 HTML. The event-change slice keeps `notification_queue` as its transactional
 one-hour debounce buffer and adds a serial internal poller, fail-before-side-effects
 hydration (032), in-app notifications, trusted-provider Web Push, and FCM for the
-deployed iOS/Android token contract. Direct APNs is deferred until subscriptions
-carry an explicit provider discriminator. Remaining: reminder push/in-app delivery
-and Telegram digest + `digest_telegram` preferences.
+deployed iOS/Android token contract. Reminder runs also create in-app rows and
+send push independently of email preferences; weekly digests honor
+`digest_telegram` and use the per-user chat ID. Direct APNs remains deferred
+until subscriptions carry an explicit provider discriminator.
 
 ### U31 — Admin API port
 The ~30 `admin_*` RPCs as operator-guarded endpoints: review queue (cursor

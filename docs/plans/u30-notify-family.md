@@ -32,4 +32,4 @@ In-app notifications use one bulk insert first, then isolated per-row inserts if
 
 ## Deferred
 
-Direct APNs delivery is deferred until `push_subscriptions` has a provider discriminator and existing tokens have been migrated. The deployed contract currently stores FCM tokens for both iOS and Android. Reminder push and in-app delivery, plus Telegram digest delivery, also remain deferred U30 work. They are not registered or processed by this family.
+Direct APNs delivery is deferred until `push_subscriptions` has a provider discriminator and existing tokens have been migrated. The deployed contract currently stores FCM tokens for both iOS and Android. Reminder push/in-app delivery and Telegram digest delivery are owned by their existing scheduled U30 families rather than the event-change family described in this document.

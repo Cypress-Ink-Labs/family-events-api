@@ -62,7 +62,7 @@ export class DigestQueueService implements OnModuleInit {
       if (!testEmail?.trim()) throw new Error("digest test task requires testEmail")
       const summary = await this.digest.processRun(new Date(), testEmail)
       this.logger.log(
-        `digest test complete: emailed=${summary.emailed} skipped=${summary.skipped} failed=${summary.failed}`
+        `digest test complete: emailed=${summary.emailed} skipped=${summary.skipped} failed=${summary.failed} telegramSent=${summary.telegramSent} telegramFailed=${summary.telegramFailed} telegramSkipped=${summary.telegramSkipped}`
       )
       return
     }
@@ -76,7 +76,7 @@ export class DigestQueueService implements OnModuleInit {
     await this.gate.runGated(schedule, async () => {
       const summary = await this.digest.processRun(new Date())
       this.logger.log(
-        `digest run complete: emailed=${summary.emailed} skipped=${summary.skipped} failed=${summary.failed}`
+        `digest run complete: emailed=${summary.emailed} skipped=${summary.skipped} failed=${summary.failed} telegramSent=${summary.telegramSent} telegramFailed=${summary.telegramFailed} telegramSkipped=${summary.telegramSkipped}`
       )
       return JSON.stringify(summary)
     })
