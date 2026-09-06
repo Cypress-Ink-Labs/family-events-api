@@ -63,6 +63,11 @@ interface ResolvedCredentials {
   fcm?: FcmCredentials
 }
 
+export interface PushSendContext {
+  subscriptions: Map<string, Promise<PushSubscriptionRow[]>>
+  credentials?: Promise<ResolvedCredentials>
+}
+
 function unique(values: string[]): string[] {
   return [...new Set(values)]
 }
@@ -103,9 +108,13 @@ export class PushService {
     @Optional() private readonly dependencies: PushServiceDependencies = {}
   ) {}
 
-  async send(input: SendPushInput): Promise<SendPushResult> {
+  createSendContext(): PushSendContext {
+    return { subscriptions: new Map() }
+  }
+
+  async send(input: SendPushInput, context?: PushSendContext): Promise<SendPushResult> {
     const requestedUserIds = unique(input.userIds)
-    const subscriptions = await this.repository.listSubscriptions(requestedUserIds)
+    const subscriptions = await this.subscriptions(requestedUserIds, context)
     const matchedUserIds = new Set(subscriptions.map((subscription) => subscription.userId))
     const result: SendPushResult = {
       requestedRecipients: requestedUserIds.length,
@@ -118,7 +127,7 @@ export class PushService {
     }
     if (subscriptions.length === 0) return result
 
-    const credentials = await this.resolveCredentials()
+    const credentials = await this.credentials(context)
     const groups = partition(subscriptions)
     const expiredIds: string[] = []
 
@@ -154,6 +163,25 @@ export class PushService {
         `skipped=${result.skipped}`
     )
     return result
+  }
+
+  private subscriptions(
+    requestedUserIds: string[],
+    context?: PushSendContext
+  ): Promise<PushSubscriptionRow[]> {
+    if (!context) return this.repository.listSubscriptions(requestedUserIds)
+    const key = requestedUserIds.toSorted().join(",")
+    const existing = context.subscriptions.get(key)
+    if (existing) return existing
+    const pending = this.repository.listSubscriptions(requestedUserIds)
+    context.subscriptions.set(key, pending)
+    return pending
+  }
+
+  private credentials(context?: PushSendContext): Promise<ResolvedCredentials> {
+    if (!context) return this.resolveCredentials()
+    context.credentials ??= this.resolveCredentials()
+    return context.credentials
   }
 
   private async resolveCredentials(): Promise<ResolvedCredentials> {

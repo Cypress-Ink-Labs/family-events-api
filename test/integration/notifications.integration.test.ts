@@ -393,15 +393,16 @@ describe("notification repositories", () => {
       [eventId, cityId]
     )
 
-    await reminders.insertInAppNotifications([
-      {
-        userId,
-        type: "reminder",
-        title: "Reminder: Reminder Event is tomorrow",
-        body: "Sunday, September 6",
-        eventId,
-      },
-    ])
+    const reminder = {
+      id: randomUUID(),
+      userId,
+      type: "reminder" as const,
+      title: "Reminder: Reminder Event is tomorrow",
+      body: "Sunday, September 6",
+      eventId,
+    }
+    await expect(reminders.insertInAppNotifications([reminder])).resolves.toBe(1)
+    await expect(reminders.insertInAppNotification(reminder)).resolves.toBe(0)
 
     await expect(
       db.query<{ type: string; eventId: string }>(

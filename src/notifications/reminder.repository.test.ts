@@ -28,6 +28,7 @@ describe("ReminderRepository", () => {
     const { query, repository } = makeRepository()
     const rows: ReminderInAppNotificationRow[] = [
       {
+        id: "aaaaaaaa-aaaa-5aaa-8aaa-aaaaaaaaaaaa",
         userId: "11111111-1111-4111-8111-111111111111",
         type: "reminder",
         title: "Reminder",
@@ -41,8 +42,10 @@ describe("ReminderRepository", () => {
     const [sql, params] = query.mock.calls[0]!
     expect(sql).toContain("INSERT INTO public.user_notifications")
     expect(sql).toContain("UNNEST")
+    expect(sql).toContain("ON CONFLICT (id) DO NOTHING")
     expect(sql).not.toContain(rows[0]!.title)
     expect(params).toEqual([
+      [rows[0]!.id],
       [rows[0]!.userId],
       ["reminder"],
       ["Reminder"],

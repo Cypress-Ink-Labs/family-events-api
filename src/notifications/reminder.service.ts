@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto"
+
 import { Injectable, Logger } from "@nestjs/common"
 import { ConfigService } from "@nestjs/config"
 
@@ -16,6 +18,19 @@ const DEFAULT_APP_URL = "https://family-events.up.railway.app"
 const REMINDER_TEMPLATE_ID = "family-events-event-reminder"
 
 type ReminderType = "day_before" | "morning_of"
+
+function reminderNotificationId(target: ReminderTarget, type: ReminderType): string {
+  const bytes = createHash("sha256")
+    .update(`${target.userId}:${target.eventId}:${target.startDatetime}:${type}`)
+    .digest()
+    .subarray(0, 16)
+  // Encode the stable hash as an RFC 4122 variant/version UUID so Postgres
+  // can enforce idempotency through the existing primary key.
+  bytes[6] = (bytes[6]! & 0x0f) | 0x50
+  bytes[8] = (bytes[8]! & 0x3f) | 0x80
+  const hex = bytes.toString("hex")
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
+}
 
 interface ReminderChannelCounts {
   sent: number
@@ -98,6 +113,7 @@ export class ReminderService {
       },
     }
     const inAppRows: ReminderInAppNotificationRow[] = []
+    const pushContext = this.push.createSendContext()
     const seen = new Set<string>()
     for (const [targets, type] of [
       [morningOf, "morning_of"],
@@ -111,6 +127,7 @@ export class ReminderService {
         const title = `Reminder: ${target.title} is ${type === "day_before" ? "tomorrow" : "today"}`
         const body = `${formatEventDate(target.startDatetime)}${target.venueName ? ` at ${target.venueName}` : ""}`
         inAppRows.push({
+          id: reminderNotificationId(target, type),
           userId: target.userId,
           eventId: target.eventId,
           type: "reminder",
@@ -136,12 +153,15 @@ export class ReminderService {
           result.channels.push.skippedRecipients += 1
         } else {
           try {
-            const response = await this.push.send({
-              userIds: [target.userId],
-              title,
-              body,
-              url: `${this.appUrl()}/events/${target.eventId}`,
-            })
+            const response = await this.push.send(
+              {
+                userIds: [target.userId],
+                title,
+                body,
+                url: `${this.appUrl()}/events/${target.eventId}`,
+              },
+              pushContext
+            )
             result.channels.push.sentSubscriptions += response.sent
             result.channels.push.failedSubscriptions += response.failed
             result.channels.push.skippedSubscriptions += response.skipped
@@ -164,14 +184,12 @@ export class ReminderService {
   ): Promise<void> {
     if (rows.length === 0) return
     try {
-      await this.repository.insertInAppNotifications(rows)
-      counts.sent += rows.length
+      counts.sent += await this.repository.insertInAppNotifications(rows)
     } catch {
       this.logger.warn(`reminder in-app bulk insert failed: category=database count=${rows.length}`)
       for (const row of rows) {
         try {
-          await this.repository.insertInAppNotification(row)
-          counts.sent += 1
+          counts.sent += await this.repository.insertInAppNotification(row)
         } catch {
           counts.failed += 1
           this.logger.warn("reminder in-app row insert failed: category=database count=1")

@@ -131,6 +131,23 @@ describe("PushService", () => {
     expect(repo.loadCredentials).not.toHaveBeenCalled()
   })
 
+  it("reuses subscriptions and credentials within an explicit send context", async () => {
+    const subscription = mobile("sub-1", "11111111-1111-4111-8111-111111111111")
+    const { repo, service } = makeService([subscription])
+    const context = service.createSendContext()
+    const input = {
+      userIds: [subscription.userId],
+      title: "Reminder",
+      body: "Body",
+    }
+
+    await service.send(input, context)
+    await service.send({ ...input, title: "Another reminder" }, context)
+
+    expect(repo.listSubscriptions).toHaveBeenCalledTimes(1)
+    expect(repo.loadCredentials).toHaveBeenCalledTimes(1)
+  })
+
   it("routes iOS and Android tokens through FCM and soft-skips missing credentials", async () => {
     const { service } = makeService([
       mobile("ios", "user-1", "ios"),

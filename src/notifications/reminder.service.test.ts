@@ -27,8 +27,8 @@ const target: ReminderTarget = {
 function makeService() {
   const repository = {
     findReminderTargets: vi.fn(async () => [] as ReminderTarget[]),
-    insertInAppNotifications: vi.fn(async (_rows: ReminderInAppNotificationRow[]) => undefined),
-    insertInAppNotification: vi.fn(async (_row: ReminderInAppNotificationRow) => undefined),
+    insertInAppNotifications: vi.fn(async (rows: ReminderInAppNotificationRow[]) => rows.length),
+    insertInAppNotification: vi.fn(async (_row: ReminderInAppNotificationRow) => 1),
   }
   const mail = {
     send: vi.fn(async (): Promise<SendMailResult> => ({ sent: true, status: 200 })),
@@ -37,6 +37,7 @@ function makeService() {
     get: (key: keyof Env) => (key === "APP_URL" ? "https://events.example.com/" : undefined),
   } as ConfigService<Env, true>
   const push = {
+    createSendContext: vi.fn(() => ({ subscriptions: new Map() })),
     send: vi.fn(async (): Promise<SendPushResult> => ({
       requestedRecipients: 1,
       matchedRecipients: 1,
@@ -164,12 +165,15 @@ describe("ReminderService", () => {
         APP_URL: "https://events.example.com",
       },
     })
-    expect(push.send).toHaveBeenCalledWith({
-      userIds: [target.userId],
-      title: "Reminder: Storytime is today",
-      body: "Sunday, August 16 at 10:30 AM at Main Library",
-      url: "https://events.example.com/events/22222222-2222-4222-8222-222222222222",
-    })
+    expect(push.send).toHaveBeenCalledWith(
+      {
+        userIds: [target.userId],
+        title: "Reminder: Storytime is today",
+        body: "Sunday, August 16 at 10:30 AM at Main Library",
+        url: "https://events.example.com/events/22222222-2222-4222-8222-222222222222",
+      },
+      expect.any(Object)
+    )
   })
 
   it("reports missing mail configuration as a channel skip", async () => {
@@ -195,7 +199,9 @@ describe("ReminderService", () => {
     mail.send.mockRejectedValueOnce(new Error("mail unavailable"))
     push.send.mockRejectedValueOnce(new Error("push unavailable"))
     repository.insertInAppNotifications.mockRejectedValueOnce(new Error("bulk unavailable"))
-    repository.insertInAppNotification.mockRejectedValueOnce(new Error("row unavailable"))
+    repository.insertInAppNotification
+      .mockRejectedValueOnce(new Error("row unavailable"))
+      .mockResolvedValueOnce(1)
 
     await expect(service.processRun(new Date("2026-08-16T16:00:00Z"))).resolves.toEqual({
       total: 2,

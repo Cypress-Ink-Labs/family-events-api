@@ -16,6 +16,7 @@ export interface ReminderTarget {
 }
 
 export interface ReminderInAppNotificationRow {
+  id: string
   userId: string
   type: "reminder"
   title: string
@@ -46,15 +47,18 @@ ORDER BY f.user_id, e.start_datetime, e.id
 `
 
 const INSERT_IN_APP_SQL = `
-INSERT INTO public.user_notifications (user_id, type, title, body, event_id)
+INSERT INTO public.user_notifications (id, user_id, type, title, body, event_id)
 SELECT *
 FROM UNNEST(
   $1::uuid[],
-  $2::text[],
+  $2::uuid[],
   $3::text[],
   $4::text[],
-  $5::uuid[]
+  $5::text[],
+  $6::uuid[]
 )
+ON CONFLICT (id) DO NOTHING
+RETURNING id
 `
 
 @Injectable()
@@ -71,18 +75,20 @@ export class ReminderRepository {
     ])
   }
 
-  async insertInAppNotifications(rows: ReminderInAppNotificationRow[]): Promise<void> {
-    if (rows.length === 0) return
-    await this.db.query(INSERT_IN_APP_SQL, [
+  async insertInAppNotifications(rows: ReminderInAppNotificationRow[]): Promise<number> {
+    if (rows.length === 0) return 0
+    const inserted = await this.db.query<{ id: string }>(INSERT_IN_APP_SQL, [
+      rows.map((row) => row.id),
       rows.map((row) => row.userId),
       rows.map((row) => row.type),
       rows.map((row) => row.title),
       rows.map((row) => row.body),
       rows.map((row) => row.eventId),
     ])
+    return inserted.length
   }
 
-  async insertInAppNotification(row: ReminderInAppNotificationRow): Promise<void> {
-    await this.insertInAppNotifications([row])
+  async insertInAppNotification(row: ReminderInAppNotificationRow): Promise<number> {
+    return this.insertInAppNotifications([row])
   }
 }
