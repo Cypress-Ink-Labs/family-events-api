@@ -37,6 +37,12 @@ async function enqueue(
     last_error: string | null
   }> = {}
 ): Promise<number> {
+  const eventId = overrides.event_id ?? randomUUID()
+  await db.query(
+    `INSERT INTO public.events (id, title, start_datetime)
+     VALUES ($1::uuid, 'Tag queue fixture', now()) ON CONFLICT (id) DO NOTHING`,
+    [eventId]
+  )
   const rows = await db.query<{ id: number }>(
     `INSERT INTO public.event_tag_queue
        (event_id, trigger_type, status, next_attempt_at, started_at, last_error)
@@ -44,7 +50,7 @@ async function enqueue(
              COALESCE($3::timestamptz, now()), $4::timestamptz, $5)
      RETURNING id::int AS id`,
     [
-      overrides.event_id ?? randomUUID(),
+      eventId,
       overrides.status ?? "pending",
       overrides.next_attempt_at ?? null,
       overrides.started_at ?? null,
