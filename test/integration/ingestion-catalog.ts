@@ -279,7 +279,7 @@ export async function ensureIngestionSchema(db: DbService): Promise<void> {
   await db.query(`
     CREATE TABLE public.event_tag_queue (
       id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-      event_id uuid NOT NULL,
+      event_id uuid NOT NULL REFERENCES public.events (id) ON DELETE CASCADE,
       source_run_id uuid,
       trigger_type text NOT NULL DEFAULT 'import',
       enqueued_at timestamptz NOT NULL DEFAULT now(),
@@ -373,12 +373,12 @@ export async function ensureIngestionSchema(db: DbService): Promise<void> {
 
   // Classification trace rows written by tag-event — verbatim from the schema
   // baseline, with prompt_version folded in from 20260601005000 (both of that
-  // file's duplicate ADD COLUMN blocks are identical). event_id is a bare uuid
-  // in the real schema (no FK), so queue-side deletes never cascade here.
+  // file's duplicate ADD COLUMN blocks are identical). The baseline adds
+  // event_id's cascade FK after CREATE TABLE; keep deletion behavior intact.
   await db.query(`
     CREATE TABLE public.event_ai_traces (
       id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-      event_id uuid NOT NULL,
+      event_id uuid NOT NULL REFERENCES public.events (id) ON DELETE CASCADE,
       source_run_id uuid,
       trigger_type text NOT NULL DEFAULT 'import',
       provider text,

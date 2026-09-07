@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common"
 import { ConfigModule } from "@nestjs/config"
 
+import { AdminModule } from "./admin/admin.module.js"
 import { AuthModule } from "./auth/auth.module.js"
 import { validateEnv } from "./config/env.js"
 import { ConsumerModule } from "./consumer/consumer.module.js"
@@ -18,6 +19,7 @@ import { PipelineModule } from "./pipeline/pipeline.module.js"
     DataModule,
     JobsModule,
     AuthModule,
+    AdminModule,
     ConsumerModule,
     PipelineModule,
     NotificationsModule,
