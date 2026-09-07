@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from "@nestjs/common"
+import { ForbiddenException, Injectable, NotFoundException } from "@nestjs/common"
 
 import type { AdminEventsInput, AdminStatus } from "./admin-review.input.js"
 import {
@@ -35,10 +35,11 @@ export class AdminReviewService {
         if (
           failure.code === "42501" ||
           failure.message === "ADMIN_EVENT_ADMIN_REQUIRED" ||
-          (missingEvent && failure.code === "P0002")
+          failure.message === "forbidden"
         ) {
-          throw new NotFoundException()
+          throw new ForbiddenException("admin access is not provisioned")
         }
+        if (missingEvent && failure.code === "P0002") throw new NotFoundException()
       }
       throw error
     }

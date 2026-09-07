@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto"
 
-import { NotFoundException } from "@nestjs/common"
+import { ForbiddenException, NotFoundException } from "@nestjs/common"
+import type { PoolClient } from "pg"
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest"
 
 import { parseAdminEventsQuery } from "../../src/admin/admin-review.input.js"
@@ -76,6 +77,16 @@ async function source(): Promise<string> {
   return id
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (reason: unknown) => void
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise
+    reject = rejectPromise
+  })
+  return { promise, resolve, reject }
+}
+
 describe("admin review RPC reads", () => {
   it("combines status, city, source, LLM status/decision/reviewed and keyword filters", async () => {
     const cityId = await city()
@@ -87,7 +98,7 @@ describe("admin review RPC reads", () => {
       llm_review_status: "succeeded",
       llm_review_decision: "approve",
       llm_reviewed_at: "2026-09-01T11:00:00Z",
-      ai_confidence: "0.12345678901234567890123456789",
+      ai_confidence: "0.123",
     })
     await event({ status: "rejected", city_id: cityId })
     await event({
@@ -111,7 +122,7 @@ describe("admin review RPC reads", () => {
     expect(result.totalCount).toBe(1)
     expect(result.events[0]).toMatchObject({
       source_id: sourceId,
-      ai_confidence: "0.12345678901234567890123456789",
+      ai_confidence: "0.123",
     })
     expect(result.events[0]!.start_datetime).toContain(".123456")
     expect((await page({ city_is_null: "true" })).totalCount).toBe(2)
@@ -129,6 +140,34 @@ describe("admin review RPC reads", () => {
     expect(await service.facets(actor, keyword)).toEqual([
       { city_id: null, source_id: null, status: "draft", count: 1 },
     ])
+  })
+
+  it.each(["venue_name", "address"])(
+    "searches %s-only terms through the production search trigger",
+    async (field) => {
+      const id = await event({ [field]: "Planetarium" })
+      await event()
+      expect((await page({ keyword: "planetarium" })).events.map((row) => row.id)).toEqual([id])
+      expect(await service.facets(actor, "planetarium")).toEqual([
+        { city_id: null, source_id: null, status: "draft", count: 1 },
+      ])
+      await db.query(`UPDATE public.events SET ${field} = $1 WHERE id = $2::uuid`, [
+        "Observatory",
+        id,
+      ])
+      expect((await page({ keyword: "planetarium" })).totalCount).toBe(0)
+      expect((await page({ keyword: "observatory" })).events.map((row) => row.id)).toEqual([id])
+    }
+  )
+
+  it("uses production numeric precision/default and preserves nullable confidence", async () => {
+    const defaultId = await event()
+    const nullId = await event({ ai_confidence: null })
+    const roundedId = await event({ ai_confidence: "0.1234" })
+    const rows = (await page()).events
+    expect(rows.find((row) => row.id === defaultId)!.ai_confidence).toBe("0.000")
+    expect(rows.find((row) => row.id === nullId)!.ai_confidence).toBeNull()
+    expect(rows.find((row) => row.id === roundedId)!.ai_confidence).toBe("0.123")
   })
 
   it("orders tied microsecond timestamps by descending UUID without losing rows", async () => {
@@ -231,6 +270,52 @@ describe("admin review RPC reads", () => {
 })
 
 describe("admin review RPC writes", () => {
+  it("cascades access when the profile is deleted while retaining the auth user", async () => {
+    await db.query("DELETE FROM public.user_profiles WHERE id = $1::uuid", [actor])
+    expect(await db.query("SELECT user_id FROM public.user_access")).toEqual([])
+    expect(await db.query("SELECT id FROM auth.users WHERE id = $1::uuid", [actor])).toEqual([
+      { id: actor },
+    ])
+    await expect(page()).rejects.toBeInstanceOf(ForbiddenException)
+  })
+
+  it.each([
+    ["single", "published"],
+    ["single", "rejected"],
+    ["batch", "published"],
+    ["batch", "rejected"],
+  ] as const)("%s draft to %s clears only the LLM status", async (operation, status) => {
+    const id = await event({
+      llm_review_status: "succeeded",
+      llm_review_decision: "needs_admin_review",
+      llm_review_reason: "Inspect date",
+      llm_review_confidence: "0.875",
+      llm_reviewed_at: "2026-09-01T11:00:00.123456Z",
+    })
+    if (operation === "single") await service.setStatus(actor, id, status, "Checked date")
+    else await service.bulkStatus(actor, [id], status)
+    expect(
+      await db.query(
+        `SELECT status, llm_review_status, llm_review_decision, llm_review_reason, llm_review_confidence
+       FROM public.events WHERE id = $1::uuid`,
+        [id]
+      )
+    ).toEqual([
+      {
+        status,
+        llm_review_status: "not_required",
+        llm_review_decision: "needs_admin_review",
+        llm_review_reason: "Inspect date",
+        llm_review_confidence: "0.875",
+      },
+    ])
+    expect((await page()).events[0]).toMatchObject({
+      llm_review_status: "not_required",
+      llm_review_decision: "needs_admin_review",
+      llm_review_reason: "Inspect date",
+    })
+  })
+
   it("attributes status edits, captures decisions only on change, and audits same-status actions", async () => {
     const sourceId = await source()
     const id = await event({ source_id: sourceId, source_name: "Library Calendar" })
@@ -315,6 +400,109 @@ describe("admin review RPC writes", () => {
     }
   })
 
+  it.each(["bulk-status", "bulk-delete"] as const)(
+    "%s waits before its audit snapshot and captures the first committed editor/status",
+    async (operation) => {
+      const id = await event()
+      const secondActor = randomUUID()
+      await db.query("INSERT INTO auth.users (id) VALUES ($1::uuid)", [secondActor])
+      await db.query("INSERT INTO public.user_profiles (id, role) VALUES ($1::uuid, 'admin')", [
+        secondActor,
+      ])
+      await db.query(
+        "INSERT INTO public.user_access (user_id, is_enabled) VALUES ($1::uuid, true)",
+        [secondActor]
+      )
+      const firstReady = deferred<PoolClient>()
+      const secondReady = deferred<number>()
+      const releaseFirst = deferred<void>()
+      const firstRepository = new AdminReviewRepository({
+        withTransaction: <T>(work: (client: PoolClient) => Promise<T>) =>
+          db.withTransaction(async (client) => {
+            const result = await work(client)
+            firstReady.resolve(client)
+            await releaseFirst.promise
+            return result
+          }),
+      } as DbService)
+      const secondRepository = new AdminReviewRepository({
+        withTransaction: <T>(work: (client: PoolClient) => Promise<T>) =>
+          db.withTransaction(async (client) => {
+            // Bound a failed lock assertion so cleanup cannot hang on an open transaction.
+            await client.query("SET LOCAL lock_timeout = '5s'")
+            const result = await client.query<{ pid: number }>("SELECT pg_backend_pid() AS pid")
+            secondReady.resolve(result.rows[0]!.pid)
+            return work(client)
+          }),
+      } as DbService)
+      const first = firstRepository.bulkStatus(actor, [id], "published")
+      // Attach handlers immediately: an early DB failure must still release both transactions.
+      const firstOutcome = first.then(
+        (value) => ({ value }),
+        (error: unknown) => {
+          firstReady.reject(error)
+          return { error }
+        }
+      )
+      let secondOutcome: Promise<{ value: number } | { error: unknown }> | undefined
+      try {
+        const firstClient = await firstReady.promise
+        const second =
+          operation === "bulk-status"
+            ? secondRepository.bulkStatus(secondActor, [id], "rejected")
+            : secondRepository.bulkDelete(secondActor, [id])
+        secondOutcome = second.then(
+          (value) => ({ value }),
+          (error: unknown) => {
+            secondReady.reject(error)
+            return { error }
+          }
+        )
+        const secondPid = await secondReady.promise
+        let blocked: { query: string; waiting: boolean } | undefined
+        const deadline = Date.now() + 2_000
+        while (Date.now() < deadline) {
+          await firstClient.query("SELECT pg_stat_clear_snapshot()")
+          const activity = await firstClient.query<{ query: string; waiting: boolean }>(
+            `SELECT query, wait_event_type = 'Lock' AND cardinality(pg_blocking_pids(pid)) > 0 AS waiting
+             FROM pg_stat_activity WHERE pid = $1::integer`,
+            [secondPid]
+          )
+          if (activity.rows[0]?.waiting) {
+            blocked = activity.rows[0]
+            break
+          }
+          await new Promise((resolve) => setTimeout(resolve, 10))
+        }
+        expect(blocked?.waiting).toBe(true)
+        expect(blocked?.query).toMatch(
+          /SELECT\s+id\s+FROM\s+public\.events[\s\S]*ORDER BY id[\s\S]*FOR UPDATE/i
+        )
+      } finally {
+        releaseFirst.resolve()
+        await Promise.all([firstOutcome, secondOutcome])
+      }
+      expect(await firstOutcome).toEqual({ value: 1 })
+      expect(await secondOutcome).toEqual({ value: 1 })
+      const [audit] = await db.query<{ metadata: { previous: Record<string, unknown>[] } }>(
+        "SELECT metadata FROM public.admin_audit_log WHERE admin_user_id = $1::uuid",
+        [secondActor]
+      )
+      expect(audit!.metadata.previous).toEqual([
+        expect.objectContaining({ id, status: "published", admin_last_edited_by: actor }),
+      ])
+      const stored = await db.query(
+        "SELECT status, admin_last_edited_by FROM public.events WHERE id = $1::uuid",
+        [id]
+      )
+      expect(stored).toEqual(
+        operation === "bulk-status"
+          ? [{ status: "rejected", admin_last_edited_by: secondActor }]
+          : []
+      )
+    }
+  )
+
   it("deletes once per existing ID, cascades child rows, and retains attributed snapshots", async () => {
     const id = await event()
     const tag = randomUUID()
@@ -382,7 +570,7 @@ describe("admin review RPC writes", () => {
   })
 
   it.each(["expired", "missing", "disabled", "member"])(
-    "conceals %s DB access for every operation",
+    "rejects %s DB access for every operation",
     async (denial) => {
       const id = await event()
       if (denial === "expired")
@@ -399,7 +587,7 @@ describe("admin review RPC writes", () => {
         () => service.bulkStatus(actor, [id], "published"),
         () => service.bulkDelete(actor, [id]),
       ]) {
-        await expect(run()).rejects.toBeInstanceOf(NotFoundException)
+        await expect(run()).rejects.toBeInstanceOf(ForbiddenException)
       }
       expect(await db.query("SELECT status FROM public.events")).toEqual([{ status: "draft" }])
       expect(await db.query("SELECT count(*)::int AS count FROM public.admin_audit_log")).toEqual([

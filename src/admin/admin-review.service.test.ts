@@ -1,4 +1,4 @@
-import { NotFoundException } from "@nestjs/common"
+import { ForbiddenException, NotFoundException } from "@nestjs/common"
 import { describe, expect, it, vi } from "vitest"
 
 import type { AdminEventsInput } from "./admin-review.input.js"
@@ -148,18 +148,30 @@ describe("AdminReviewService", () => {
   it.each([
     { code: "42501", message: "forbidden" },
     { code: "P0001", message: "ADMIN_EVENT_ADMIN_REQUIRED" },
-  ])("conceals verified database admin denial on every operation: %j", async (error) => {
-    const { repository, service } = setup()
-    for (const mock of Object.values(repository)) mock.mockRejectedValue(error)
-    for (const operation of [
-      () => service.listEvents("actor", input),
-      () => service.facets("actor", null),
-      () => service.setStatus("actor", "event", "draft", null),
-      () => service.bulkStatus("actor", ["event"], "draft"),
-      () => service.bulkDelete("actor", ["event"]),
-    ])
-      await expect(operation()).rejects.toBeInstanceOf(NotFoundException)
-  })
+    { code: "P0001", message: "forbidden" },
+  ])(
+    "returns a provisioning error for verified database admin denial on every operation: %j",
+    async (error) => {
+      const { repository, service } = setup()
+      for (const mock of Object.values(repository)) mock.mockRejectedValue(error)
+      for (const operation of [
+        () => service.listEvents("actor", input),
+        () => service.facets("actor", null),
+        () => service.setStatus("actor", "event", "draft", null),
+        () => service.bulkStatus("actor", ["event"], "draft"),
+        () => service.bulkDelete("actor", ["event"]),
+      ]) {
+        await expect(operation()).rejects.toBeInstanceOf(ForbiddenException)
+        await expect(operation()).rejects.toMatchObject({
+          response: {
+            statusCode: 403,
+            error: "Forbidden",
+            message: "admin access is not provisioned",
+          },
+        })
+      }
+    }
+  )
 
   it("maps P0002 only for single status updates", async () => {
     const { repository, service } = setup()

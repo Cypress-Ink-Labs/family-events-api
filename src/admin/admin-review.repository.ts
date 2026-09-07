@@ -37,6 +37,10 @@ export interface AdminFacetRow {
   count: string | number
 }
 
+// Acquire locks in one consistent order before the legacy RPC reads audit snapshots.
+const LOCK_TARGETS_SQL =
+  "SELECT id FROM public.events WHERE id = ANY($1::uuid[]) ORDER BY id FOR UPDATE"
+
 const LIST_SQL = `
 SELECT id, title, status, start_datetime, venue_name, city_id, source_id,
        source_name, is_free, age_min, age_max, ai_confidence, llm_review_status,
@@ -116,6 +120,7 @@ export class AdminReviewRepository {
 
   bulkStatus(actor: string, eventIds: string[], status: AdminStatus): Promise<number> {
     return this.withActor(actor, async (client) => {
+      await client.query(LOCK_TARGETS_SQL, [eventIds])
       const result = await client.query<{ affected: number }>(
         "SELECT public.admin_batch_set_event_status($1::uuid[], $2::text) AS affected",
         [eventIds, status]
@@ -126,6 +131,7 @@ export class AdminReviewRepository {
 
   bulkDelete(actor: string, eventIds: string[]): Promise<number> {
     return this.withActor(actor, async (client) => {
+      await client.query(LOCK_TARGETS_SQL, [eventIds])
       const result = await client.query<{ affected: number }>(
         "SELECT public.admin_delete_events($1::uuid[]) AS affected",
         [eventIds]

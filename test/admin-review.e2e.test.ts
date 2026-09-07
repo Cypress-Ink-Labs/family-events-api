@@ -173,14 +173,18 @@ describe("admin review HTTP with the real guard chain", () => {
       it.each([
         { code: "42501", message: "forbidden" },
         { code: "P0001", message: "ADMIN_EVENT_ADMIN_REQUIRED" },
-      ])("conceals database admin denial as 404: $message", async (failure) => {
+      ])("reports database admin denial as 403: $message", async (failure) => {
         for (const method of Object.values(repository)) method.mockRejectedValueOnce(failure)
         const http = request(app.getHttpServer())
         const operation = http[route.method](route.path).set("Authorization", "Bearer operator")
         if (route.body !== undefined) operation.send(route.body)
         const response = await operation
-        expect(response.status).toBe(404)
-        expect(response.body).toEqual({ statusCode: 404, message: "Not Found" })
+        expect(response.status).toBe(403)
+        expect(response.body).toEqual({
+          statusCode: 403,
+          error: "Forbidden",
+          message: "admin access is not provisioned",
+        })
       })
     })
   }

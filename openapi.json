@@ -35,7 +35,7 @@
             }
           },
           {
-            "description": "Trimmed keyword; blank means no search filter",
+            "description": "Trimmed before the 100-character limit is checked; blank means no search filter",
             "required": false,
             "name": "keyword",
             "in": "query",
@@ -45,12 +45,11 @@
             }
           },
           {
-            "description": "Timezone required, up to six fractional digits. Must be paired with after_id; preserves the returned timestamp exactly.",
+            "description": "Raw timestamp string, preserving up to six fractional digits. Accepts PostgreSQL and ISO representations: a space or T separates date and time; the required timezone is Z or a signed HH, HHMM, or HH:MM offset. Example: 2026-09-07 12:34:56.123456+00. Must be paired with after_id; pass the returned timestamp unchanged.",
             "required": false,
             "name": "after_created_at",
             "in": "query",
             "schema": {
-              "format": "date-time",
               "type": "string"
             }
           },
@@ -130,16 +129,44 @@
             }
           },
           "400": {
-            "description": "Invalid path, query parameters, or request body"
+            "description": "Invalid path, query parameters, or request body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminValidationErrorDto"
+                }
+              }
+            }
           },
           "401": {
-            "description": "A valid Clerk bearer token is required"
+            "description": "A valid Clerk bearer token is required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
           },
           "403": {
-            "description": "The Clerk user is not provisioned"
+            "description": "The Clerk user is not provisioned, or database admin access is not provisioned. Database denial returns the stable message: admin access is not provisioned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
           },
           "404": {
-            "description": "The operator lacks admin access, or the event does not exist"
+            "description": "The mapped user is not an operator, or the event does not exist",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -158,7 +185,7 @@
         "operationId": "adminEventFacets",
         "parameters": [
           {
-            "description": "Trimmed keyword; blank means no search filter",
+            "description": "Trimmed before the 100-character limit is checked; blank means no search filter",
             "required": false,
             "name": "keyword",
             "in": "query",
@@ -183,16 +210,44 @@
             }
           },
           "400": {
-            "description": "Invalid path, query parameters, or request body"
+            "description": "Invalid path, query parameters, or request body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminValidationErrorDto"
+                }
+              }
+            }
           },
           "401": {
-            "description": "A valid Clerk bearer token is required"
+            "description": "A valid Clerk bearer token is required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
           },
           "403": {
-            "description": "The Clerk user is not provisioned"
+            "description": "The Clerk user is not provisioned, or database admin access is not provisioned. Database denial returns the stable message: admin access is not provisioned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
           },
           "404": {
-            "description": "The operator lacks admin access, or the event does not exist"
+            "description": "The mapped user is not an operator, or the event does not exist",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -225,7 +280,28 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/AdminStatusBodyDto"
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "status"
+                ],
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "draft",
+                      "published",
+                      "rejected",
+                      "archived"
+                    ]
+                  },
+                  "reason": {
+                    "type": "string",
+                    "nullable": true,
+                    "maxLength": 1000,
+                    "description": "Trimmed; null, omitted, or blank becomes null. Overlong values are rejected."
+                  }
+                }
               }
             }
           }
@@ -242,16 +318,44 @@
             }
           },
           "400": {
-            "description": "Invalid path, query parameters, or request body"
+            "description": "Invalid path, query parameters, or request body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminValidationErrorDto"
+                }
+              }
+            }
           },
           "401": {
-            "description": "A valid Clerk bearer token is required"
+            "description": "A valid Clerk bearer token is required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
           },
           "403": {
-            "description": "The Clerk user is not provisioned"
+            "description": "The Clerk user is not provisioned, or database admin access is not provisioned. Database denial returns the stable message: admin access is not provisioned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
           },
           "404": {
-            "description": "The operator lacks admin access, or the event does not exist"
+            "description": "The mapped user is not an operator, or the event does not exist",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -274,7 +378,33 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/AdminBulkStatusBodyDto"
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "event_ids",
+                  "status"
+                ],
+                "properties": {
+                  "event_ids": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "minItems": 1,
+                    "maxItems": 500,
+                    "description": "Submit 1 to 500 UUIDs. Duplicates are removed after validation."
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "draft",
+                      "published",
+                      "rejected",
+                      "archived"
+                    ]
+                  }
+                }
               }
             }
           }
@@ -291,16 +421,44 @@
             }
           },
           "400": {
-            "description": "Invalid path, query parameters, or request body"
+            "description": "Invalid path, query parameters, or request body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminValidationErrorDto"
+                }
+              }
+            }
           },
           "401": {
-            "description": "A valid Clerk bearer token is required"
+            "description": "A valid Clerk bearer token is required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
           },
           "403": {
-            "description": "The Clerk user is not provisioned"
+            "description": "The Clerk user is not provisioned, or database admin access is not provisioned. Database denial returns the stable message: admin access is not provisioned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
           },
           "404": {
-            "description": "The operator lacks admin access, or the event does not exist"
+            "description": "The mapped user is not an operator, or the event does not exist",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -323,7 +481,23 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/AdminBulkDeleteBodyDto"
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "event_ids"
+                ],
+                "properties": {
+                  "event_ids": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "minItems": 1,
+                    "maxItems": 500,
+                    "description": "Submit 1 to 500 UUIDs. Duplicates are removed after validation."
+                  }
+                }
               }
             }
           }
@@ -340,16 +514,44 @@
             }
           },
           "400": {
-            "description": "Invalid path, query parameters, or request body"
+            "description": "Invalid path, query parameters, or request body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminValidationErrorDto"
+                }
+              }
+            }
           },
           "401": {
-            "description": "A valid Clerk bearer token is required"
+            "description": "A valid Clerk bearer token is required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
           },
           "403": {
-            "description": "The Clerk user is not provisioned"
+            "description": "The Clerk user is not provisioned, or database admin access is not provisioned. Database denial returns the stable message: admin access is not provisioned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
           },
           "404": {
-            "description": "The operator lacks admin access, or the event does not exist"
+            "description": "The mapped user is not an operator, or the event does not exist",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -1257,6 +1459,85 @@
       }
     },
     "schemas": {
+      "AdminValidationIssueDto": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Dot-separated field path; empty for errors on the whole object"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "message"
+        ]
+      },
+      "AdminValidationErrorDto": {
+        "type": "object",
+        "properties": {
+          "statusCode": {
+            "type": "integer",
+            "enum": [
+              400
+            ]
+          },
+          "message": {
+            "type": "string",
+            "enum": [
+              "invalid request body",
+              "invalid query parameters",
+              "invalid event id"
+            ]
+          },
+          "error": {
+            "type": "string",
+            "enum": [
+              "Bad Request"
+            ]
+          },
+          "issues": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminValidationIssueDto"
+            }
+          }
+        },
+        "required": [
+          "statusCode",
+          "message",
+          "error",
+          "issues"
+        ]
+      },
+      "AdminErrorDto": {
+        "type": "object",
+        "properties": {
+          "statusCode": {
+            "type": "integer",
+            "enum": [
+              401,
+              403,
+              404
+            ]
+          },
+          "message": {
+            "type": "string",
+            "description": "Stable Nest error message"
+          },
+          "error": {
+            "type": "string",
+            "description": "Nest error name; omitted by the default 404 response"
+          }
+        },
+        "required": [
+          "statusCode",
+          "message"
+        ]
+      },
       "AdminStatus": {
         "type": "string",
         "enum": [
@@ -1284,6 +1565,23 @@
           "needs_admin_review"
         ]
       },
+      "AdminEventsCursorDto": {
+        "type": "object",
+        "properties": {
+          "after_created_at": {
+            "type": "string",
+            "description": "Raw timestamp string, preserving up to six fractional digits. Accepts PostgreSQL and ISO representations: a space or T separates date and time; the required timezone is Z or a signed HH, HHMM, or HH:MM offset. Example: 2026-09-07 12:34:56.123456+00. Pass back unchanged with after_id."
+          },
+          "after_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "after_created_at",
+          "after_id"
+        ]
+      },
       "AdminEventDto": {
         "type": "object",
         "properties": {
@@ -1305,7 +1603,7 @@
           },
           "start_datetime": {
             "type": "string",
-            "format": "date-time"
+            "description": "Raw timestamp string, preserving up to six fractional digits. Accepts PostgreSQL and ISO representations: a space or T separates date and time; the required timezone is Z or a signed HH, HHMM, or HH:MM offset. Example: 2026-09-07 12:34:56.123456+00."
           },
           "venue_name": {
             "type": "string",
@@ -1356,7 +1654,8 @@
             "enum": [
               "approve",
               "reject",
-              "needs_admin_review"
+              "needs_admin_review",
+              null
             ],
             "nullable": true
           },
@@ -1370,8 +1669,7 @@
           },
           "created_at": {
             "type": "string",
-            "format": "date-time",
-            "description": "Timestamp preserved with microsecond precision"
+            "description": "Raw timestamp string, preserving up to six fractional digits. Accepts PostgreSQL and ISO representations: a space or T separates date and time; the required timezone is Z or a signed HH, HHMM, or HH:MM offset. Example: 2026-09-07 12:34:56.123456+00."
           }
         },
         "required": [
@@ -1394,24 +1692,6 @@
           "created_at"
         ]
       },
-      "AdminEventsCursorDto": {
-        "type": "object",
-        "properties": {
-          "after_created_at": {
-            "type": "string",
-            "format": "date-time",
-            "description": "Pass back unchanged with after_id; preserves microsecond precision"
-          },
-          "after_id": {
-            "type": "string",
-            "format": "uuid"
-          }
-        },
-        "required": [
-          "after_created_at",
-          "after_id"
-        ]
-      },
       "AdminEventsPageDto": {
         "type": "object",
         "properties": {
@@ -1428,14 +1708,19 @@
             "maximum": 9007199254740991
           },
           "next_cursor": {
-            "nullable": true,
-            "description": "Present only when another matching row exists",
-            "type": "object",
-            "allOf": [
+            "oneOf": [
               {
                 "$ref": "#/components/schemas/AdminEventsCursorDto"
+              },
+              {
+                "type": "object",
+                "nullable": true,
+                "enum": [
+                  null
+                ]
               }
-            ]
+            ],
+            "description": "Present only when another matching row exists"
           }
         },
         "required": [
@@ -1479,29 +1764,6 @@
           "count"
         ]
       },
-      "AdminStatusBodyDto": {
-        "type": "object",
-        "properties": {
-          "status": {
-            "type": "string",
-            "enum": [
-              "draft",
-              "published",
-              "rejected",
-              "archived"
-            ]
-          },
-          "reason": {
-            "type": "string",
-            "nullable": true,
-            "maxLength": 1000,
-            "description": "Trimmed; null, omitted, or blank becomes null. Overlong values are rejected."
-          }
-        },
-        "required": [
-          "status"
-        ]
-      },
       "AdminStatusResultDto": {
         "type": "object",
         "properties": {
@@ -1525,34 +1787,6 @@
           "affected"
         ]
       },
-      "AdminBulkStatusBodyDto": {
-        "type": "object",
-        "properties": {
-          "event_ids": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "minItems": 1,
-            "maxItems": 500,
-            "description": "Submit 1 to 500 UUIDs. Duplicates are removed after validation."
-          },
-          "status": {
-            "type": "string",
-            "enum": [
-              "draft",
-              "published",
-              "rejected",
-              "archived"
-            ]
-          }
-        },
-        "required": [
-          "event_ids",
-          "status"
-        ]
-      },
       "AdminMutationResultDto": {
         "type": "object",
         "properties": {
@@ -1571,24 +1805,6 @@
         "required": [
           "ok",
           "affected"
-        ]
-      },
-      "AdminBulkDeleteBodyDto": {
-        "type": "object",
-        "properties": {
-          "event_ids": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "minItems": 1,
-            "maxItems": 500,
-            "description": "Submit 1 to 500 UUIDs. Duplicates are removed after validation."
-          }
-        },
-        "required": [
-          "event_ids"
         ]
       },
       "CityDto": {

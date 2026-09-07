@@ -118,10 +118,12 @@ describe("admin query parsing", () => {
   it("rejects keyword overflow without truncating and trims allowed keywords", () => {
     for (const parse of [parseAdminEventsQuery, parseAdminFacetsQuery]) {
       expect(parse({ keyword: "x".repeat(100) }).keyword).toHaveLength(100)
+      expect(parse({ keyword: `  ${"x".repeat(100)}  ` }).keyword).toBe("x".repeat(100))
       expect(parse({ keyword: "  family  " }).keyword).toBe("family")
       expect(parse({ keyword: " " }).keyword).toBeNull()
       expect(() => parse({ keyword: "x".repeat(101) })).toThrow(BadRequestException)
-      expect(() => parse({ keyword: " ".repeat(101) })).toThrow(BadRequestException)
+      expect(parse({ keyword: " ".repeat(101) }).keyword).toBeNull()
+      expect(() => parse({ keyword: `  ${"x".repeat(101)}  ` })).toThrow(BadRequestException)
       expect(() => parse({ keyword: ["family"] })).toThrow(BadRequestException)
     }
   })

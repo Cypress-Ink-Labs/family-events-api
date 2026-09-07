@@ -12,7 +12,7 @@ export async function ensureAdminCatalog(db: DbService): Promise<void> {
   await db.query(`
     DROP TABLE IF EXISTS public.user_access CASCADE;
     CREATE TABLE public.user_access (
-      user_id uuid PRIMARY KEY REFERENCES auth.users (id) ON DELETE CASCADE,
+      user_id uuid PRIMARY KEY REFERENCES public.user_profiles (id) ON DELETE CASCADE,
       is_enabled boolean NOT NULL DEFAULT false,
       access_expires_at timestamptz,
       enabled_at timestamptz,
@@ -23,7 +23,10 @@ export async function ensureAdminCatalog(db: DbService): Promise<void> {
     );
     ALTER TABLE public.events
       ADD COLUMN admin_last_edited_at timestamptz,
-      ADD COLUMN admin_last_edited_by uuid REFERENCES auth.users (id) ON DELETE SET NULL;
+      ADD COLUMN admin_last_edited_by uuid REFERENCES auth.users (id) ON DELETE SET NULL,
+      ALTER COLUMN ai_confidence TYPE numeric(4,3),
+      ALTER COLUMN ai_confidence SET DEFAULT 0,
+      ALTER COLUMN search_vector DROP EXPRESSION;
     ALTER TABLE public.admin_audit_log
       ADD CONSTRAINT admin_audit_log_admin_user_id_fkey
       FOREIGN KEY (admin_user_id) REFERENCES auth.users (id) ON DELETE SET NULL;
@@ -39,7 +42,7 @@ export async function ensureAdminCatalog(db: DbService): Promise<void> {
       )::uuid
     $$
   `)
-  for (const file of ["admin_is_admin.sql", "admin_review_rpcs.sql"]) {
+  for (const file of ["admin_is_admin.sql", "admin_event_triggers.sql", "admin_review_rpcs.sql"]) {
     await db.query(readFileSync(join(process.cwd(), "test/integration/sql", file), "utf8"))
   }
 }

@@ -18,8 +18,9 @@ const uuid = z.uuid().transform((value) => value.toLowerCase())
 const status = z.enum(ADMIN_STATUSES)
 const keyword = z
   .string()
+  .trim()
   .max(100)
-  .transform((value) => value.trim() || null)
+  .transform((value) => value || null)
   .optional()
 const booleanQuery = z
   .enum(["true", "false"])

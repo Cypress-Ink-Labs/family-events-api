@@ -29,15 +29,17 @@ import { ClerkAuthGuard } from "../auth/clerk.guard.js"
 import { MappedIdentityGuard, type IdentifiedRequest } from "../auth/mapped-identity.guard.js"
 import { OperatorGuard } from "../auth/operator.guard.js"
 import {
-  AdminBulkDeleteBodyDto,
-  AdminBulkStatusBodyDto,
+  ADMIN_BULK_DELETE_BODY_SCHEMA,
+  ADMIN_BULK_STATUS_BODY_SCHEMA,
+  ADMIN_STATUS_BODY_SCHEMA,
+  AdminErrorDto,
   AdminEventsPageDto,
   AdminEventsQueryDto,
   AdminFacetDto,
   AdminFacetsQueryDto,
   AdminMutationResultDto,
-  AdminStatusBodyDto,
   AdminStatusResultDto,
+  AdminValidationErrorDto,
 } from "./admin-review.dto.js"
 import {
   parseAdminBulkDeleteBody,
@@ -53,12 +55,23 @@ type AdminRequest = Pick<IdentifiedRequest, "identity">
 
 @ApiTags("admin")
 @ApiBearerAuth("clerk")
-@ApiUnauthorizedResponse({ description: "A valid Clerk bearer token is required" })
-@ApiForbiddenResponse({ description: "The Clerk user is not provisioned" })
-@ApiNotFoundResponse({
-  description: "The operator lacks admin access, or the event does not exist",
+@ApiUnauthorizedResponse({
+  type: AdminErrorDto,
+  description: "A valid Clerk bearer token is required",
 })
-@ApiBadRequestResponse({ description: "Invalid path, query parameters, or request body" })
+@ApiForbiddenResponse({
+  type: AdminErrorDto,
+  description:
+    "The Clerk user is not provisioned, or database admin access is not provisioned. Database denial returns the stable message: admin access is not provisioned.",
+})
+@ApiNotFoundResponse({
+  type: AdminErrorDto,
+  description: "The mapped user is not an operator, or the event does not exist",
+})
+@ApiBadRequestResponse({
+  type: AdminValidationErrorDto,
+  description: "Invalid path, query parameters, or request body",
+})
 @UseGuards(ClerkAuthGuard, MappedIdentityGuard, OperatorGuard)
 @Controller("v1/admin")
 export class AdminReviewController {
@@ -126,7 +139,7 @@ export class AdminReviewController {
   @Put("events/:id/status")
   @ApiOperation({ operationId: "adminSetEventStatus", summary: "Set one event's review status" })
   @ApiParam({ name: "id", format: "uuid" })
-  @ApiBody({ type: AdminStatusBodyDto })
+  @ApiBody({ schema: ADMIN_STATUS_BODY_SCHEMA })
   @ApiOkResponse({ type: AdminStatusResultDto })
   async setStatus(
     @Param("id") rawId: string,
@@ -145,7 +158,7 @@ export class AdminReviewController {
     operationId: "adminBulkEventStatus",
     summary: "Set review status for up to 500 submitted events",
   })
-  @ApiBody({ type: AdminBulkStatusBodyDto })
+  @ApiBody({ schema: ADMIN_BULK_STATUS_BODY_SCHEMA })
   @ApiOkResponse({ type: AdminMutationResultDto })
   async bulkStatus(
     @Body() body: unknown,
@@ -168,7 +181,7 @@ export class AdminReviewController {
     operationId: "adminBulkDeleteEvents",
     summary: "Delete up to 500 submitted review queue events",
   })
-  @ApiBody({ type: AdminBulkDeleteBodyDto })
+  @ApiBody({ schema: ADMIN_BULK_DELETE_BODY_SCHEMA })
   @ApiOkResponse({ type: AdminMutationResultDto })
   async bulkDelete(
     @Body() body: unknown,
