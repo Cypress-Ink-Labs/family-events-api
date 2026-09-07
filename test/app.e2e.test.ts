@@ -23,8 +23,11 @@ interface ContractSchema {
   maxItems?: number
   minimum?: number
   maximum?: number
+  minLength?: number
   maxLength?: number
   format?: string
+  description?: string
+  default?: unknown
 }
 
 // Exercise the emitted OAS 3.0 constraints, including composition across nullable refs.
@@ -33,6 +36,31 @@ function matchesContract(
   schema: ContractSchema,
   schemas: Record<string, ContractSchema>
 ): boolean {
+  const supportedKeywords = new Set([
+    "$ref",
+    "type",
+    "nullable",
+    "enum",
+    "allOf",
+    "oneOf",
+    "properties",
+    "required",
+    "additionalProperties",
+    "items",
+    "minItems",
+    "maxItems",
+    "minimum",
+    "maximum",
+    "minLength",
+    "maxLength",
+    "format",
+    "description",
+    "default",
+  ])
+  const unsupported = Object.keys(schema).filter((key) => !supportedKeywords.has(key))
+  if (unsupported.length > 0) {
+    throw new Error(`unsupported contract keyword: ${unsupported.join(", ")}`)
+  }
   if (schema.$ref) {
     const target = schemas[schema.$ref.replace("#/components/schemas/", "")]
     if (!target) throw new Error(`unresolved schema ${schema.$ref}`)
@@ -73,9 +101,13 @@ function matchesContract(
   if (schema.type === "string") {
     if (
       typeof value !== "string" ||
+      (schema.minLength !== undefined && value.length < schema.minLength) ||
       (schema.maxLength !== undefined && value.length > schema.maxLength)
     )
       return false
+    if (schema.format !== undefined && schema.format !== "uuid" && schema.format !== "date-time") {
+      throw new Error(`unsupported string format: ${schema.format}`)
+    }
     if (
       schema.format === "uuid" &&
       !/^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i.test(value)
@@ -97,7 +129,18 @@ function matchesContract(
       (schema.maximum === undefined || value <= schema.maximum)
     )
   }
-  return schema.type !== "boolean" || typeof value === "boolean"
+  if (schema.type === "boolean") return typeof value === "boolean"
+  if (
+    schema.type === undefined &&
+    (schema.allOf !== undefined || schema.oneOf !== undefined || schema.enum !== undefined)
+  ) {
+    return true
+  }
+  throw new Error(
+    schema.type === undefined
+      ? "contract schema requires a type, reference, composition, or enum"
+      : `unsupported contract type: ${schema.type}`
+  )
 }
 
 /**
@@ -395,6 +438,19 @@ describe("application bootstrap", () => {
         schemas
       )
     ).toBe(false)
+  })
+
+  it("fails closed for unsupported contract constraints and schema types", () => {
+    const schemas: Record<string, ContractSchema> = {}
+    expect(matchesContract("a", { type: "string", minLength: 1 }, schemas)).toBe(true)
+    expect(matchesContract("", { type: "string", minLength: 1 }, schemas)).toBe(false)
+    expect(() =>
+      matchesContract("value", { type: "string", pattern: "^value$" } as ContractSchema, schemas)
+    ).toThrow("unsupported contract keyword: pattern")
+    expect(() => matchesContract("value", { type: "mystery" }, schemas)).toThrow(
+      "unsupported contract type: mystery"
+    )
+    expect(() => matchesContract("value", {}, schemas)).toThrow("contract schema requires a type")
   })
 
   it("keeps the generated OpenAPI artifact in sync with the application", () => {
