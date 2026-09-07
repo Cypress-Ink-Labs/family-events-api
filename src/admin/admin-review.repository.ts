@@ -9,6 +9,13 @@ import type {
   LlmReviewStatus,
 } from "./admin-review.input.js"
 
+export class AdminAccessDeniedError extends Error {
+  constructor() {
+    super("database admin access denied")
+    this.name = "AdminAccessDeniedError"
+  }
+}
+
 export interface AdminEventRow {
   id: string
   title: string
@@ -73,6 +80,13 @@ export class AdminReviewRepository {
     })
   }
 
+  private async requireAdmin(client: PoolClient): Promise<void> {
+    const result = await client.query<{ allowed: boolean | null }>(
+      "SELECT private.is_admin() AS allowed"
+    )
+    if (result.rows[0]?.allowed !== true) throw new AdminAccessDeniedError()
+  }
+
   listEvents(actor: string, input: AdminEventsInput): Promise<AdminEventRow[]> {
     return this.withActor(actor, async (client) => {
       const result = await client.query<AdminEventRow>(LIST_SQL, [
@@ -120,6 +134,7 @@ export class AdminReviewRepository {
 
   bulkStatus(actor: string, eventIds: string[], status: AdminStatus): Promise<number> {
     return this.withActor(actor, async (client) => {
+      await this.requireAdmin(client)
       await client.query(LOCK_TARGETS_SQL, [eventIds])
       const result = await client.query<{ affected: number }>(
         "SELECT public.admin_batch_set_event_status($1::uuid[], $2::text) AS affected",
@@ -131,6 +146,7 @@ export class AdminReviewRepository {
 
   bulkDelete(actor: string, eventIds: string[]): Promise<number> {
     return this.withActor(actor, async (client) => {
+      await this.requireAdmin(client)
       await client.query(LOCK_TARGETS_SQL, [eventIds])
       const result = await client.query<{ affected: number }>(
         "SELECT public.admin_delete_events($1::uuid[]) AS affected",

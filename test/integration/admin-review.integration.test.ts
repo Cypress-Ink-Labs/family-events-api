@@ -400,6 +400,63 @@ describe("admin review RPC writes", () => {
     }
   })
 
+  it.each([
+    ["bulk-status", "disabled"],
+    ["bulk-status", "expired"],
+    ["bulk-delete", "disabled"],
+    ["bulk-delete", "expired"],
+  ] as const)(
+    "%s rejects an %s actor while the target lock remains held",
+    async (operation, access) => {
+      const id = await event()
+      const holder = await db.pool.connect()
+      try {
+        await holder.query("BEGIN")
+        await holder.query("SELECT id FROM public.events WHERE id = $1::uuid FOR UPDATE", [id])
+        await db.query(
+          access === "disabled"
+            ? "UPDATE public.user_access SET is_enabled = false WHERE user_id = $1::uuid"
+            : "UPDATE public.user_access SET access_expires_at = now() - interval '1 second' WHERE user_id = $1::uuid",
+          [actor]
+        )
+        const boundedRepository = new AdminReviewRepository({
+          withTransaction: <T>(work: (client: PoolClient) => Promise<T>) =>
+            db.withTransaction(async (client) => {
+              // A regression reaches the held lock and raises 55P03 instead of the required 403.
+              // Keep the lock held until the assertion completes; no elapsed-time threshold.
+              await client.query("SET LOCAL lock_timeout = '1s'")
+              await client.query("SET LOCAL statement_timeout = '5s'")
+              return work(client)
+            }),
+        } as DbService)
+        const boundedService = new AdminReviewService(boundedRepository)
+        const result =
+          operation === "bulk-status"
+            ? boundedService.bulkStatus(actor, [id], "published")
+            : boundedService.bulkDelete(actor, [id])
+        await expect(result).rejects.toMatchObject({
+          response: {
+            statusCode: 403,
+            error: "Forbidden",
+            message: "admin access is not provisioned",
+          },
+        })
+        expect(
+          await holder.query("SELECT status FROM public.events WHERE id = $1::uuid", [id])
+        ).toMatchObject({ rows: [{ status: "draft" }] })
+        expect(await db.query("SELECT count(*)::int AS count FROM public.admin_audit_log")).toEqual(
+          [{ count: 0 }]
+        )
+      } finally {
+        try {
+          await holder.query("ROLLBACK")
+        } finally {
+          holder.release()
+        }
+      }
+    }
+  )
+
   it.each(["bulk-status", "bulk-delete"] as const)(
     "%s waits before its audit snapshot and captures the first committed editor/status",
     async (operation) => {

@@ -2,7 +2,11 @@ import { ForbiddenException, NotFoundException } from "@nestjs/common"
 import { describe, expect, it, vi } from "vitest"
 
 import type { AdminEventsInput } from "./admin-review.input.js"
-import { AdminReviewRepository, type AdminEventRow } from "./admin-review.repository.js"
+import {
+  AdminAccessDeniedError,
+  AdminReviewRepository,
+  type AdminEventRow,
+} from "./admin-review.repository.js"
 import { AdminReviewService, safeAdminCount } from "./admin-review.service.js"
 
 const input: AdminEventsInput = {
@@ -146,6 +150,7 @@ describe("AdminReviewService", () => {
   })
 
   it.each([
+    new AdminAccessDeniedError(),
     { code: "42501", message: "forbidden" },
     { code: "P0001", message: "ADMIN_EVENT_ADMIN_REQUIRED" },
     { code: "P0001", message: "forbidden" },
