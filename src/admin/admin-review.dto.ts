@@ -245,6 +245,7 @@ export class AdminValidationErrorDto {
       "invalid query parameters",
       "invalid event id",
       "invalid source id",
+      "invalid user id",
     ],
   })
   message!: string

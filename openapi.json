@@ -1620,6 +1620,255 @@
         ]
       }
     },
+    "/v1/admin/users": {
+      "get": {
+        "operationId": "adminListUsers",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AdminUserAccessDto"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid path, query parameters, request body, or protected account operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminValidationErrorDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "A valid Clerk bearer token is required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The Clerk user is not provisioned, or database admin access is not provisioned. Database denial returns the stable message: admin access is not provisioned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The mapped user is not an operator, or the user does not exist",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "clerk": []
+          }
+        ],
+        "summary": "List user access records",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/v1/admin/users/{id}/access": {
+      "put": {
+        "operationId": "adminSetUserAccess",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "is_enabled"
+                ],
+                "properties": {
+                  "is_enabled": {
+                    "type": "boolean"
+                  },
+                  "disabled_reason": {
+                    "type": "string",
+                    "nullable": true,
+                    "maxLength": 1000,
+                    "description": "Ignored when enabling. Trimmed; null, omitted, or blank becomes null."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminUserAccessDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid path, query parameters, request body, or protected account operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminValidationErrorDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "A valid Clerk bearer token is required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The Clerk user is not provisioned, or database admin access is not provisioned. Database denial returns the stable message: admin access is not provisioned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The mapped user is not an operator, or the user does not exist",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "clerk": []
+          }
+        ],
+        "summary": "Enable or disable user access",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/v1/admin/users/{id}": {
+      "delete": {
+        "operationId": "adminDeleteUser",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminUserMutationResultDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid path, query parameters, request body, or protected account operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminValidationErrorDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "A valid Clerk bearer token is required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The Clerk user is not provisioned, or database admin access is not provisioned. Database denial returns the stable message: admin access is not provisioned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The mapped user is not an operator, or the user does not exist",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "clerk": []
+          }
+        ],
+        "summary": "Delete a non-admin user account",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/v1/cities": {
       "get": {
         "operationId": "ConsumerController_listCities",
@@ -2545,7 +2794,8 @@
               "invalid request body",
               "invalid query parameters",
               "invalid event id",
-              "invalid source id"
+              "invalid source id",
+              "invalid user id"
             ]
           },
           "error": {
@@ -3292,6 +3542,95 @@
         ]
       },
       "AdminSourceMutationResultDto": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          }
+        },
+        "required": [
+          "ok"
+        ]
+      },
+      "AdminUserAccessDto": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "is_enabled": {
+            "type": "boolean"
+          },
+          "access_expires_at": {
+            "type": "string",
+            "nullable": true,
+            "description": "Raw timestamp string preserving PostgreSQL microsecond precision; pass it unchanged."
+          },
+          "enabled_at": {
+            "type": "string",
+            "nullable": true,
+            "description": "Raw timestamp string preserving PostgreSQL microsecond precision; pass it unchanged."
+          },
+          "disabled_at": {
+            "type": "string",
+            "nullable": true,
+            "description": "Raw timestamp string preserving PostgreSQL microsecond precision; pass it unchanged."
+          },
+          "disabled_reason": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 1000
+          },
+          "display_name": {
+            "type": "string",
+            "nullable": true
+          },
+          "email": {
+            "type": "string",
+            "nullable": true
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "user",
+              "admin"
+            ],
+            "nullable": true
+          },
+          "profile_created_at": {
+            "type": "string",
+            "nullable": true,
+            "description": "Raw timestamp string preserving PostgreSQL microsecond precision; pass it unchanged."
+          },
+          "created_at": {
+            "type": "string",
+            "description": "Raw timestamp string preserving PostgreSQL microsecond precision; pass it unchanged."
+          },
+          "updated_at": {
+            "type": "string",
+            "description": "Raw timestamp string preserving PostgreSQL microsecond precision; pass it unchanged."
+          }
+        },
+        "required": [
+          "user_id",
+          "is_enabled",
+          "access_expires_at",
+          "enabled_at",
+          "disabled_at",
+          "disabled_reason",
+          "display_name",
+          "email",
+          "role",
+          "profile_created_at",
+          "created_at",
+          "updated_at"
+        ]
+      },
+      "AdminUserMutationResultDto": {
         "type": "object",
         "properties": {
           "ok": {

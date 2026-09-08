@@ -206,6 +206,9 @@ describe("application bootstrap", () => {
       ["/v1/admin/sources/{id}/scrape", "post", "adminScrapeSource"],
       ["/v1/admin/sources/{id}/processing-mode", "put", "adminSetSourceProcessingMode"],
       ["/v1/admin/sources/bulk-processing-mode", "post", "adminBulkSetSourceProcessingMode"],
+      ["/v1/admin/users", "get", "adminListUsers"],
+      ["/v1/admin/users/{id}/access", "put", "adminSetUserAccess"],
+      ["/v1/admin/users/{id}", "delete", "adminDeleteUser"],
     ] as const
     expect(Object.keys(document.paths).filter((path) => path.startsWith("/v1/admin/"))).toEqual([
       ...new Set(operations.map(([path]) => path)),
@@ -428,6 +431,36 @@ describe("application bootstrap", () => {
       additionalProperties: false,
       minProperties: 1,
     })
+    expect(schemas.AdminUserAccessDto).toMatchObject({
+      properties: {
+        user_id: { type: "string", format: "uuid" },
+        role: { type: "string", enum: ["user", "admin"], nullable: true },
+        access_expires_at: { type: "string", nullable: true },
+        disabled_at: { type: "string", nullable: true },
+      },
+    })
+    for (const field of [
+      "access_expires_at",
+      "enabled_at",
+      "disabled_at",
+      "profile_created_at",
+      "created_at",
+      "updated_at",
+    ]) {
+      expect((schemas.AdminUserAccessDto as ContractSchema).properties![field]!).not.toHaveProperty(
+        "format"
+      )
+    }
+    const accessBody = document.paths["/v1/admin/users/{id}/access"]!.put!.requestBody!
+    if (!("content" in accessBody)) throw new Error("expected inline user access body")
+    expect(accessBody.content["application/json"]!.schema).toMatchObject({
+      type: "object",
+      additionalProperties: false,
+      required: ["is_enabled"],
+      properties: {
+        disabled_reason: { type: "string", nullable: true, maxLength: 1000 },
+      },
+    })
   })
 
   it("validates raw timestamp strings, null decisions, and both cursor variants against OpenAPI", () => {
@@ -594,6 +627,11 @@ describe("application bootstrap", () => {
       ["/v1/admin/sources/{id}", "put", { notes: null }],
       ["/v1/admin/sources/{id}/processing-mode", "put", { mode: "llm_review" }],
       ["/v1/admin/sources/bulk-processing-mode", "post", { mode: "auto_approve" }],
+      [
+        "/v1/admin/users/{id}/access",
+        "put",
+        { is_enabled: false, disabled_reason: "policy violation" },
+      ],
     ] as const
     for (const [path, method, body] of examples) {
       const requestBody = document.paths[path]![method]!.requestBody!
