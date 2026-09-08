@@ -1,8 +1,8 @@
 import { ForbiddenException, Injectable, NotFoundException } from "@nestjs/common"
 
 import type { AdminEventsInput, AdminStatus } from "./admin-review.input.js"
+import { isDatabaseAdminDenial } from "./admin-database.js"
 import {
-  AdminAccessDeniedError,
   AdminReviewRepository,
   type AdminEventRow,
   type AdminFacetRow,
@@ -33,12 +33,7 @@ export class AdminReviewService {
     } catch (error) {
       if (typeof error === "object" && error !== null) {
         const failure = error as { code?: unknown; message?: unknown }
-        if (
-          error instanceof AdminAccessDeniedError ||
-          failure.code === "42501" ||
-          failure.message === "ADMIN_EVENT_ADMIN_REQUIRED" ||
-          failure.message === "forbidden"
-        ) {
+        if (isDatabaseAdminDenial(error)) {
           throw new ForbiddenException("admin access is not provisioned")
         }
         if (missingEvent && failure.code === "P0002") throw new NotFoundException()

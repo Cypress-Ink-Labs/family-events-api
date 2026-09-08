@@ -105,7 +105,12 @@ function matchesContract(
       (schema.maxLength !== undefined && value.length > schema.maxLength)
     )
       return false
-    if (schema.format !== undefined && schema.format !== "uuid" && schema.format !== "date-time") {
+    if (
+      schema.format !== undefined &&
+      schema.format !== "uuid" &&
+      schema.format !== "date-time" &&
+      schema.format !== "uri"
+    ) {
       throw new Error(`unsupported string format: ${schema.format}`)
     }
     if (
@@ -118,6 +123,7 @@ function matchesContract(
       !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(value)
     )
       return false
+    if (schema.format === "uri" && !URL.canParse(value)) return false
     return true
   }
   if (schema.type === "integer" || schema.type === "number") {
@@ -179,7 +185,7 @@ describe("application bootstrap", () => {
     expect(document.info.title).toBe("family-events-api")
   })
 
-  it("documents the five admin operations with Clerk security and stable error responses", () => {
+  it("documents the admin review and event editor operations with Clerk security and stable errors", () => {
     const document = buildOpenApiDocument(app)
     const operations = [
       ["/v1/admin/events", "get", "adminListEvents"],
@@ -187,10 +193,13 @@ describe("application bootstrap", () => {
       ["/v1/admin/events/{id}/status", "put", "adminSetEventStatus"],
       ["/v1/admin/events/bulk-status", "post", "adminBulkEventStatus"],
       ["/v1/admin/events/bulk-delete", "post", "adminBulkDeleteEvents"],
+      ["/v1/admin/events/{id}", "get", "adminGetEvent"],
+      ["/v1/admin/events/{id}", "put", "adminUpdateEvent"],
+      ["/v1/admin/events/{id}/unlock", "post", "adminUnlockEventFields"],
     ] as const
-    expect(Object.keys(document.paths).filter((path) => path.startsWith("/v1/admin/"))).toEqual(
-      operations.map(([path]) => path)
-    )
+    expect(Object.keys(document.paths).filter((path) => path.startsWith("/v1/admin/"))).toEqual([
+      ...new Set(operations.map(([path]) => path)),
+    ])
     for (const [path, method, operationId] of operations) {
       const operation = document.paths[path]?.[method]
       expect(operation).toMatchObject({ operationId, tags: ["admin"], security: [{ clerk: [] }] })
@@ -332,6 +341,45 @@ describe("application bootstrap", () => {
         count: { type: "integer", minimum: 0, maximum: Number.MAX_SAFE_INTEGER },
       },
     })
+    expect(schemas.AdminEditableEventDto).toMatchObject({
+      properties: {
+        latitude: { type: "string", nullable: true },
+        longitude: { type: "string", nullable: true },
+        price: { type: "string", nullable: true },
+        start_datetime: { type: "string" },
+        end_datetime: { type: "string", nullable: true },
+        recurrence_info: { oneOf: expect.any(Array) },
+      },
+    })
+    for (const field of ["start_datetime", "end_datetime", "created_at", "updated_at"]) {
+      expect(
+        (schemas.AdminEditableEventDto as ContractSchema).properties![field]!
+      ).not.toHaveProperty("format")
+    }
+    const editorBody = document.paths["/v1/admin/events/{id}"]!.put!.requestBody!
+    if (!("content" in editorBody)) throw new Error("expected inline event editor body")
+    expect(editorBody.content["application/json"]!.schema).toMatchObject({
+      type: "object",
+      additionalProperties: false,
+      required: ["patch", "tag_ids"],
+      properties: {
+        patch: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            title: { type: "string", minLength: 1, maxLength: 500 },
+            description: { type: "string", nullable: true, maxLength: 10_000 },
+            images: { type: "array", maxItems: 20 },
+          },
+        },
+        tag_ids: {
+          type: "array",
+          maxItems: 500,
+          items: { type: "string", format: "uuid" },
+        },
+        decision_reason: { type: "string", nullable: true, maxLength: 1000 },
+      },
+    })
   })
 
   it("validates raw timestamp strings, null decisions, and both cursor variants against OpenAPI", () => {
@@ -392,6 +440,49 @@ describe("application bootstrap", () => {
     )!
     if (!("schema" in cursorQuery)) throw new Error("missing cursor query schema")
     expect(matchesContract(timestamp, cursorQuery.schema!, schemas)).toBe(true)
+    const editable = {
+      id,
+      title: "Review me",
+      description: null,
+      start_datetime: timestamp,
+      end_datetime: null,
+      timezone: "America/Chicago",
+      venue_name: null,
+      address: null,
+      city_id: null,
+      latitude: "30.1234567",
+      longitude: "-91.1234567",
+      age_min: null,
+      age_max: 12,
+      price: null,
+      is_free: true,
+      is_outdoor: null,
+      source_url: null,
+      source_name: null,
+      source_id: null,
+      images: [],
+      status: "draft",
+      recurrence_info: null,
+      is_featured: false,
+      admin_locked_fields: [],
+      admin_last_edited_at: null,
+      admin_last_edited_by: null,
+      created_at: timestamp,
+      updated_at: timestamp,
+    }
+    const editorDetail = {
+      event: editable,
+      tags: [],
+      available_tags: [],
+    }
+    expect(matchesContract(editorDetail, schemas.AdminEventEditorDetailDto!, schemas)).toBe(true)
+    expect(
+      matchesContract(
+        { ...editorDetail, event: { ...editable, latitude: 30.1234567 } },
+        schemas.AdminEventEditorDetailDto!,
+        schemas
+      )
+    ).toBe(false)
   })
 
   it("validates closed request bodies and the documented Nest errors against OpenAPI", () => {
@@ -402,6 +493,20 @@ describe("application bootstrap", () => {
       ["/v1/admin/events/{id}/status", "put", { status: "draft", reason: null }],
       ["/v1/admin/events/bulk-status", "post", { event_ids: [id], status: "published" }],
       ["/v1/admin/events/bulk-delete", "post", { event_ids: [id] }],
+      [
+        "/v1/admin/events/{id}",
+        "put",
+        {
+          patch: {
+            description: null,
+            latitude: 30.1234567,
+            recurrence_info: null,
+          },
+          tag_ids: [],
+          lock_edited_fields: false,
+          decision_reason: null,
+        },
+      ],
     ] as const
     for (const [path, method, body] of examples) {
       const requestBody = document.paths[path]![method]!.requestBody!

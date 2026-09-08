@@ -1,12 +1,9 @@
 import { ForbiddenException, NotFoundException } from "@nestjs/common"
 import { describe, expect, it, vi } from "vitest"
 
+import { AdminAccessDeniedError } from "./admin-database.js"
 import type { AdminEventsInput } from "./admin-review.input.js"
-import {
-  AdminAccessDeniedError,
-  AdminReviewRepository,
-  type AdminEventRow,
-} from "./admin-review.repository.js"
+import { AdminReviewRepository, type AdminEventRow } from "./admin-review.repository.js"
 import { AdminReviewService, safeAdminCount } from "./admin-review.service.js"
 
 const input: AdminEventsInput = {

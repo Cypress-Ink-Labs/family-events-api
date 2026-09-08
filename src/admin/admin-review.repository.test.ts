@@ -2,8 +2,9 @@ import { describe, expect, it, vi } from "vitest"
 import type { PoolClient } from "pg"
 
 import type { DbService } from "../db/db.service.js"
+import { AdminAccessDeniedError } from "./admin-database.js"
 import type { AdminEventsInput } from "./admin-review.input.js"
-import { AdminAccessDeniedError, AdminReviewRepository } from "./admin-review.repository.js"
+import { AdminReviewRepository } from "./admin-review.repository.js"
 
 const actor = "11111111-1111-4111-8111-111111111111"
 const input: AdminEventsInput = {
