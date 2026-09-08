@@ -42,6 +42,18 @@ export async function ensureAdminCatalog(db: DbService): Promise<void> {
     ALTER TABLE public.admin_audit_log
       ADD CONSTRAINT admin_audit_log_admin_user_id_fkey
       FOREIGN KEY (admin_user_id) REFERENCES auth.users (id) ON DELETE SET NULL;
+    UPDATE public.event_sources
+    SET processing_mode = CASE
+      WHEN auto_approve THEN 'auto_approve'::public.event_processing_mode
+      ELSE 'manual_review'::public.event_processing_mode
+    END
+    WHERE processing_mode IS NULL;
+    ALTER TABLE public.event_sources
+      ALTER COLUMN processing_mode SET DEFAULT 'manual_review'::public.event_processing_mode,
+      ALTER COLUMN processing_mode SET NOT NULL;
+    ALTER TABLE public.source_scrape_queue
+      ADD CONSTRAINT source_scrape_queue_source_id_fkey
+      FOREIGN KEY (source_id) REFERENCES public.event_sources (id) ON DELETE SET NULL;
   `)
   // Supabase auth.uid() reads JWT claims; this bare Postgres equivalent exercises
   // the actual transaction-local claims written by the API repository.
@@ -59,6 +71,7 @@ export async function ensureAdminCatalog(db: DbService): Promise<void> {
     "admin_event_triggers.sql",
     "admin_review_rpcs.sql",
     "admin_event_editor_rpcs.sql",
+    "admin_source_rpcs.sql",
   ]) {
     await db.query(readFileSync(join(process.cwd(), "test/integration/sql", file), "utf8"))
   }
