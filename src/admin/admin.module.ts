@@ -12,10 +12,18 @@ import { AdminReviewService } from "./admin-review.service.js"
 import { AdminSourceController } from "./admin-source.controller.js"
 import { AdminSourceRepository } from "./admin-source.repository.js"
 import { AdminSourceService } from "./admin-source.service.js"
+import { AdminUserController } from "./admin-user.controller.js"
+import { AdminUserRepository } from "./admin-user.repository.js"
+import { AdminUserService } from "./admin-user.service.js"
 
 @Module({
   imports: [AuthModule, DbModule, JobsModule],
-  controllers: [AdminReviewController, AdminEventEditorController, AdminSourceController],
+  controllers: [
+    AdminReviewController,
+    AdminEventEditorController,
+    AdminSourceController,
+    AdminUserController,
+  ],
   providers: [
     AdminReviewService,
     AdminReviewRepository,
@@ -23,6 +31,8 @@ import { AdminSourceService } from "./admin-source.service.js"
     AdminEventEditorRepository,
     AdminSourceService,
     AdminSourceRepository,
+    AdminUserService,
+    AdminUserRepository,
   ],
 })
 export class AdminModule {}

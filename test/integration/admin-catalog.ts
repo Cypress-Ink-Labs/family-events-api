@@ -42,6 +42,9 @@ export async function ensureAdminCatalog(db: DbService): Promise<void> {
     ALTER TABLE public.admin_audit_log
       ADD CONSTRAINT admin_audit_log_admin_user_id_fkey
       FOREIGN KEY (admin_user_id) REFERENCES auth.users (id) ON DELETE SET NULL;
+    ALTER TABLE public.user_profiles
+      ADD CONSTRAINT user_profiles_id_fkey
+      FOREIGN KEY (id) REFERENCES auth.users (id) ON DELETE CASCADE;
     UPDATE public.event_sources
     SET processing_mode = CASE
       WHEN auto_approve THEN 'auto_approve'::public.event_processing_mode
@@ -72,6 +75,7 @@ export async function ensureAdminCatalog(db: DbService): Promise<void> {
     "admin_review_rpcs.sql",
     "admin_event_editor_rpcs.sql",
     "admin_source_rpcs.sql",
+    "admin_user_rpcs.sql",
   ]) {
     await db.query(readFileSync(join(process.cwd(), "test/integration/sql", file), "utf8"))
   }
