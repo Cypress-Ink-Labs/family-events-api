@@ -26,7 +26,19 @@ export async function ensureAdminCatalog(db: DbService): Promise<void> {
       ADD COLUMN admin_last_edited_by uuid REFERENCES auth.users (id) ON DELETE SET NULL,
       ALTER COLUMN ai_confidence TYPE numeric(4,3),
       ALTER COLUMN ai_confidence SET DEFAULT 0,
+      ALTER COLUMN timezone SET DEFAULT 'America/Chicago',
       ALTER COLUMN search_vector DROP EXPRESSION;
+    UPDATE public.events SET timezone = 'America/Chicago' WHERE timezone IS NULL;
+    ALTER TABLE public.events
+      ALTER COLUMN timezone SET NOT NULL,
+      ADD CONSTRAINT events_address_len_chk CHECK (address IS NULL OR length(address) <= 500),
+      ADD CONSTRAINT events_description_len_chk
+        CHECK (description IS NULL OR length(description) <= 10000),
+      ADD CONSTRAINT events_images_shape_chk
+        CHECK (jsonb_typeof(images) = 'array' AND jsonb_array_length(images) <= 20),
+      ADD CONSTRAINT events_title_len_chk CHECK (length(title) <= 500),
+      ADD CONSTRAINT events_venue_name_len_chk
+        CHECK (venue_name IS NULL OR length(venue_name) <= 300);
     ALTER TABLE public.admin_audit_log
       ADD CONSTRAINT admin_audit_log_admin_user_id_fkey
       FOREIGN KEY (admin_user_id) REFERENCES auth.users (id) ON DELETE SET NULL;
@@ -42,7 +54,12 @@ export async function ensureAdminCatalog(db: DbService): Promise<void> {
       )::uuid
     $$
   `)
-  for (const file of ["admin_is_admin.sql", "admin_event_triggers.sql", "admin_review_rpcs.sql"]) {
+  for (const file of [
+    "admin_is_admin.sql",
+    "admin_event_triggers.sql",
+    "admin_review_rpcs.sql",
+    "admin_event_editor_rpcs.sql",
+  ]) {
     await db.query(readFileSync(join(process.cwd(), "test/integration/sql", file), "utf8"))
   }
 }

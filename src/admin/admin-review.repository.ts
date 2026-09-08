@@ -8,13 +8,7 @@ import type {
   LlmReviewDecision,
   LlmReviewStatus,
 } from "./admin-review.input.js"
-
-export class AdminAccessDeniedError extends Error {
-  constructor() {
-    super("database admin access denied")
-    this.name = "AdminAccessDeniedError"
-  }
-}
+import { requireDatabaseAdmin, withAdminActor } from "./admin-database.js"
 
 export interface AdminEventRow {
   id: string
@@ -72,19 +66,7 @@ export class AdminReviewRepository {
   constructor(private readonly db: DbService) {}
 
   private withActor<T>(actor: string, work: (client: PoolClient) => Promise<T>): Promise<T> {
-    return this.db.withTransaction(async (client) => {
-      await client.query("SELECT set_config('request.jwt.claims', $1, true)", [
-        JSON.stringify({ sub: actor, role: "authenticated" }),
-      ])
-      return work(client)
-    })
-  }
-
-  private async requireAdmin(client: PoolClient): Promise<void> {
-    const result = await client.query<{ allowed: boolean | null }>(
-      "SELECT private.is_admin() AS allowed"
-    )
-    if (result.rows[0]?.allowed !== true) throw new AdminAccessDeniedError()
+    return withAdminActor(this.db, actor, work)
   }
 
   listEvents(actor: string, input: AdminEventsInput): Promise<AdminEventRow[]> {
@@ -134,7 +116,7 @@ export class AdminReviewRepository {
 
   bulkStatus(actor: string, eventIds: string[], status: AdminStatus): Promise<number> {
     return this.withActor(actor, async (client) => {
-      await this.requireAdmin(client)
+      await requireDatabaseAdmin(client)
       await client.query(LOCK_TARGETS_SQL, [eventIds])
       const result = await client.query<{ affected: number }>(
         "SELECT public.admin_batch_set_event_status($1::uuid[], $2::text) AS affected",
@@ -146,7 +128,7 @@ export class AdminReviewRepository {
 
   bulkDelete(actor: string, eventIds: string[]): Promise<number> {
     return this.withActor(actor, async (client) => {
-      await this.requireAdmin(client)
+      await requireDatabaseAdmin(client)
       await client.query(LOCK_TARGETS_SQL, [eventIds])
       const result = await client.query<{ affected: number }>(
         "SELECT public.admin_delete_events($1::uuid[]) AS affected",
