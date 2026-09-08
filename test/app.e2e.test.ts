@@ -21,6 +21,7 @@ interface ContractSchema {
   items?: ContractSchema
   minItems?: number
   maxItems?: number
+  minProperties?: number
   minimum?: number
   maximum?: number
   minLength?: number
@@ -49,6 +50,7 @@ function matchesContract(
     "items",
     "minItems",
     "maxItems",
+    "minProperties",
     "minimum",
     "maximum",
     "minLength",
@@ -78,6 +80,8 @@ function matchesContract(
   if (schema.type === "object") {
     if (typeof value !== "object" || Array.isArray(value)) return false
     const object = value as Record<string, unknown>
+    if (schema.minProperties !== undefined && Object.keys(object).length < schema.minProperties)
+      return false
     if (schema.required?.some((key) => !Object.hasOwn(object, key))) return false
     return Object.entries(object).every(([key, field]) => {
       const property = schema.properties?.[key]
@@ -185,7 +189,7 @@ describe("application bootstrap", () => {
     expect(document.info.title).toBe("family-events-api")
   })
 
-  it("documents the admin review and event editor operations with Clerk security and stable errors", () => {
+  it("documents admin operations with Clerk security and stable errors", () => {
     const document = buildOpenApiDocument(app)
     const operations = [
       ["/v1/admin/events", "get", "adminListEvents"],
@@ -196,6 +200,12 @@ describe("application bootstrap", () => {
       ["/v1/admin/events/{id}", "get", "adminGetEvent"],
       ["/v1/admin/events/{id}", "put", "adminUpdateEvent"],
       ["/v1/admin/events/{id}/unlock", "post", "adminUnlockEventFields"],
+      ["/v1/admin/sources", "get", "adminListSources"],
+      ["/v1/admin/sources", "post", "adminCreateSource"],
+      ["/v1/admin/sources/{id}", "put", "adminUpdateSource"],
+      ["/v1/admin/sources/{id}/scrape", "post", "adminScrapeSource"],
+      ["/v1/admin/sources/{id}/processing-mode", "put", "adminSetSourceProcessingMode"],
+      ["/v1/admin/sources/bulk-processing-mode", "post", "adminBulkSetSourceProcessingMode"],
     ] as const
     expect(Object.keys(document.paths).filter((path) => path.startsWith("/v1/admin/"))).toEqual([
       ...new Set(operations.map(([path]) => path)),
@@ -380,6 +390,44 @@ describe("application bootstrap", () => {
         decision_reason: { type: "string", nullable: true, maxLength: 1000 },
       },
     })
+    expect(schemas.AdminSourceDto).toMatchObject({
+      properties: {
+        processing_mode: {
+          type: "string",
+          enum: ["manual_review", "auto_approve", "llm_review"],
+        },
+        last_status: {
+          nullable: true,
+          enum: ["pending", "success", "error", "partial", "stale", null],
+        },
+        last_scraped_at: { type: "string", nullable: true },
+        stale_escalated_at: { type: "string", nullable: true },
+      },
+    })
+    for (const field of ["last_scraped_at", "stale_escalated_at", "created_at", "updated_at"]) {
+      expect((schemas.AdminSourceDto as ContractSchema).properties![field]!).not.toHaveProperty(
+        "format"
+      )
+    }
+    const createSourceBody = document.paths["/v1/admin/sources"]!.post!.requestBody!
+    if (!("content" in createSourceBody)) throw new Error("expected inline create source body")
+    expect(createSourceBody.content["application/json"]!.schema).toMatchObject({
+      type: "object",
+      additionalProperties: false,
+      required: ["name", "url", "source_type", "extraction_mode", "processing_mode"],
+      properties: {
+        url: { type: "string", format: "uri", maxLength: 2048 },
+        is_active: { type: "boolean", default: true },
+        scrape_interval_hours: { type: "integer", minimum: 1, maximum: 8760, default: 24 },
+      },
+    })
+    const updateSourceBody = document.paths["/v1/admin/sources/{id}"]!.put!.requestBody!
+    if (!("content" in updateSourceBody)) throw new Error("expected inline update source body")
+    expect(updateSourceBody.content["application/json"]!.schema).toMatchObject({
+      type: "object",
+      additionalProperties: false,
+      minProperties: 1,
+    })
   })
 
   it("validates raw timestamp strings, null decisions, and both cursor variants against OpenAPI", () => {
@@ -483,6 +531,31 @@ describe("application bootstrap", () => {
         schemas
       )
     ).toBe(false)
+    const source = {
+      id,
+      name: "Calendar",
+      url: "https://example.com/events",
+      source_type: "website",
+      extraction_mode: "deterministic",
+      processing_mode: "manual_review",
+      city_id: null,
+      is_active: true,
+      auto_approve: false,
+      scrape_interval_hours: 24,
+      last_scraped_at: timestamp,
+      last_status: "stale",
+      error_count: 3,
+      notes: null,
+      date_window_days: null,
+      consecutive_zero_result_scrapes: 3,
+      stale_escalated_at: timestamp,
+      created_at: timestamp,
+      updated_at: timestamp,
+    }
+    expect(matchesContract(source, schemas.AdminSourceDto!, schemas)).toBe(true)
+    expect(
+      matchesContract({ ...source, last_status: "invalid" }, schemas.AdminSourceDto!, schemas)
+    ).toBe(false)
   })
 
   it("validates closed request bodies and the documented Nest errors against OpenAPI", () => {
@@ -507,6 +580,20 @@ describe("application bootstrap", () => {
           decision_reason: null,
         },
       ],
+      [
+        "/v1/admin/sources",
+        "post",
+        {
+          name: "Calendar",
+          url: "https://example.com/events",
+          source_type: "website",
+          extraction_mode: "deterministic",
+          processing_mode: "manual_review",
+        },
+      ],
+      ["/v1/admin/sources/{id}", "put", { notes: null }],
+      ["/v1/admin/sources/{id}/processing-mode", "put", { mode: "llm_review" }],
+      ["/v1/admin/sources/bulk-processing-mode", "post", { mode: "auto_approve" }],
     ] as const
     for (const [path, method, body] of examples) {
       const requestBody = document.paths[path]![method]!.requestBody!
@@ -549,6 +636,10 @@ describe("application bootstrap", () => {
     const schemas: Record<string, ContractSchema> = {}
     expect(matchesContract("a", { type: "string", minLength: 1 }, schemas)).toBe(true)
     expect(matchesContract("", { type: "string", minLength: 1 }, schemas)).toBe(false)
+    expect(matchesContract({ value: true }, { type: "object", minProperties: 1 }, schemas)).toBe(
+      true
+    )
+    expect(matchesContract({}, { type: "object", minProperties: 1 }, schemas)).toBe(false)
     expect(() =>
       matchesContract("value", { type: "string", pattern: "^value$" } as ContractSchema, schemas)
     ).toThrow("unsupported contract keyword: pattern")

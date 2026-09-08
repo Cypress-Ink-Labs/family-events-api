@@ -36,6 +36,7 @@ export function isDatabaseAdminDenial(error: unknown): boolean {
     error instanceof AdminAccessDeniedError ||
     failure.code === "42501" ||
     failure.message === "ADMIN_EVENT_ADMIN_REQUIRED" ||
+    failure.message === "ADMIN_SOURCE_ADMIN_REQUIRED" ||
     failure.message === "forbidden"
   )
 }

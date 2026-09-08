@@ -239,7 +239,14 @@ export class AdminValidationErrorDto {
   @ApiProperty({ type: "integer", enum: [400] })
   statusCode!: 400
 
-  @ApiProperty({ enum: ["invalid request body", "invalid query parameters", "invalid event id"] })
+  @ApiProperty({
+    enum: [
+      "invalid request body",
+      "invalid query parameters",
+      "invalid event id",
+      "invalid source id",
+    ],
+  })
   message!: string
 
   @ApiProperty({ enum: ["Bad Request"] })

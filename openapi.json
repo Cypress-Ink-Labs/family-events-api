@@ -976,6 +976,650 @@
         ]
       }
     },
+    "/v1/admin/sources": {
+      "get": {
+        "operationId": "adminListSources",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AdminSourceDto"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid path, query parameters, request body, or source state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminValidationErrorDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "A valid Clerk bearer token is required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The Clerk user is not provisioned, or database admin access is not provisioned. Database denial returns the stable message: admin access is not provisioned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The mapped user is not an operator, or the source does not exist",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "clerk": []
+          }
+        ],
+        "summary": "List event sources",
+        "tags": [
+          "admin"
+        ]
+      },
+      "post": {
+        "operationId": "adminCreateSource",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "name",
+                  "url",
+                  "source_type",
+                  "extraction_mode",
+                  "processing_mode"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 300
+                  },
+                  "url": {
+                    "type": "string",
+                    "format": "uri",
+                    "minLength": 1,
+                    "maxLength": 2048,
+                    "description": "Must be an externally routable HTTP or HTTPS URL."
+                  },
+                  "source_type": {
+                    "type": "string",
+                    "enum": [
+                      "website",
+                      "ical",
+                      "rss",
+                      "manual",
+                      "macaronikid",
+                      "brec",
+                      "downtownlafayette",
+                      "lcglafayette",
+                      "localhop"
+                    ]
+                  },
+                  "extraction_mode": {
+                    "type": "string",
+                    "enum": [
+                      "deterministic",
+                      "llm",
+                      "deterministic_then_llm"
+                    ]
+                  },
+                  "city_id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "nullable": true,
+                    "default": null
+                  },
+                  "is_active": {
+                    "type": "boolean",
+                    "default": true
+                  },
+                  "scrape_interval_hours": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 8760,
+                    "default": 24
+                  },
+                  "notes": {
+                    "type": "string",
+                    "nullable": true,
+                    "maxLength": 5000,
+                    "default": null
+                  },
+                  "date_window_days": {
+                    "type": "integer",
+                    "nullable": true,
+                    "minimum": 1,
+                    "maximum": 365,
+                    "default": null
+                  },
+                  "processing_mode": {
+                    "type": "string",
+                    "enum": [
+                      "manual_review",
+                      "auto_approve",
+                      "llm_review"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminSourceDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid path, query parameters, request body, or source state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminValidationErrorDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "A valid Clerk bearer token is required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The Clerk user is not provisioned, or database admin access is not provisioned. Database denial returns the stable message: admin access is not provisioned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The mapped user is not an operator, or the source does not exist",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "clerk": []
+          }
+        ],
+        "summary": "Create an event source",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/v1/admin/sources/{id}": {
+      "put": {
+        "operationId": "adminUpdateSource",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "minProperties": 1,
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 300
+                  },
+                  "url": {
+                    "type": "string",
+                    "format": "uri",
+                    "minLength": 1,
+                    "maxLength": 2048,
+                    "description": "Must be an externally routable HTTP or HTTPS URL."
+                  },
+                  "source_type": {
+                    "type": "string",
+                    "enum": [
+                      "website",
+                      "ical",
+                      "rss",
+                      "manual",
+                      "macaronikid",
+                      "brec",
+                      "downtownlafayette",
+                      "lcglafayette",
+                      "localhop"
+                    ]
+                  },
+                  "extraction_mode": {
+                    "type": "string",
+                    "enum": [
+                      "deterministic",
+                      "llm",
+                      "deterministic_then_llm"
+                    ]
+                  },
+                  "city_id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "nullable": true
+                  },
+                  "is_active": {
+                    "type": "boolean"
+                  },
+                  "scrape_interval_hours": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 8760
+                  },
+                  "notes": {
+                    "type": "string",
+                    "nullable": true,
+                    "maxLength": 5000
+                  },
+                  "date_window_days": {
+                    "type": "integer",
+                    "nullable": true,
+                    "minimum": 1,
+                    "maximum": 365
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminSourceDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid path, query parameters, request body, or source state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminValidationErrorDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "A valid Clerk bearer token is required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The Clerk user is not provisioned, or database admin access is not provisioned. Database denial returns the stable message: admin access is not provisioned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The mapped user is not an operator, or the source does not exist",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "clerk": []
+          }
+        ],
+        "summary": "Update an event source",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/v1/admin/sources/{id}/scrape": {
+      "post": {
+        "operationId": "adminScrapeSource",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminSourceScrapeResultDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid path, query parameters, request body, or source state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminValidationErrorDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "A valid Clerk bearer token is required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The Clerk user is not provisioned, or database admin access is not provisioned. Database denial returns the stable message: admin access is not provisioned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The mapped user is not an operator, or the source does not exist",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "clerk": []
+          }
+        ],
+        "summary": "Enqueue one active source for scraping",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/v1/admin/sources/{id}/processing-mode": {
+      "put": {
+        "operationId": "adminSetSourceProcessingMode",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "mode"
+                ],
+                "properties": {
+                  "mode": {
+                    "type": "string",
+                    "enum": [
+                      "manual_review",
+                      "auto_approve",
+                      "llm_review"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminSourceDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid path, query parameters, request body, or source state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminValidationErrorDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "A valid Clerk bearer token is required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The Clerk user is not provisioned, or database admin access is not provisioned. Database denial returns the stable message: admin access is not provisioned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The mapped user is not an operator, or the source does not exist",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "clerk": []
+          }
+        ],
+        "summary": "Set one source processing mode",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/v1/admin/sources/bulk-processing-mode": {
+      "post": {
+        "operationId": "adminBulkSetSourceProcessingMode",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "mode"
+                ],
+                "properties": {
+                  "mode": {
+                    "type": "string",
+                    "enum": [
+                      "manual_review",
+                      "auto_approve",
+                      "llm_review"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminSourceMutationResultDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid path, query parameters, request body, or source state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminValidationErrorDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "A valid Clerk bearer token is required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The Clerk user is not provisioned, or database admin access is not provisioned. Database denial returns the stable message: admin access is not provisioned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The mapped user is not an operator, or the source does not exist",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "clerk": []
+          }
+        ],
+        "summary": "Set every source processing mode",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/v1/cities": {
       "get": {
         "operationId": "ConsumerController_listCities",
@@ -1900,7 +2544,8 @@
             "enum": [
               "invalid request body",
               "invalid query parameters",
-              "invalid event id"
+              "invalid event id",
+              "invalid source id"
             ]
           },
           "error": {
@@ -2493,6 +3138,171 @@
           "event",
           "tags",
           "available_tags"
+        ]
+      },
+      "AdminSourceDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          },
+          "url": {
+            "type": "string",
+            "maxLength": 2048
+          },
+          "source_type": {
+            "type": "string",
+            "enum": [
+              "website",
+              "ical",
+              "rss",
+              "manual",
+              "macaronikid",
+              "brec",
+              "downtownlafayette",
+              "lcglafayette",
+              "localhop"
+            ]
+          },
+          "extraction_mode": {
+            "type": "string",
+            "enum": [
+              "deterministic",
+              "llm",
+              "deterministic_then_llm"
+            ]
+          },
+          "processing_mode": {
+            "type": "string",
+            "enum": [
+              "manual_review",
+              "auto_approve",
+              "llm_review"
+            ]
+          },
+          "city_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "is_active": {
+            "type": "boolean"
+          },
+          "auto_approve": {
+            "type": "boolean"
+          },
+          "scrape_interval_hours": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 8760
+          },
+          "last_scraped_at": {
+            "type": "string",
+            "nullable": true,
+            "description": "Raw timestamp string preserving PostgreSQL microsecond precision; pass it unchanged."
+          },
+          "last_status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "success",
+              "error",
+              "partial",
+              "stale",
+              null
+            ],
+            "nullable": true
+          },
+          "error_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "notes": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 5000
+          },
+          "date_window_days": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 365,
+            "nullable": true
+          },
+          "consecutive_zero_result_scrapes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "stale_escalated_at": {
+            "type": "string",
+            "nullable": true,
+            "description": "Raw timestamp string preserving PostgreSQL microsecond precision; pass it unchanged."
+          },
+          "created_at": {
+            "type": "string",
+            "description": "Raw timestamp string preserving PostgreSQL microsecond precision; pass it unchanged."
+          },
+          "updated_at": {
+            "type": "string",
+            "description": "Raw timestamp string preserving PostgreSQL microsecond precision; pass it unchanged."
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "url",
+          "source_type",
+          "extraction_mode",
+          "processing_mode",
+          "city_id",
+          "is_active",
+          "auto_approve",
+          "scrape_interval_hours",
+          "last_scraped_at",
+          "last_status",
+          "error_count",
+          "notes",
+          "date_window_days",
+          "consecutive_zero_result_scrapes",
+          "stale_escalated_at",
+          "created_at",
+          "updated_at"
+        ]
+      },
+      "AdminSourceScrapeResultDto": {
+        "type": "object",
+        "properties": {
+          "queue_id": {
+            "type": "string",
+            "description": "Exact PostgreSQL bigint string identifying the durable queue row"
+          },
+          "deduped": {
+            "type": "boolean",
+            "description": "True when an active queue row already existed for this source"
+          }
+        },
+        "required": [
+          "queue_id",
+          "deduped"
+        ]
+      },
+      "AdminSourceMutationResultDto": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          }
+        },
+        "required": [
+          "ok"
         ]
       },
       "CityDto": {

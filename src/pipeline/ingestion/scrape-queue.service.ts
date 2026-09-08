@@ -27,6 +27,10 @@ export interface ScrapeJobData {
   task?: unknown
 }
 
+export function sendSourceQueueDrain(jobs: JobsService): Promise<string | null> {
+  return jobs.send(FAMILIES.scrape.queue, { task: DRAIN_TASK }, { singletonKey: DRAIN_TASK })
+}
+
 /**
  * Scrape family registration (U28, completing the U27 tail): installs the
  * pg-boss queue, its dead-letter queue, and the two U12-parity schedules —
@@ -154,7 +158,7 @@ export class ScrapeQueueService implements OnModuleInit {
   private sendDrainKick(): Promise<string | null> {
     // singletonKey: at most one queued drain job at a time — a burst of kicks
     // collapses into one drain chain.
-    return this.jobs.send(FAMILIES.scrape.queue, { task: DRAIN_TASK }, { singletonKey: DRAIN_TASK })
+    return sendSourceQueueDrain(this.jobs)
   }
 
   private workerDependencies(): SourceQueueWorkerDependencies {
