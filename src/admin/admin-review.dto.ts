@@ -249,6 +249,7 @@ export class AdminValidationErrorDto {
       "invalid user id",
       "invalid invite code id",
       "invalid invite request id",
+      "invalid cron run id",
     ],
   })
   message!: string
