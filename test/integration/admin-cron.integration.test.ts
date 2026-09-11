@@ -37,8 +37,11 @@ describe("admin cron PostgreSQL integration", () => {
   it("returns code-owned schedules with defaults, overrides, null internal gates and latest summary", async () => {
     const label = CRON_LABELS[0]!
     await db.query(
-      `INSERT INTO private.cron_enabled(label, enabled) VALUES ($1, false), ('nestjs:' || $1, true);
-       INSERT INTO private.railway_cron_runs
+      "INSERT INTO private.cron_enabled(label, enabled) VALUES ($1, false), ('nestjs:' || $1, true)",
+      [label]
+    )
+    await db.query(
+      `INSERT INTO private.railway_cron_runs
          (id, run_key, label, status, ran_at, duration_s, http_status)
        VALUES (9223372036854775806, gen_random_uuid(), $1, 'succeeded',
                '2026-06-01 00:00:00.123456+00', 7, 200)`,
@@ -83,8 +86,11 @@ describe("admin cron PostgreSQL integration", () => {
     const runKey = "33333333-3333-4333-8333-333333333333"
     await db.query(
       `INSERT INTO private.railway_cron_runs(id, run_key, label, status, ran_at)
-       VALUES (99, $1, $2, 'succeeded', '2026-06-01 00:00:00.123456+00');
-       INSERT INTO private.cron_run_log_entries
+       VALUES (99, $1, $2, 'succeeded', '2026-06-01 00:00:00.123456+00')`,
+      [runKey, CRON_LABELS[0]]
+    )
+    await db.query(
+      `INSERT INTO private.cron_run_log_entries
          (id, run_key, label, provider, level, message, metadata, sequence, created_at)
        VALUES (9223372036854775807, $1, $2, 'supabase', 'warn', 'second',
                '{"attempt":2}', 2, '2026-06-01 00:00:02.654321+00'),
