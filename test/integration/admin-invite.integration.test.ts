@@ -116,3 +116,129 @@ describe("admin invite codes", () => {
     await expect(service.listCodes(actor)).rejects.toBeInstanceOf(ForbiddenException)
   })
 })
+
+describe("admin invite requests", () => {
+  async function createRequest(email: string, createdAt?: string) {
+    const rows = await db.query<{ id: string }>(
+      `INSERT INTO public.invite_requests (email, message, created_at)
+       VALUES ($1, 'Please invite me', coalesce($2::timestamptz, now()))
+       RETURNING id`,
+      [email, createdAt ?? null]
+    )
+    return rows[0]!.id
+  }
+
+  it("defaults to pending semantics and lists filtered history deterministically", async () => {
+    const older = await createRequest("older@example.com", "2026-09-01T00:00:00Z")
+    const newer = await createRequest("newer@example.com", "2026-09-02T00:00:00Z")
+    await service.rejectRequest(actor, older, { notes: "  Outside area  " })
+
+    expect((await service.listRequests(actor, "pending")).map((row) => row.id)).toEqual([newer])
+    expect((await service.listRequests(actor, "rejected")).map((row) => row.id)).toEqual([older])
+    expect((await service.listRequests(actor, "all")).map((row) => row.id)).toEqual([newer, older])
+  })
+
+  it("approves once, links one hash-only code, and audits no plaintext or hash", async () => {
+    const id = await createRequest("approve@example.com")
+    const approved = await service.approveRequest(actor, id)
+    expect(approved.code).toMatch(/^[A-HJ-NP-Z2-9]{24}$/)
+    const stored = await db.query<{
+      status: string
+      invite_code_id: string
+      reviewed_by: string
+      code_hash: string
+      max_uses: number
+      expires_at: string | null
+    }>(
+      `SELECT r.status, r.invite_code_id, r.reviewed_by,
+              c.code_hash, c.max_uses, c.expires_at
+       FROM public.invite_requests r
+       JOIN public.invite_codes c ON c.id = r.invite_code_id
+       WHERE r.id = $1`,
+      [id]
+    )
+    expect(stored[0]).toMatchObject({
+      status: "approved",
+      invite_code_id: approved.invite_code_id,
+      reviewed_by: actor,
+      max_uses: 1,
+      expires_at: null,
+    })
+    const audit = await db.query<{ metadata: Record<string, unknown> }>(
+      "SELECT metadata FROM public.admin_audit_log WHERE action = 'invite_request.approve'"
+    )
+    expect(JSON.stringify(audit[0]!.metadata)).not.toContain(approved.code)
+    expect(JSON.stringify(audit[0]!.metadata)).not.toContain(stored[0]!.code_hash)
+    await expect(service.approveRequest(actor, id)).rejects.toBeInstanceOf(NotFoundException)
+  })
+
+  it("serializes concurrent approval so exactly one code and audit are created", async () => {
+    const id = await createRequest("concurrent@example.com")
+    const results = await Promise.allSettled([
+      service.approveRequest(actor, id),
+      service.approveRequest(actor, id),
+    ])
+    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1)
+    expect(results.filter((result) => result.status === "rejected")).toHaveLength(1)
+    expect(await db.query("SELECT id FROM public.invite_codes")).toHaveLength(1)
+    expect(
+      await db.query(
+        "SELECT id FROM public.admin_audit_log WHERE action = 'invite_request.approve'"
+      )
+    ).toHaveLength(1)
+  })
+
+  it("normalizes rejection notes and conceals a second review", async () => {
+    const id = await createRequest("reject@example.com")
+    await service.rejectRequest(actor, id, { notes: "  Outside area  " })
+    expect(
+      await db.query(
+        "SELECT status, admin_notes, reviewed_by, reviewed_at IS NOT NULL AS reviewed FROM public.invite_requests WHERE id = $1",
+        [id]
+      )
+    ).toEqual([
+      { status: "rejected", admin_notes: "Outside area", reviewed_by: actor, reviewed: true },
+    ])
+    expect(
+      await db.query(
+        "SELECT admin_user_id, metadata FROM public.admin_audit_log WHERE action = 'invite_request.reject'"
+      )
+    ).toEqual([
+      {
+        admin_user_id: actor,
+        metadata: { notes: "Outside area" },
+      },
+    ])
+    await expect(service.rejectRequest(actor, id, {})).rejects.toBeInstanceOf(NotFoundException)
+  })
+
+  it("keeps approval and rejection successful when notification dispatch fails", async () => {
+    await db.query("INSERT INTO private.test_email_dispatch_failure (enabled) VALUES (true)")
+    const approvedId = await createRequest("email-fail-approve@example.com")
+    const rejectedId = await createRequest("email-fail-reject@example.com")
+    await expect(service.approveRequest(actor, approvedId)).resolves.toBeDefined()
+    await expect(service.rejectRequest(actor, rejectedId, {})).resolves.toBeUndefined()
+  })
+
+  it("rolls back request review and generated code when API audit fails", async () => {
+    const id = await createRequest("audit-fail@example.com")
+    await db.query(`
+      CREATE OR REPLACE FUNCTION public.reject_request_audit() RETURNS trigger
+      LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'request audit failed'; END; $$;
+      CREATE TRIGGER reject_request_audit BEFORE INSERT ON public.admin_audit_log
+      FOR EACH ROW EXECUTE FUNCTION public.reject_request_audit()
+    `)
+    try {
+      await expect(service.approveRequest(actor, id)).rejects.toThrow("request audit failed")
+    } finally {
+      await db.query("DROP TRIGGER reject_request_audit ON public.admin_audit_log")
+      await db.query("DROP FUNCTION public.reject_request_audit()")
+    }
+    expect(
+      await db.query("SELECT status, invite_code_id FROM public.invite_requests WHERE id = $1", [
+        id,
+      ])
+    ).toEqual([{ status: "pending", invite_code_id: null }])
+    expect(await db.query("SELECT id FROM public.invite_codes")).toEqual([])
+  })
+})

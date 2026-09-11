@@ -26,6 +26,20 @@ function setup() {
         ],
       }
     if (sql.includes("admin_revoke_invite_code")) return { rows: [{ ok: true }] }
+    if (sql.includes("FROM public.invite_requests")) return { rows: [{ id: CODE }] }
+    if (sql.includes("admin_approve_invite_request"))
+      return {
+        rows: [
+          {
+            request_id: CODE,
+            code: "approval-plaintext",
+            invite_code_id: ACTOR,
+            email: "parent@example.com",
+            created_at: "raw timestamp",
+          },
+        ],
+      }
+    if (sql.includes("admin_reject_invite_request")) return { rows: [{ ok: true }] }
     return { rows: [] }
   })
   const withTransaction = vi.fn(async (work: (client: PoolClient) => Promise<unknown>) =>
@@ -131,4 +145,35 @@ describe("AdminInviteRepository", () => {
       await expect(operation).rejects.toThrow("audit failed")
     }
   )
+
+  it("parameterizes request filtering and protects the direct list read", async () => {
+    const { repository, query } = setup()
+    await repository.listRequests(ACTOR, "pending")
+    expect(query.mock.calls[1]).toEqual(["SELECT private.is_admin() AS allowed"])
+    expect(query.mock.calls[2]![1]).toEqual(["pending"])
+  })
+
+  it("audits approval without its one-time plaintext", async () => {
+    const { repository, query } = setup()
+    await repository.approveRequest(ACTOR, CODE)
+    expect(query.mock.calls[1]).toEqual([
+      expect.stringContaining("admin_approve_invite_request($1::uuid)"),
+      [CODE],
+    ])
+    expect(String(query.mock.calls[2]![1])).not.toContain("approval-plaintext")
+    expect(query.mock.calls[2]![1]).toEqual([
+      CODE,
+      JSON.stringify({ invite_code_id: ACTOR, email: "parent@example.com" }),
+    ])
+  })
+
+  it("audits only successful rejection with normalized notes", async () => {
+    const { repository, query } = setup()
+    await expect(repository.rejectRequest(ACTOR, CODE, { notes: null })).resolves.toBe(true)
+    expect(query.mock.calls[1]).toEqual([
+      "SELECT public.admin_reject_invite_request($1::uuid, $2::text) AS ok",
+      [CODE, null],
+    ])
+    expect(query.mock.calls[2]![1]).toEqual([CODE, JSON.stringify({ notes: null })])
+  })
 })

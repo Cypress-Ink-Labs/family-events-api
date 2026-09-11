@@ -115,6 +115,6 @@ export async function ensureAdminCatalog(db: DbService): Promise<void> {
 export async function truncateAdminCatalog(db: DbService): Promise<void> {
   await truncateIngestion(db)
   await db.query(
-    "TRUNCATE public.invite_requests, public.invite_codes, public.user_access, auth.users CASCADE"
+    "TRUNCATE private.test_email_dispatch_failure, public.invite_requests, public.invite_codes, public.user_access, auth.users CASCADE"
   )
 }
