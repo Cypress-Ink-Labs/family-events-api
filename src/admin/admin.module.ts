@@ -15,6 +15,9 @@ import { AdminReviewService } from "./admin-review.service.js"
 import { AdminSourceController } from "./admin-source.controller.js"
 import { AdminSourceRepository } from "./admin-source.repository.js"
 import { AdminSourceService } from "./admin-source.service.js"
+import { AdminStatisticsController } from "./admin-statistics.controller.js"
+import { AdminStatisticsRepository } from "./admin-statistics.repository.js"
+import { AdminStatisticsService } from "./admin-statistics.service.js"
 import { AdminUserController } from "./admin-user.controller.js"
 import { AdminUserRepository } from "./admin-user.repository.js"
 import { AdminUserService } from "./admin-user.service.js"
@@ -27,6 +30,7 @@ import { AdminUserService } from "./admin-user.service.js"
     AdminSourceController,
     AdminUserController,
     AdminInviteController,
+    AdminStatisticsController,
   ],
   providers: [
     AdminReviewService,
@@ -39,6 +43,8 @@ import { AdminUserService } from "./admin-user.service.js"
     AdminUserRepository,
     AdminInviteService,
     AdminInviteRepository,
+    AdminStatisticsService,
+    AdminStatisticsRepository,
   ],
 })
 export class AdminModule {}
