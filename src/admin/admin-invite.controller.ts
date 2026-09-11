@@ -20,6 +20,7 @@ import {
   ApiOkResponse,
   ApiOperation,
   ApiParam,
+  ApiQuery,
   ApiTags,
   ApiUnauthorizedResponse,
 } from "@nestjs/swagger"
@@ -29,15 +30,22 @@ import { MappedIdentityGuard, type IdentifiedRequest } from "../auth/mapped-iden
 import { OperatorGuard } from "../auth/operator.guard.js"
 import {
   ADMIN_CREATE_INVITE_CODE_SCHEMA,
+  ADMIN_REJECT_INVITE_REQUEST_SCHEMA,
+  AdminApprovedInviteRequestDto,
   AdminCreatedInviteCodeDto,
   AdminInviteCodeDto,
   AdminInviteMutationDto,
+  AdminInviteRequestDto,
   AdminInviteRequiredDto,
 } from "./admin-invite.dto.js"
 import {
   parseAdminCreateInviteCodeBody,
+  parseAdminApproveInviteRequestBody,
   parseAdminInviteCodeId,
   parseAdminInviteQuery,
+  parseAdminInviteRequestId,
+  parseAdminInviteRequestQuery,
+  parseAdminRejectInviteRequestBody,
   parseAdminRevokeInviteCodeBody,
 } from "./admin-invite.input.js"
 import { AdminInviteService } from "./admin-invite.service.js"
@@ -99,6 +107,53 @@ export class AdminInviteController {
     const id = parseAdminInviteCodeId(rawId)
     parseAdminRevokeInviteCodeBody(body)
     await this.admin.revokeCode(request.identity.supabaseUuid, id)
+    return { ok: true as const }
+  }
+
+  @Get("invite-requests")
+  @ApiOperation({ operationId: "adminListInviteRequests", summary: "List invite requests" })
+  @ApiQuery({
+    name: "status",
+    required: false,
+    enum: ["pending", "approved", "rejected", "all"],
+  })
+  @ApiOkResponse({ type: [AdminInviteRequestDto] })
+  listRequests(@Query() query: Record<string, unknown>, @Req() request: AdminRequest) {
+    return this.admin.listRequests(
+      request.identity.supabaseUuid,
+      parseAdminInviteRequestQuery(query)
+    )
+  }
+
+  @Post("invite-requests/:id/approve")
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    operationId: "adminApproveInviteRequest",
+    summary: "Approve an invite request (plaintext returned once)",
+  })
+  @ApiParam({ name: "id", format: "uuid" })
+  @ApiBody({ schema: { type: "object", additionalProperties: false }, required: false })
+  @ApiOkResponse({ type: AdminApprovedInviteRequestDto })
+  approveRequest(@Param("id") rawId: string, @Body() body: unknown, @Req() request: AdminRequest) {
+    const id = parseAdminInviteRequestId(rawId)
+    parseAdminApproveInviteRequestBody(body)
+    return this.admin.approveRequest(request.identity.supabaseUuid, id)
+  }
+
+  @Post("invite-requests/:id/reject")
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ operationId: "adminRejectInviteRequest", summary: "Reject an invite request" })
+  @ApiParam({ name: "id", format: "uuid" })
+  @ApiBody({ schema: ADMIN_REJECT_INVITE_REQUEST_SCHEMA, required: false })
+  @ApiOkResponse({ type: AdminInviteMutationDto })
+  async rejectRequest(
+    @Param("id") rawId: string,
+    @Body() body: unknown,
+    @Req() request: AdminRequest
+  ) {
+    const id = parseAdminInviteRequestId(rawId)
+    const input = parseAdminRejectInviteRequestBody(body)
+    await this.admin.rejectRequest(request.identity.supabaseUuid, id, input)
     return { ok: true as const }
   }
 }

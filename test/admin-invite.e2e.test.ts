@@ -19,6 +19,7 @@ vi.mock("@clerk/backend", () => ({
 
 const ACTOR = "11111111-1111-4111-8111-111111111111"
 const CODE = "22222222-2222-4222-8222-222222222222"
+const INVITE_REQUEST = "33333333-3333-4333-8333-333333333333"
 const identity = {
   resolve: vi.fn(async (clerkUserId: string) =>
     clerkUserId === "user_unmapped"
@@ -46,6 +47,24 @@ const routes = [
     path: `/v1/admin/invite-codes/${CODE}`,
     body: undefined,
   },
+  {
+    key: "listRequests",
+    method: "get",
+    path: "/v1/admin/invite-requests",
+    body: undefined,
+  },
+  {
+    key: "approveRequest",
+    method: "post",
+    path: `/v1/admin/invite-requests/${INVITE_REQUEST}/approve`,
+    body: undefined,
+  },
+  {
+    key: "rejectRequest",
+    method: "post",
+    path: `/v1/admin/invite-requests/${INVITE_REQUEST}/reject`,
+    body: { notes: "Not eligible" },
+  },
 ] as const
 
 describe("admin invite HTTP with real guards", () => {
@@ -55,6 +74,9 @@ describe("admin invite HTTP with real guards", () => {
     listCodes: vi.fn(),
     createCode: vi.fn(),
     revokeCode: vi.fn(),
+    listRequests: vi.fn(),
+    approveRequest: vi.fn(),
+    rejectRequest: vi.fn(),
   }
   beforeAll(async () => {
     const module = await Test.createTestingModule({
@@ -92,6 +114,15 @@ describe("admin invite HTTP with real guards", () => {
       created_at: "2026-09-08 10:00:00.123456+00",
     })
     repository.revokeCode.mockResolvedValue(true)
+    repository.listRequests.mockResolvedValue([])
+    repository.approveRequest.mockResolvedValue({
+      request_id: INVITE_REQUEST,
+      code: "ONCEONLYCODE",
+      invite_code_id: CODE,
+      email: "requester@example.com",
+      created_at: "2026-09-08 10:00:00.123456+00",
+    })
+    repository.rejectRequest.mockResolvedValue(true)
   })
 
   for (const route of routes) {
@@ -126,6 +157,12 @@ describe("admin invite HTTP with real guards", () => {
     ["post", "/v1/admin/invite-codes", { max_uses: 1, code: "injected" }],
     ["delete", "/v1/admin/invite-codes/bad", undefined],
     ["delete", `/v1/admin/invite-codes/${CODE}`, { actor_id: ACTOR }],
+    ["get", "/v1/admin/invite-requests?status=unknown", undefined],
+    ["get", "/v1/admin/invite-requests?status=pending&extra=x", undefined],
+    ["post", "/v1/admin/invite-requests/bad/approve", undefined],
+    ["post", `/v1/admin/invite-requests/${INVITE_REQUEST}/approve`, { notes: "no" }],
+    ["post", `/v1/admin/invite-requests/${INVITE_REQUEST}/reject`, { notes: "x".repeat(1001) }],
+    ["post", `/v1/admin/invite-requests/${INVITE_REQUEST}/reject`, { extra: true }],
   ] as const)("rejects invalid %s %s before repository access", async (method, path, body) => {
     const http = request(app.getHttpServer())
     const operation = http[method](path).set("Authorization", "Bearer operator")

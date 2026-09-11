@@ -64,4 +64,63 @@ describe("AdminInviteService", () => {
       },
     ])
   })
+
+  it("conceals missing or reviewed invite requests", async () => {
+    const reject = service({ rejectRequest: vi.fn().mockResolvedValue(false) })
+    await expect(reject.rejectRequest("actor", "id", {})).rejects.toBeInstanceOf(NotFoundException)
+
+    const approve = service({
+      approveRequest: vi.fn().mockRejectedValue({
+        code: "P0002",
+        message: "request not found or already reviewed",
+      }),
+    })
+    await expect(approve.approveRequest("actor", "id")).rejects.toBeInstanceOf(NotFoundException)
+  })
+
+  it("projects request rows and one-time approval fields", async () => {
+    const row = {
+      id: "request",
+      email: "person@example.com",
+      message: null,
+      status: "pending" as const,
+      invite_code_id: null,
+      admin_notes: null,
+      created_at: "created",
+      reviewed_at: null,
+      reviewed_by: null,
+      hidden: "must not leak",
+    }
+    const subject = service({
+      listRequests: vi.fn().mockResolvedValue([row]),
+      approveRequest: vi.fn().mockResolvedValue({
+        request_id: "request",
+        code: "ONCE",
+        invite_code_id: "code",
+        email: row.email,
+        created_at: "created",
+        hidden: "must not leak",
+      }),
+    })
+    expect(await subject.listRequests("actor", "pending")).toEqual([
+      {
+        id: row.id,
+        email: row.email,
+        message: null,
+        status: "pending",
+        invite_code_id: null,
+        admin_notes: null,
+        created_at: "created",
+        reviewed_at: null,
+        reviewed_by: null,
+      },
+    ])
+    expect(await subject.approveRequest("actor", "request")).toEqual({
+      request_id: "request",
+      code: "ONCE",
+      invite_code_id: "code",
+      email: row.email,
+      created_at: "created",
+    })
+  })
 })

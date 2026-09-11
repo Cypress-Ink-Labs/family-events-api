@@ -113,7 +113,8 @@ function matchesContract(
       schema.format !== undefined &&
       schema.format !== "uuid" &&
       schema.format !== "date-time" &&
-      schema.format !== "uri"
+      schema.format !== "uri" &&
+      schema.format !== "email"
     ) {
       throw new Error(`unsupported string format: ${schema.format}`)
     }
@@ -128,6 +129,7 @@ function matchesContract(
     )
       return false
     if (schema.format === "uri" && !URL.canParse(value)) return false
+    if (schema.format === "email" && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) return false
     return true
   }
   if (schema.type === "integer" || schema.type === "number") {
@@ -213,6 +215,9 @@ describe("application bootstrap", () => {
       ["/v1/admin/invite-codes", "get", "adminListInviteCodes"],
       ["/v1/admin/invite-codes", "post", "adminCreateInviteCode"],
       ["/v1/admin/invite-codes/{id}", "delete", "adminRevokeInviteCode"],
+      ["/v1/admin/invite-requests", "get", "adminListInviteRequests"],
+      ["/v1/admin/invite-requests/{id}/approve", "post", "adminApproveInviteRequest"],
+      ["/v1/admin/invite-requests/{id}/reject", "post", "adminRejectInviteRequest"],
     ] as const
     expect(Object.keys(document.paths).filter((path) => path.startsWith("/v1/admin/"))).toEqual([
       ...new Set(operations.map(([path]) => path)),
@@ -487,6 +492,22 @@ describe("application bootstrap", () => {
         expires_at: { type: "string", format: "date-time", nullable: true },
       },
     })
+    expect(schemas.AdminInviteRequestDto).toMatchObject({
+      properties: {
+        email: { type: "string", format: "email" },
+        status: { enum: ["pending", "approved", "rejected"] },
+        reviewed_at: { type: "string", nullable: true },
+      },
+    })
+    expect(schemas.AdminApprovedInviteRequestDto).toHaveProperty("properties.code")
+    const rejectInviteBody =
+      document.paths["/v1/admin/invite-requests/{id}/reject"]!.post!.requestBody!
+    if (!("content" in rejectInviteBody)) throw new Error("expected inline invite rejection body")
+    expect(rejectInviteBody.content["application/json"]!.schema).toMatchObject({
+      type: "object",
+      additionalProperties: false,
+      properties: { notes: { type: "string", nullable: true, maxLength: 1000 } },
+    })
   })
 
   it("validates raw timestamp strings, null decisions, and both cursor variants against OpenAPI", () => {
@@ -672,6 +693,12 @@ describe("application bootstrap", () => {
       expect(matchesContract({ ...body, actor_id: id }, schema, schemas)).toBe(false)
       expect(matchesContract({}, schema, schemas)).toBe(false)
     }
+    const rejectRequestBody =
+      document.paths["/v1/admin/invite-requests/{id}/reject"]!.post!.requestBody!
+    if (!("content" in rejectRequestBody)) throw new Error("expected inline reject body schema")
+    const rejectSchema = rejectRequestBody.content["application/json"]!.schema!
+    expect(matchesContract({}, rejectSchema, schemas)).toBe(true)
+    expect(matchesContract({ actor_id: id }, rejectSchema, schemas)).toBe(false)
     for (const error of [
       { statusCode: 401, message: "missing bearer token", error: "Unauthorized" },
       { statusCode: 403, message: "user is not provisioned", error: "Forbidden" },

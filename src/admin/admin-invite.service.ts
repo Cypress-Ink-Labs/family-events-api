@@ -6,7 +6,11 @@ import {
 } from "@nestjs/common"
 
 import { isDatabaseAdminDenial } from "./admin-database.js"
-import type { AdminCreateInviteCodeInput } from "./admin-invite.input.js"
+import type {
+  AdminCreateInviteCodeInput,
+  AdminInviteRequestStatus,
+  AdminRejectInviteRequestInput,
+} from "./admin-invite.input.js"
 import { AdminInviteRepository } from "./admin-invite.repository.js"
 
 @Injectable()
@@ -71,6 +75,51 @@ export class AdminInviteService {
   }
   async revokeCode(actor: string, id: string): Promise<void> {
     if (!(await this.call(() => this.repository.revokeCode(actor, id))))
+      throw new NotFoundException()
+  }
+
+  listRequests(actor: string, status: AdminInviteRequestStatus) {
+    return this.call(async () =>
+      (await this.repository.listRequests(actor, status)).map((row) => ({
+        id: row.id,
+        email: row.email,
+        message: row.message,
+        status: row.status,
+        invite_code_id: row.invite_code_id,
+        admin_notes: row.admin_notes,
+        created_at: row.created_at,
+        reviewed_at: row.reviewed_at,
+        reviewed_by: row.reviewed_by,
+      }))
+    )
+  }
+
+  async approveRequest(actor: string, id: string) {
+    try {
+      const row = await this.call(() => this.repository.approveRequest(actor, id))
+      return {
+        request_id: row.request_id,
+        code: row.code,
+        invite_code_id: row.invite_code_id,
+        email: row.email,
+        created_at: row.created_at,
+      }
+    } catch (error) {
+      if (
+        typeof error === "object" &&
+        error !== null &&
+        "code" in error &&
+        error.code === "P0002" &&
+        "message" in error &&
+        error.message === "request not found or already reviewed"
+      )
+        throw new NotFoundException()
+      throw error
+    }
+  }
+
+  async rejectRequest(actor: string, id: string, input: AdminRejectInviteRequestInput) {
+    if (!(await this.call(() => this.repository.rejectRequest(actor, id, input))))
       throw new NotFoundException()
   }
 }
