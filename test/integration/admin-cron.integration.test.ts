@@ -22,11 +22,13 @@ describe("admin cron PostgreSQL integration", () => {
   })
   beforeEach(async () => {
     await truncateAdminCatalog(db)
+    await db.query("INSERT INTO auth.users (id) VALUES ($1), ($2)", [ADMIN, NON_ADMIN])
     await db.query(
-      `INSERT INTO auth.users (id) VALUES ($1), ($2);
-       INSERT INTO public.user_profiles (id, role)
-       VALUES ($1, 'admin'), ($2, 'user');
-       INSERT INTO public.user_access (user_id, is_enabled) VALUES ($1, true), ($2, true)`,
+      "INSERT INTO public.user_profiles (id, role) VALUES ($1, 'admin'), ($2, 'user')",
+      [ADMIN, NON_ADMIN]
+    )
+    await db.query(
+      "INSERT INTO public.user_access (user_id, is_enabled) VALUES ($1, true), ($2, true)",
       [ADMIN, NON_ADMIN]
     )
   })
