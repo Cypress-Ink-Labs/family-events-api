@@ -236,10 +236,19 @@ unlock, sources CRUD + scrape-now + bulk processing mode, dead-letter retry/dele
 admin (list/toggle/schedule/history — now backed by pg-boss). Decide realtime
 replacement here (poll vs SSE); the old SPA's four Supabase channels are reference.
 
-### U32 — Observability + deployment
-Sentry, structured logs, `@pg-boss/dashboard` as separate basic-auth Railway service
-(documented U12 deviation), Railway service for the API in project `family-events-ui`,
-deploy-cli/IaC updates, secret management parity (`.env.example` is the authoritative
+### U32 — Observability + deployment 🟡 (core structured logging landed)
+
+**Structured logging:** AsyncLocalStorage-based request/queue/job correlation, request
+completion records with X-Request-ID headers and route templates (no PII, bodies, or
+query strings), worker success/failure outcome records preserving pg-boss retry identity,
+redaction and safe serialization for cycles/BigInt/errors/sensitive fields, bounded
+context inheritance — **landed in PR #46**. `ObservabilityModule` globally provides
+`STRUCTURED_LOG_SINK`, `RequestLoggingMiddleware` emits allowlisted
+`http_request_completed` events, `JobsService` emits `worker_job_completed` outcomes,
+and `logEdgeEvent` inherits correlation. Remaining work: Sentry integration,
+`@pg-boss/dashboard` as separate basic-auth Railway service (documented U12 deviation),
+Railway service for the API in project `family-events-ui`, deploy-cli/IaC updates,
+observability dashboards, secret management parity (`.env.example` is the authoritative
 var list; U27 introduced `TELEGRAM_BOT_TOKEN` + `TELEGRAM_FAILURE_CHAT_ID`; U26
 introduced `OPENWEATHER_API_KEY` as optional configuration).
 
