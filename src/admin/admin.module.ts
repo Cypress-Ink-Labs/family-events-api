@@ -24,6 +24,9 @@ import { AdminUserService } from "./admin-user.service.js"
 import { AdminDeadLetterController } from "./admin-dead-letter.controller.js"
 import { AdminDeadLetterRepository } from "./admin-dead-letter.repository.js"
 import { AdminDeadLetterService } from "./admin-dead-letter.service.js"
+import { AdminCronController } from "./admin-cron.controller.js"
+import { AdminCronRepository } from "./admin-cron.repository.js"
+import { AdminCronService } from "./admin-cron.service.js"
 
 @Module({
   imports: [AuthModule, DbModule, JobsModule],
@@ -35,6 +38,7 @@ import { AdminDeadLetterService } from "./admin-dead-letter.service.js"
     AdminInviteController,
     AdminStatisticsController,
     AdminDeadLetterController,
+    AdminCronController,
   ],
   providers: [
     AdminReviewService,
@@ -51,6 +55,8 @@ import { AdminDeadLetterService } from "./admin-dead-letter.service.js"
     AdminStatisticsRepository,
     AdminDeadLetterService,
     AdminDeadLetterRepository,
+    AdminCronService,
+    AdminCronRepository,
   ],
 })
 export class AdminModule {}

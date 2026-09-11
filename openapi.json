@@ -2891,6 +2891,245 @@
         ]
       }
     },
+    "/v1/admin/crons": {
+      "get": {
+        "operationId": "adminListCrons",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminCronSchedulesDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminValidationErrorDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "clerk": []
+          }
+        ],
+        "summary": "List code-owned cron schedules",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/v1/admin/crons/runs": {
+      "get": {
+        "operationId": "adminListCronRuns",
+        "parameters": [
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 200,
+              "type": "number"
+            }
+          },
+          {
+            "name": "label",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "enum": [
+                "cron-scrape-sources",
+                "cron-cleanup-stale",
+                "cron-tag-queue",
+                "cron-enrich-events",
+                "cron-review-events",
+                "cron-weekly-digest",
+                "cron-send-reminders"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminCronRunsDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminValidationErrorDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "clerk": []
+          }
+        ],
+        "summary": "List cron run history",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/v1/admin/crons/runs/{id}": {
+      "get": {
+        "operationId": "adminGetCronRun",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "pattern": "^[1-9]\\d*$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminCronRunDetailDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminValidationErrorDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "clerk": []
+          }
+        ],
+        "summary": "Get one cron run and its logs",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/v1/cities": {
       "get": {
         "operationId": "ConsumerController_listCities",
@@ -3820,7 +4059,8 @@
               "invalid source id",
               "invalid user id",
               "invalid invite code id",
-              "invalid invite request id"
+              "invalid invite request id",
+              "invalid cron run id"
             ]
           },
           "error": {
@@ -5222,6 +5462,216 @@
         },
         "required": [
           "ok"
+        ]
+      },
+      "AdminCronRunSummaryDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[1-9]\\d*$"
+          },
+          "label": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "ran_at": {
+            "type": "string"
+          },
+          "duration_s": {
+            "type": "integer",
+            "nullable": true
+          },
+          "http_status": {
+            "type": "integer",
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "status",
+          "ran_at",
+          "duration_s",
+          "http_status"
+        ]
+      },
+      "AdminCronScheduleDto": {
+        "type": "object",
+        "properties": {
+          "family": {
+            "type": "string"
+          },
+          "queue": {
+            "type": "string"
+          },
+          "task": {
+            "type": "string"
+          },
+          "cron": {
+            "type": "string"
+          },
+          "replaces": {
+            "type": "string",
+            "nullable": true
+          },
+          "legacy_enabled": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "nest_enabled": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "latest_run": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AdminCronRunSummaryDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "family",
+          "queue",
+          "task",
+          "cron",
+          "replaces",
+          "legacy_enabled",
+          "nest_enabled",
+          "latest_run"
+        ]
+      },
+      "AdminCronSchedulesDto": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminCronScheduleDto"
+            }
+          }
+        },
+        "required": [
+          "items"
+        ]
+      },
+      "AdminCronRunsDto": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminCronRunSummaryDto"
+            }
+          }
+        },
+        "required": [
+          "items"
+        ]
+      },
+      "AdminCronLogDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[1-9]\\d*$"
+          },
+          "provider": {
+            "type": "string",
+            "enum": [
+              "railway",
+              "supabase"
+            ]
+          },
+          "level": {
+            "type": "string",
+            "enum": [
+              "debug",
+              "info",
+              "log",
+              "warn",
+              "error"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "metadata": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "sequence": {
+            "type": "integer",
+            "nullable": true
+          },
+          "created_at": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "provider",
+          "level",
+          "message",
+          "metadata",
+          "sequence",
+          "created_at"
+        ]
+      },
+      "AdminCronRunDetailDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[1-9]\\d*$"
+          },
+          "label": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "ran_at": {
+            "type": "string"
+          },
+          "duration_s": {
+            "type": "integer",
+            "nullable": true
+          },
+          "http_status": {
+            "type": "integer",
+            "nullable": true
+          },
+          "run_key": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "body": {
+            "type": "string",
+            "nullable": true
+          },
+          "logs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminCronLogDto"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "status",
+          "ran_at",
+          "duration_s",
+          "http_status",
+          "run_key",
+          "body",
+          "logs"
         ]
       },
       "CityDto": {

@@ -226,6 +226,9 @@ describe("application bootstrap", () => {
       ["/v1/admin/dead-letters", "get", "adminListDeadLetters"],
       ["/v1/admin/dead-letters/{queue}/{id}/retry", "post", "adminRetryDeadLetter"],
       ["/v1/admin/dead-letters/{queue}/{id}", "delete", "adminDeleteDeadLetter"],
+      ["/v1/admin/crons", "get", "adminListCrons"],
+      ["/v1/admin/crons/runs", "get", "adminListCronRuns"],
+      ["/v1/admin/crons/runs/{id}", "get", "adminGetCronRun"],
     ] as const
     expect(Object.keys(document.paths).filter((path) => path.startsWith("/v1/admin/"))).toEqual([
       ...new Set(operations.map(([path]) => path)),
@@ -316,6 +319,55 @@ describe("application bootstrap", () => {
         resulting_queue_id: { type: "string", pattern: "^[1-9]\\d*$" },
       },
     })
+    const cronPaths = Object.entries(document.paths)
+      .filter(([path]) => path.startsWith("/v1/admin/crons"))
+      .map(([path, item]) => [path, Object.keys(item!).filter((key) => key !== "parameters")])
+    expect(cronPaths).toEqual([
+      ["/v1/admin/crons", ["get"]],
+      ["/v1/admin/crons/runs", ["get"]],
+      ["/v1/admin/crons/runs/{id}", ["get"]],
+    ])
+    const cronRunsParameters = document.paths["/v1/admin/crons/runs"]!.get!.parameters!
+    expect(cronRunsParameters).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "label",
+          schema: expect.objectContaining({ enum: expect.any(Array) }),
+        }),
+        expect.objectContaining({
+          name: "limit",
+          schema: expect.objectContaining({ minimum: 1, maximum: 200 }),
+        }),
+      ])
+    )
+    const cronSummary = document.components!.schemas!.AdminCronRunSummaryDto as {
+      required: string[]
+      properties: Record<string, Record<string, unknown>>
+    }
+    expect(cronSummary.required).toEqual(
+      expect.arrayContaining(["duration_s", "http_status", "ran_at"])
+    )
+    expect(cronSummary.properties.id).toMatchObject({ type: "string", pattern: "^[1-9]\\d*$" })
+    expect(cronSummary.properties.duration_s).toMatchObject({ type: "integer", nullable: true })
+    expect(cronSummary.properties.http_status).toMatchObject({ type: "integer", nullable: true })
+    expect(cronSummary.properties.ran_at).toEqual({ type: "string" })
+    const cronLog = document.components!.schemas!.AdminCronLogDto as {
+      required: string[]
+      properties: Record<string, Record<string, unknown>>
+    }
+    expect(cronLog.required).toEqual(
+      expect.arrayContaining([
+        "id",
+        "provider",
+        "level",
+        "message",
+        "metadata",
+        "sequence",
+        "created_at",
+      ])
+    )
+    expect(cronLog.properties.sequence).toMatchObject({ type: "integer", nullable: true })
+    expect(cronLog.properties.created_at).toEqual({ type: "string" })
   })
 
   it("documents admin query constraints, precise values, nullable cursors, and bounded UUID arrays", () => {
