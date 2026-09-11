@@ -109,6 +109,7 @@ export async function ensureAdminCatalog(db: DbService): Promise<void> {
     "admin_invite_rpcs.sql",
     "admin_dashboard_stats.sql",
     "pipeline_learning_stats.sql",
+    "admin_dead_letter_rpcs.sql",
   ]) {
     await db.query(readFileSync(join(process.cwd(), "test/integration/sql", file), "utf8"))
   }
