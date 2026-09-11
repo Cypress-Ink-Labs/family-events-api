@@ -151,7 +151,7 @@ export class AdminInviteRepository {
 
   rejectRequest(actor: string, id: string, input: AdminRejectInviteRequestInput): Promise<boolean> {
     return withAdminActor(this.db, actor, async (client) => {
-      const notes = input.notes ?? null
+      const notes = input.notes?.trim() || null
       const result = await client.query<{ ok: boolean }>(
         "SELECT public.admin_reject_invite_request($1::uuid, $2::text) AS ok",
         [id, notes]

@@ -169,11 +169,11 @@ describe("AdminInviteRepository", () => {
 
   it("audits only successful rejection with normalized notes", async () => {
     const { repository, query } = setup()
-    await expect(repository.rejectRequest(ACTOR, CODE, { notes: null })).resolves.toBe(true)
+    await expect(repository.rejectRequest(ACTOR, CODE, { notes: "  reason  " })).resolves.toBe(true)
     expect(query.mock.calls[1]).toEqual([
       "SELECT public.admin_reject_invite_request($1::uuid, $2::text) AS ok",
-      [CODE, null],
+      [CODE, "reason"],
     ])
-    expect(query.mock.calls[2]![1]).toEqual([CODE, JSON.stringify({ notes: null })])
+    expect(query.mock.calls[2]![1]).toEqual([CODE, JSON.stringify({ notes: "reason" })])
   })
 })
