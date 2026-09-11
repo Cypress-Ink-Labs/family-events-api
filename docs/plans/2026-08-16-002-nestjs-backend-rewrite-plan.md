@@ -228,28 +228,13 @@ Vault credentials take precedence over environment fallbacks. Scheduled digests
 resolve the validated Telegram token once per run; `testEmail` stays email-only,
 without token lookup or pacing. See [deployment details](../DEPLOYMENT.md).
 
-### U31 — Admin API port 🟡 (cron observability done; mutations + other admin surfaces pending)
-
-**Cron observability (done):** Read-only cron schedule endpoint (`GET /v1/admin/crons`)
-with metadata derived from the code-owned FAMILIES registry, run history endpoint
-(`GET /v1/admin/crons/runs`), and run detail endpoint (`GET /v1/admin/crons/runs/:id`)
-with joined production cron logs through `run_key`. Explicit legacy/Nest gate state
-exposure (via `private.cron_enabled` rows for both legacy labels and `nestjs:` prefixed
-labels) without ownership or cutover mutations. Bigint run/log IDs preserved as decimal
-strings; raw PostgreSQL timestamps preserved (microsecond precision as text).
-Integration-tested against the real catalog (`private.railway_cron_runs`,
-`private.cron_run_log_entries`, `private.cron_enabled`). The schedule endpoint joins
-the latest run summary by label; history honors the code-owned label allowlist;
-detail joins and orders logs by `created_at` and `id`. No POST/PUT/PATCH/DELETE routes
-exist; toggle/schedule mutations are deferred.
-
-**Remaining:** Toggle/schedule mutations for cron gate control, pg-boss-backed history
-surface (the current surface is legacy-run continuity only). The ~28 other `admin_*` RPCs
-as operator-guarded endpoints: review queue (cursor `(created_at, id)`, limit 200/max 500),
-facets, status/batch/delete, event editor + unlock, sources CRUD + scrape-now + bulk
-processing mode, dead-letter retry/delete (incl. U2 redrive), users/access/invites,
-AI settings, dashboards/stats. Decide realtime replacement here (poll vs SSE); the old
-SPA's four Supabase channels are reference.
+### U31 — Admin API port
+The ~30 `admin_*` RPCs as operator-guarded endpoints: review queue (cursor
+`(created_at, id)`, limit 200/max 500), facets, status/batch/delete, event editor +
+unlock, sources CRUD + scrape-now + bulk processing mode, dead-letter retry/delete
+(incl. U2 redrive), users/access/invites, AI settings, dashboards/stats, cron
+admin (list/toggle/schedule/history — now backed by pg-boss). Decide realtime
+replacement here (poll vs SSE); the old SPA's four Supabase channels are reference.
 
 ### U32 — Observability + deployment
 Sentry, structured logs, `@pg-boss/dashboard` as separate basic-auth Railway service
