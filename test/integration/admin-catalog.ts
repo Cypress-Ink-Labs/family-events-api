@@ -8,6 +8,7 @@ import { ensureIngestionSchema, truncateIngestion } from "./ingestion-catalog.js
 /** Production review RPCs on the disposable catalog, never a backend migration. */
 export async function ensureAdminCatalog(db: DbService): Promise<void> {
   await ensureIngestionSchema(db)
+  await db.query("CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA extensions")
   await db.query("CREATE SCHEMA IF NOT EXISTS private")
   await db.query(`
     DROP TABLE IF EXISTS public.user_access CASCADE;
@@ -57,6 +58,35 @@ export async function ensureAdminCatalog(db: DbService): Promise<void> {
     ALTER TABLE public.source_scrape_queue
       ADD CONSTRAINT source_scrape_queue_source_id_fkey
       FOREIGN KEY (source_id) REFERENCES public.event_sources (id) ON DELETE SET NULL;
+    DROP TABLE IF EXISTS public.invite_requests CASCADE;
+    DROP TABLE IF EXISTS public.invite_codes CASCADE;
+    DROP TYPE IF EXISTS public.invite_request_status CASCADE;
+    CREATE TYPE public.invite_request_status AS ENUM ('pending', 'approved', 'rejected');
+    CREATE TABLE public.invite_codes (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      code_hash text NOT NULL CHECK (length(code_hash) = 64),
+      max_uses integer NOT NULL CHECK (max_uses > 0),
+      used_count integer NOT NULL DEFAULT 0 CHECK (used_count >= 0),
+      expires_at timestamptz,
+      revoked_at timestamptz,
+      notes text,
+      created_by uuid REFERENCES public.user_profiles(id) ON DELETE SET NULL,
+      created_at timestamptz NOT NULL DEFAULT now()
+    );
+    CREATE TABLE public.invite_requests (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      email text NOT NULL CHECK (length(email) >= 3 AND length(email) <= 320),
+      message text CHECK (message IS NULL OR length(message) <= 500),
+      status public.invite_request_status NOT NULL DEFAULT 'pending',
+      invite_code_id uuid REFERENCES public.invite_codes(id) ON DELETE SET NULL,
+      admin_notes text CHECK (admin_notes IS NULL OR length(admin_notes) <= 1000),
+      created_at timestamptz NOT NULL DEFAULT now(),
+      reviewed_at timestamptz,
+      reviewed_by uuid REFERENCES public.user_profiles(id) ON DELETE SET NULL
+    );
+    CREATE UNIQUE INDEX invite_requests_pending_email_unique
+      ON public.invite_requests (lower(email))
+      WHERE status = 'pending';
   `)
   // Supabase auth.uid() reads JWT claims; this bare Postgres equivalent exercises
   // the actual transaction-local claims written by the API repository.
@@ -76,6 +106,7 @@ export async function ensureAdminCatalog(db: DbService): Promise<void> {
     "admin_event_editor_rpcs.sql",
     "admin_source_rpcs.sql",
     "admin_user_rpcs.sql",
+    "admin_invite_rpcs.sql",
   ]) {
     await db.query(readFileSync(join(process.cwd(), "test/integration/sql", file), "utf8"))
   }
@@ -83,5 +114,7 @@ export async function ensureAdminCatalog(db: DbService): Promise<void> {
 
 export async function truncateAdminCatalog(db: DbService): Promise<void> {
   await truncateIngestion(db)
-  await db.query("TRUNCATE public.user_access, auth.users CASCADE")
+  await db.query(
+    "TRUNCATE public.invite_requests, public.invite_codes, public.user_access, auth.users CASCADE"
+  )
 }

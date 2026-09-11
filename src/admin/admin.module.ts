@@ -3,6 +3,9 @@ import { Module } from "@nestjs/common"
 import { AuthModule } from "../auth/auth.module.js"
 import { DbModule } from "../db/db.module.js"
 import { JobsModule } from "../jobs/jobs.module.js"
+import { AdminInviteController } from "./admin-invite.controller.js"
+import { AdminInviteRepository } from "./admin-invite.repository.js"
+import { AdminInviteService } from "./admin-invite.service.js"
 import { AdminEventEditorController } from "./admin-event-editor.controller.js"
 import { AdminEventEditorRepository } from "./admin-event-editor.repository.js"
 import { AdminEventEditorService } from "./admin-event-editor.service.js"
@@ -23,6 +26,7 @@ import { AdminUserService } from "./admin-user.service.js"
     AdminEventEditorController,
     AdminSourceController,
     AdminUserController,
+    AdminInviteController,
   ],
   providers: [
     AdminReviewService,
@@ -33,6 +37,8 @@ import { AdminUserService } from "./admin-user.service.js"
     AdminSourceRepository,
     AdminUserService,
     AdminUserRepository,
+    AdminInviteService,
+    AdminInviteRepository,
   ],
 })
 export class AdminModule {}
