@@ -6,6 +6,12 @@
 // matches node-postgres DatabaseError (a real Error whose code/details live on
 // the instance), so pg errors serialize with their SQLSTATE either way.
 
+import {
+  currentLogCorrelation,
+  emitStructuredLog,
+  safeStructuredJson,
+} from "../observability/structured-log.js"
+
 export type EdgeLogLevel = "log" | "warn" | "error"
 
 interface EdgeLogContext {
@@ -99,14 +105,23 @@ export function errorMessage(error: unknown): string {
 }
 
 export function logEdgeEvent(level: EdgeLogLevel, message: string, context: EdgeLogContext = {}) {
+  const correlation = currentLogCorrelation()
   const payload = {
     timestamp: new Date().toISOString(),
     level,
     message,
     ...context,
+    ...(correlation.request_id ? { request_id: correlation.request_id } : {}),
+    ...(correlation.queue ? { queue: correlation.queue } : {}),
+    ...(correlation.job_id ? { job_id: correlation.job_id } : {}),
   }
 
-  console[level](JSON.stringify(payload))
+  if (correlation.sink) {
+    emitStructuredLog(payload, correlation.sink)
+  } else {
+    // Preserve the legacy level-specific console output outside a boundary.
+    console[level](safeStructuredJson(payload))
+  }
 }
 
 export function errorContext(error: unknown, extra: EdgeLogContext = {}) {
