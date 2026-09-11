@@ -2447,6 +2447,151 @@
         ]
       }
     },
+    "/v1/admin/dashboard/stats": {
+      "get": {
+        "operationId": "adminDashboardStats",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminDashboardStatsDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminValidationErrorDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "clerk": []
+          }
+        ],
+        "summary": "Get admin dashboard statistics",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/v1/admin/statistics/pipeline": {
+      "get": {
+        "operationId": "adminPipelineStats",
+        "parameters": [
+          {
+            "name": "window_days",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 365,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminPipelineStatsDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminValidationErrorDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "clerk": []
+          }
+        ],
+        "summary": "Get pipeline learning statistics",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/v1/cities": {
       "get": {
         "operationId": "ConsumerController_listCities",
@@ -4432,6 +4577,227 @@
           "invite_code_id",
           "email",
           "created_at"
+        ]
+      },
+      "AdminConfidenceStatsDto": {
+        "type": "object",
+        "properties": {
+          "high": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "medium": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "low": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "high",
+          "medium",
+          "low"
+        ]
+      },
+      "AdminSourceStatsDto": {
+        "type": "object",
+        "properties": {
+          "active": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "errors": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "active",
+          "errors"
+        ]
+      },
+      "AdminDeadLetterStatsDto": {
+        "type": "object",
+        "properties": {
+          "tag_queue": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "source_queue": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "oldest_tag_dead_at": {
+            "type": "string",
+            "nullable": true
+          },
+          "oldest_source_dead_at": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "tag_queue",
+          "source_queue",
+          "oldest_tag_dead_at",
+          "oldest_source_dead_at"
+        ]
+      },
+      "AdminDashboardStatsDto": {
+        "type": "object",
+        "properties": {
+          "total_events": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "draft_events": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "published_events": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "ai_confidence": {
+            "$ref": "#/components/schemas/AdminConfidenceStatsDto"
+          },
+          "sources": {
+            "$ref": "#/components/schemas/AdminSourceStatsDto"
+          },
+          "dead_letters": {
+            "$ref": "#/components/schemas/AdminDeadLetterStatsDto"
+          },
+          "generated_at": {
+            "type": "string",
+            "description": "Raw timestamp string preserving PostgreSQL microsecond precision; pass it unchanged."
+          }
+        },
+        "required": [
+          "total_events",
+          "draft_events",
+          "published_events",
+          "ai_confidence",
+          "sources",
+          "dead_letters",
+          "generated_at"
+        ]
+      },
+      "AdminTopRejectionSourceDto": {
+        "type": "object",
+        "properties": {
+          "source_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "source_name": {
+            "type": "string",
+            "nullable": true
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "rejected": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "rejection_rate": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100
+          }
+        },
+        "required": [
+          "source_id",
+          "source_name",
+          "total",
+          "rejected",
+          "rejection_rate"
+        ]
+      },
+      "AdminPipelineStatsDto": {
+        "type": "object",
+        "properties": {
+          "window_days": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 365
+          },
+          "total_reviewed": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "llm_reviewed": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "admin_reviewed": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "auto_rejected": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "memory_hits": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "total_embeddings": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "tag_memory_hits": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "top_rejection_sources": {
+            "maxItems": 10,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminTopRejectionSourceDto"
+            }
+          },
+          "feature_flags": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "description": "Feature flags exactly as returned by pipeline_learning_stats."
+          }
+        },
+        "required": [
+          "window_days",
+          "total_reviewed",
+          "llm_reviewed",
+          "admin_reviewed",
+          "auto_rejected",
+          "memory_hits",
+          "total_embeddings",
+          "tag_memory_hits",
+          "top_rejection_sources",
+          "feature_flags"
         ]
       },
       "CityDto": {

@@ -218,6 +218,8 @@ describe("application bootstrap", () => {
       ["/v1/admin/invite-requests", "get", "adminListInviteRequests"],
       ["/v1/admin/invite-requests/{id}/approve", "post", "adminApproveInviteRequest"],
       ["/v1/admin/invite-requests/{id}/reject", "post", "adminRejectInviteRequest"],
+      ["/v1/admin/dashboard/stats", "get", "adminDashboardStats"],
+      ["/v1/admin/statistics/pipeline", "get", "adminPipelineStats"],
     ] as const
     expect(Object.keys(document.paths).filter((path) => path.startsWith("/v1/admin/"))).toEqual([
       ...new Set(operations.map(([path]) => path)),
@@ -238,6 +240,41 @@ describe("application bootstrap", () => {
         })
       }
     }
+    expect(document.paths["/v1/admin/statistics/pipeline"]!.get!.parameters).toEqual([
+      expect.objectContaining({
+        name: "window_days",
+        in: "query",
+        required: false,
+        schema: expect.objectContaining({ type: "number", minimum: 1, maximum: 365 }),
+      }),
+    ])
+    expect(document.components!.schemas!.AdminTopRejectionSourceDto).toMatchObject({
+      properties: {
+        source_name: { type: "string", nullable: true },
+        rejection_rate: { type: "number", minimum: 0, maximum: 100 },
+      },
+    })
+    expect(document.components!.schemas!.AdminDashboardStatsDto).toMatchObject({
+      properties: {
+        generated_at: {
+          type: "string",
+          description: expect.stringContaining("microsecond precision"),
+        },
+      },
+    })
+    expect(document.components!.schemas!.AdminPipelineStatsDto).toMatchObject({
+      properties: {
+        top_rejection_sources: {
+          type: "array",
+          maxItems: 10,
+          items: { $ref: "#/components/schemas/AdminTopRejectionSourceDto" },
+        },
+        feature_flags: {
+          type: "object",
+          additionalProperties: { type: "boolean" },
+        },
+      },
+    })
   })
 
   it("documents admin query constraints, precise values, nullable cursors, and bounded UUID arrays", () => {
