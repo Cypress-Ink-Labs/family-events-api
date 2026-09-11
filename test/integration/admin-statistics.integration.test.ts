@@ -137,7 +137,14 @@ describe("pipeline learning statistics", () => {
       await event("rejected", { source_id: belowMinimum }),
       await event("published", { source_id: belowMinimum }),
     ]
-    await event("published", { updated_at: "2020-01-01T00:00:00Z" })
+    // The production search trigger overwrites updated_at on every insert/update.
+    // Disable it only while seeding an intentionally out-of-window row.
+    await db.query("ALTER TABLE public.events DISABLE TRIGGER events_search_vector_trigger")
+    try {
+      await event("published", { updated_at: "2020-01-01T00:00:00Z" })
+    } finally {
+      await db.query("ALTER TABLE public.events ENABLE TRIGGER events_search_vector_trigger")
+    }
     await db.query(
       `INSERT INTO public.event_llm_review_traces
        (event_id, prompt_version, status, flags) VALUES
