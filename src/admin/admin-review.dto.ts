@@ -243,6 +243,7 @@ export class AdminValidationErrorDto {
     enum: [
       "invalid request body",
       "invalid query parameters",
+      "invalid path parameters",
       "invalid event id",
       "invalid source id",
       "invalid user id",

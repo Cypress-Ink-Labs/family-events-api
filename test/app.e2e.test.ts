@@ -26,6 +26,7 @@ interface ContractSchema {
   maximum?: number
   minLength?: number
   maxLength?: number
+  pattern?: string
   format?: string
   description?: string
   default?: unknown
@@ -55,6 +56,7 @@ function matchesContract(
     "maximum",
     "minLength",
     "maxLength",
+    "pattern",
     "format",
     "description",
     "default",
@@ -106,7 +108,8 @@ function matchesContract(
     if (
       typeof value !== "string" ||
       (schema.minLength !== undefined && value.length < schema.minLength) ||
-      (schema.maxLength !== undefined && value.length > schema.maxLength)
+      (schema.maxLength !== undefined && value.length > schema.maxLength) ||
+      (schema.pattern !== undefined && !new RegExp(schema.pattern).test(value))
     )
       return false
     if (
@@ -220,6 +223,9 @@ describe("application bootstrap", () => {
       ["/v1/admin/invite-requests/{id}/reject", "post", "adminRejectInviteRequest"],
       ["/v1/admin/dashboard/stats", "get", "adminDashboardStats"],
       ["/v1/admin/statistics/pipeline", "get", "adminPipelineStats"],
+      ["/v1/admin/dead-letters", "get", "adminListDeadLetters"],
+      ["/v1/admin/dead-letters/{queue}/{id}/retry", "post", "adminRetryDeadLetter"],
+      ["/v1/admin/dead-letters/{queue}/{id}", "delete", "adminDeleteDeadLetter"],
     ] as const
     expect(Object.keys(document.paths).filter((path) => path.startsWith("/v1/admin/"))).toEqual([
       ...new Set(operations.map(([path]) => path)),
@@ -273,6 +279,41 @@ describe("application bootstrap", () => {
           type: "object",
           additionalProperties: { type: "boolean" },
         },
+      },
+    })
+    const deadLetter = document.components!.schemas!.AdminDeadLetterDto as {
+      properties: Record<string, Record<string, unknown>>
+    }
+    expect(deadLetter.properties.id).toMatchObject({
+      type: "string",
+      pattern: "^[1-9]\\d*$",
+    })
+    for (const timestamp of ["enqueued_at", "started_at", "finished_at", "next_attempt_at"]) {
+      expect(deadLetter.properties[timestamp]).toMatchObject({ type: "string" })
+      expect(deadLetter.properties[timestamp]).not.toHaveProperty("format")
+    }
+    const listParameters = document.paths["/v1/admin/dead-letters"]!.get!.parameters!
+    expect(listParameters).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "queue",
+          schema: { type: "string", enum: ["source", "tag"] },
+        }),
+        expect.objectContaining({ name: "cursor", schema: { type: "string" } }),
+      ])
+    )
+    const retryOperation = document.paths["/v1/admin/dead-letters/{queue}/{id}/retry"]!.post!
+    expect(retryOperation.requestBody).toMatchObject({
+      content: {
+        "application/json": {
+          schema: { type: "object", additionalProperties: false },
+        },
+      },
+    })
+    expect(document.components!.schemas!.AdminDeadLetterRetryDto).toMatchObject({
+      properties: {
+        status: { type: "string", enum: ["queued", "already_active"] },
+        resulting_queue_id: { type: "string", pattern: "^[1-9]\\d*$" },
       },
     })
   })
@@ -773,9 +814,11 @@ describe("application bootstrap", () => {
       true
     )
     expect(matchesContract({}, { type: "object", minProperties: 1 }, schemas)).toBe(false)
+    expect(matchesContract("value", { type: "string", pattern: "^value$" }, schemas)).toBe(true)
+    expect(matchesContract("other", { type: "string", pattern: "^value$" }, schemas)).toBe(false)
     expect(() =>
-      matchesContract("value", { type: "string", pattern: "^value$" } as ContractSchema, schemas)
-    ).toThrow("unsupported contract keyword: pattern")
+      matchesContract(2, { type: "number", multipleOf: 2 } as ContractSchema, schemas)
+    ).toThrow("unsupported contract keyword: multipleOf")
     expect(() => matchesContract("value", { type: "mystery" }, schemas)).toThrow(
       "unsupported contract type: mystery"
     )
