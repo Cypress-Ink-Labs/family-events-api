@@ -17,6 +17,9 @@ the pipeline's `process.env` seams noted below. `.env.example` mirrors both.
 | `PORT` | no | Defaults to 3001; Railway injects its own. |
 | `PGBOSS_SCHEMA` | no | pg-boss schema, default `pgboss`. Must match the U12 worker so both share one job store. |
 | `WEB_ORIGIN` | no | Public origin of the web app (e.g. `https://<app>.up.railway.app`). Enables CORS with credentials for browser calls; unset = no CORS headers. |
+| `SENTRY_DSN` | no | Enables Sentry error reporting when non-empty. Empty or absent disables SDK initialization and all sending. Do not commit the DSN. |
+| `SENTRY_ENVIRONMENT` / `SENTRY_RELEASE` | no | Optional event labels used only when Sentry is enabled. |
+| `SENTRY_TRACES_SAMPLE_RATE` | no | Trace sampling from 0 through 1; defaults to 0 (tracing disabled). Has no effect when `SENTRY_DSN` is unset. |
 | `CUTOVER_SCRAPE` / `CUTOVER_TAG` / `CUTOVER_REVIEW` / `CUTOVER_DIGEST` / `CUTOVER_REMINDERS` / `CUTOVER_NOTIFY` | no | Per-job-family cutover flags; all default off (nothing installed). Set to exact `"true"` per family only during the U33 migration window. |
 | `TELEGRAM_BOT_TOKEN` | required for Telegram digest | Environment fallback for digest delivery; Vault name `telegram_bot_token` takes precedence. Also shared with operator failure pings. |
 | `TELEGRAM_FAILURE_CHAT_ID` | no | Operator destination for pipeline failure pings (U3). Never used for user digests. |

@@ -5,6 +5,7 @@ const optionalNonEmptyString = z.preprocess(
   (value) => (value === "" ? undefined : value),
   z.string().min(1).optional()
 )
+const optionalUrl = z.preprocess((value) => (value === "" ? undefined : value), z.url().optional())
 export const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   PORT: z.coerce.number().int().positive().default(3001),
@@ -39,6 +40,11 @@ export const envSchema = z.object({
   VAPID_SUBJECT: optionalNonEmptyString,
   /** JSON-encoded Google service account used for iOS and Android FCM tokens. */
   FCM_SERVICE_ACCOUNT_JSON: optionalNonEmptyString,
+  /** Optional error reporting. An empty or absent DSN keeps Sentry completely disabled. */
+  SENTRY_DSN: optionalUrl,
+  SENTRY_ENVIRONMENT: optionalNonEmptyString,
+  SENTRY_TRACES_SAMPLE_RATE: z.coerce.number().min(0).max(1).default(0),
+  SENTRY_RELEASE: optionalNonEmptyString,
   /** Public origin of the web app; enables CORS for its browser calls. Unset = no CORS headers. */
   WEB_ORIGIN: z
     .url()

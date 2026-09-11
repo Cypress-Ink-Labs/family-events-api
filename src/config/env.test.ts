@@ -20,6 +20,34 @@ describe("validateEnv", () => {
     expect(validateEnv({ ...base, PORT: "8080" }).PORT).toBe(8080)
   })
 
+  it("defaults optional Sentry settings to disabled tracing", () => {
+    const env = validateEnv(base)
+    expect(env.SENTRY_DSN).toBeUndefined()
+    expect(env.SENTRY_TRACES_SAMPLE_RATE).toBe(0)
+  })
+
+  it("accepts optional Sentry settings and bounded sample rates", () => {
+    expect(
+      validateEnv({
+        ...base,
+        SENTRY_DSN: "https://public@example.ingest.sentry.io/1",
+        SENTRY_ENVIRONMENT: "staging",
+        SENTRY_TRACES_SAMPLE_RATE: "0.25",
+        SENTRY_RELEASE: "api@1",
+      })
+    ).toMatchObject({
+      SENTRY_ENVIRONMENT: "staging",
+      SENTRY_TRACES_SAMPLE_RATE: 0.25,
+      SENTRY_RELEASE: "api@1",
+    })
+    expect(() => validateEnv({ ...base, SENTRY_TRACES_SAMPLE_RATE: "-0.1" })).toThrow(
+      /SENTRY_TRACES_SAMPLE_RATE/
+    )
+    expect(() => validateEnv({ ...base, SENTRY_TRACES_SAMPLE_RATE: "1.1" })).toThrow(
+      /SENTRY_TRACES_SAMPLE_RATE/
+    )
+  })
+
   it("rejects a non-numeric PORT", () => {
     expect(() => validateEnv({ ...base, PORT: "abc" })).toThrow(/PORT/)
   })

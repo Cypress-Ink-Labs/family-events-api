@@ -1,7 +1,10 @@
 import { ArgumentsHost, type HttpServer } from "@nestjs/common"
-import { describe, expect, it, vi } from "vitest"
+import { beforeEach, describe, expect, it, vi } from "vitest"
 
+import { captureUnhandledException } from "../observability/sentry.js"
 import { PgExceptionFilter } from "./pg-exception.filter.js"
+
+vi.mock("../observability/sentry.js", () => ({ captureUnhandledException: vi.fn() }))
 
 function makeHost(): {
   host: ArgumentsHost
@@ -34,6 +37,8 @@ function pgError(code: string): Error {
 }
 
 describe("PgExceptionFilter", () => {
+  beforeEach(() => vi.clearAllMocks())
+
   it("maps an FK violation (23503) to 404", () => {
     const { host, status, json } = makeHost()
     new PgExceptionFilter().catch(pgError("23503"), host)
@@ -43,6 +48,7 @@ describe("PgExceptionFilter", () => {
       message: "related record not found",
       error: "Not Found",
     })
+    expect(captureUnhandledException).not.toHaveBeenCalled()
   })
 
   it("maps a unique violation (23505) to 409", () => {
@@ -72,5 +78,6 @@ describe("PgExceptionFilter", () => {
     const boom = new Error("totally unknown")
     new PgExceptionFilter(httpServerStub()).catch(boom, host)
     expect(status).toHaveBeenCalledWith(500)
+    expect(captureUnhandledException).toHaveBeenCalledWith(boom)
   })
 })
