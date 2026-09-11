@@ -40,12 +40,23 @@ export class AdminDeadLetterRepository {
 
   list(actor: string, input: DeadLetterListInput): Promise<DeadLetterRow[]> {
     const table = TABLES[input.queue]
-    const cursorPredicate =
-      input.cursor === null
-        ? "TRUE"
-        : input.cursor.finishedAt === null
-          ? "finished_at IS NULL AND id < $2::bigint"
-          : "(finished_at < $1::timestamptz OR finished_at IS NULL OR (finished_at = $1::timestamptz AND id < $2::bigint))"
+    let cursorPredicate: string
+    let limitPlaceholder: string
+    let parameters: unknown[]
+    if (input.cursor === null) {
+      cursorPredicate = "TRUE"
+      limitPlaceholder = "$1"
+      parameters = [input.limit + 1]
+    } else if (input.cursor.finishedAt === null) {
+      cursorPredicate = "finished_at IS NULL AND id < $1::bigint"
+      limitPlaceholder = "$2"
+      parameters = [input.cursor.id, input.limit + 1]
+    } else {
+      cursorPredicate =
+        "(finished_at < $1::timestamptz OR finished_at IS NULL OR (finished_at = $1::timestamptz AND id < $2::bigint))"
+      limitPlaceholder = "$3"
+      parameters = [input.cursor.finishedAt, input.cursor.id, input.limit + 1]
+    }
     return withAdminActor(this.db, actor, async (client) => {
       await requireDatabaseAdmin(client)
       const result = await client.query<DeadLetterRow>(
@@ -54,8 +65,8 @@ export class AdminDeadLetterRepository {
          FROM public.${table.name}
          WHERE status = 'dead' AND ${cursorPredicate}
          ORDER BY finished_at DESC NULLS LAST, id DESC
-         LIMIT $3::integer`,
-        [input.cursor?.finishedAt ?? null, input.cursor?.id ?? null, input.limit + 1]
+         LIMIT ${limitPlaceholder}::integer`,
+        parameters
       )
       return result.rows
     })

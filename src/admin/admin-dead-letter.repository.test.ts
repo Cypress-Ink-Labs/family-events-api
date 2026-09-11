@@ -53,13 +53,14 @@ describe("AdminDeadLetterRepository", () => {
       const [sql, bindings] = query.mock.calls[2]!
       expect(sql).toContain(`FROM public.${table}`)
       expect(sql).toContain(columns)
-      expect(sql).toContain("$2::bigint")
       expect(sql).toContain(
         finishedAt === null
-          ? "finished_at IS NULL AND id < $2::bigint"
+          ? "finished_at IS NULL AND id < $1::bigint"
           : "finished_at < $1::timestamptz OR finished_at IS NULL"
       )
-      expect(bindings).toEqual([finishedAt, "9007199254740993", 26])
+      expect(bindings).toEqual(
+        finishedAt === null ? ["9007199254740993", 26] : [finishedAt, "9007199254740993", 26]
+      )
     }
   )
 
