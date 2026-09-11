@@ -3,6 +3,8 @@ import type { ArgumentsHost } from "@nestjs/common"
 import { BaseExceptionFilter } from "@nestjs/core"
 import type { Response } from "express"
 
+import { captureUnhandledException } from "../observability/sentry.js"
+
 interface MappedStatus {
   status: number
   message: string
@@ -43,6 +45,9 @@ export class PgExceptionFilter extends BaseExceptionFilter {
         .status(mapped.status)
         .json({ statusCode: mapped.status, message: mapped.message, error: mapped.error })
       return
+    }
+    if (!(exception instanceof HttpException) || exception.getStatus() >= 500) {
+      captureUnhandledException(exception)
     }
     if (!(exception instanceof HttpException)) {
       this.logger.error(

@@ -1,4 +1,5 @@
 import "reflect-metadata"
+import "./instrument.js"
 
 import { ValidationPipe } from "@nestjs/common"
 import { ConfigService } from "@nestjs/config"
