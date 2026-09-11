@@ -236,12 +236,22 @@ unlock, sources CRUD + scrape-now + bulk processing mode, dead-letter retry/dele
 admin (list/toggle/schedule/history — now backed by pg-boss). Decide realtime
 replacement here (poll vs SSE); the old SPA's four Supabase channels are reference.
 
-### U32 — Observability + deployment
-Sentry, structured logs, `@pg-boss/dashboard` as separate basic-auth Railway service
-(documented U12 deviation), Railway service for the API in project `family-events-ui`,
-deploy-cli/IaC updates, secret management parity (`.env.example` is the authoritative
-var list; U27 introduced `TELEGRAM_BOT_TOKEN` + `TELEGRAM_FAILURE_CHAT_ID`; U26
-introduced `OPENWEATHER_API_KEY` as optional configuration).
+### U32 — Observability, health & structured logging 🟡 (Sentry landed)
+
+**Sentry integration landed (PR #44):** optional initialization (disabled without DSN),
+environment, release, and bounded trace-sampling configuration validation, bounded
+cycle-safe redaction for request data, credentials, connection strings, pipeline secrets,
+and one-time invite codes, redaction policy applied to error events, transaction events,
+and breadcrumbs, selective error capture (unhandled errors and HTTP 5xx exceptions only)
+while preserving existing PostgreSQL and HTTP response semantics. Variables documented in
+`.env.example` and `DEPLOYMENT.md` without adding values or deployment actions.
+
+**Remaining:** deployment environment setup (Railway service for the API in project
+`family-events-ui`, deploy-cli/IaC updates, Sentry DSN provisioning), structured logs,
+`@pg-boss/dashboard` as separate basic-auth Railway service (documented U12 deviation),
+secret management parity audit (`.env.example` is the authoritative var list; U27
+introduced `TELEGRAM_BOT_TOKEN` + `TELEGRAM_FAILURE_CHAT_ID`; U26 introduced
+`OPENWEATHER_API_KEY` as optional configuration).
 
 ### U33 — Staged cutover + decommission (operator-gated)
 Per-stage: enable pg-boss queue (Nest remains gated) → disable matching Railway cron via
