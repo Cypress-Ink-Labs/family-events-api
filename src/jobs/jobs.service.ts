@@ -1,6 +1,8 @@
 import {
   Injectable,
+  Inject,
   Logger,
+  Optional,
   type OnApplicationBootstrap,
   type OnApplicationShutdown,
 } from "@nestjs/common"
@@ -8,6 +10,13 @@ import { ConfigService } from "@nestjs/config"
 import { PgBoss, type Queue, type SendOptions } from "pg-boss"
 
 import type { Env } from "../config/env.js"
+import {
+  consoleStructuredLogSink,
+  emitStructuredLog,
+  runWithLogCorrelation,
+  STRUCTURED_LOG_SINK,
+  type StructuredLogSink,
+} from "../observability/structured-log.js"
 
 export type JobHandler<Data extends object> = (
   data: Data,
@@ -49,7 +58,12 @@ export class JobsService implements OnApplicationBootstrap, OnApplicationShutdow
   private readonly scheduleRemovals: ScheduleRemovalRegistration[] = []
   private boss: PgBoss | null = null
 
-  constructor(private readonly config: ConfigService<Env, true>) {}
+  constructor(
+    private readonly config: ConfigService<Env, true>,
+    @Optional()
+    @Inject(STRUCTURED_LOG_SINK)
+    private readonly structuredLogSink: StructuredLogSink = consoleStructuredLogSink
+  ) {}
 
   registerQueue<Data extends object>(
     name: string,
@@ -115,7 +129,11 @@ export class JobsService implements OnApplicationBootstrap, OnApplicationShutdow
             registration.name,
             { batchSize: 1, localConcurrency: registration.localConcurrency },
             async ([job]) => {
-              if (job) await handler(job.data as never, job.id, job.signal)
+              if (job) {
+                await this.runJob(registration.name, job.id, () =>
+                  handler(job.data as never, job.id, job.signal)
+                )
+              }
             }
           )
         }
@@ -148,5 +166,40 @@ export class JobsService implements OnApplicationBootstrap, OnApplicationShutdow
       throw new Error("pg-boss is not started")
     }
     return this.boss
+  }
+
+  private async runJob(queue: string, jobId: string, handler: () => Promise<void>): Promise<void> {
+    const started = performance.now()
+    return runWithLogCorrelation(
+      { queue, job_id: jobId, sink: this.structuredLogSink },
+      async () => {
+        try {
+          await handler()
+          emitStructuredLog({
+            event: "worker_job_completed",
+            queue,
+            job_id: jobId,
+            outcome: "success",
+            duration_ms: Math.round((performance.now() - started) * 100) / 100,
+          })
+        } catch (error) {
+          const details = error as { name?: unknown; code?: unknown }
+          const code =
+            typeof details.code === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(details.code)
+              ? details.code
+              : undefined
+          emitStructuredLog({
+            event: "worker_job_completed",
+            queue,
+            job_id: jobId,
+            outcome: "failure",
+            duration_ms: Math.round((performance.now() - started) * 100) / 100,
+            error_category: details.name === "AbortError" ? "aborted" : "unhandled_worker_error",
+            ...(code ? { error_code: code } : {}),
+          })
+          throw error
+        }
+      }
+    )
   }
 }

@@ -10,11 +10,13 @@ import { DbModule } from "./db/db.module.js"
 import { HealthModule } from "./health/health.module.js"
 import { JobsModule } from "./jobs/jobs.module.js"
 import { NotificationsModule } from "./notifications/notifications.module.js"
+import { ObservabilityModule } from "./observability/observability.module.js"
 import { PipelineModule } from "./pipeline/pipeline.module.js"
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true, validate: validateEnv }),
+    ObservabilityModule,
     DbModule,
     DataModule,
     JobsModule,

@@ -40,6 +40,18 @@ export function redact(value: unknown, options: RedactionOptions = {}): unknown 
         ? `${current.slice(0, maxStringLength)}${TRUNCATED}`
         : current
     }
+    if (typeof current === "bigint") return current.toString()
+    if (current instanceof Error) {
+      return visit(
+        {
+          name: current.name,
+          message: current.message,
+          code: (current as Error & { code?: unknown }).code,
+        },
+        depth,
+        key
+      )
+    }
     if (current === null || typeof current !== "object") return current
     if (depth >= maxDepth) return TRUNCATED
     if (seen.has(current)) return "[CIRCULAR]"

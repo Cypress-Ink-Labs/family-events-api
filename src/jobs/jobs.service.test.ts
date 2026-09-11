@@ -1,6 +1,8 @@
 import { ConfigService } from "@nestjs/config"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
+import type { StructuredLogSink } from "../observability/structured-log.js"
+
 const pgBoss = vi.hoisted(() => ({
   updateQueueCalls: [] as Array<[name: string, options: Record<string, unknown>]>,
   workCalls: [] as Array<
@@ -42,13 +44,13 @@ vi.mock("pg-boss", () => ({
 
 import { JobsService } from "./jobs.service.js"
 
-function makeService(nodeEnv = "test"): JobsService {
+function makeService(nodeEnv = "test", sink?: StructuredLogSink): JobsService {
   const config = new ConfigService({
     NODE_ENV: nodeEnv,
     DATABASE_URL: "postgresql://u:p@localhost:5432/db",
     PGBOSS_SCHEMA: "pgboss",
   })
-  return new JobsService(config as unknown as ConfigService<never, true>)
+  return new JobsService(config as unknown as ConfigService<never, true>, sink)
 }
 
 beforeEach(() => {
@@ -141,5 +143,41 @@ describe("JobsService", () => {
     await service.onApplicationBootstrap()
 
     expect(pgBoss.unscheduleCalls).toEqual([["notify", "process-notification-queue"]])
+  })
+
+  it("logs worker success with queue and job correlation", async () => {
+    const lines: string[] = []
+    const service = makeService("development", { write: (line) => lines.push(line) })
+    service.registerQueue("events", async () => undefined)
+    await service.onApplicationBootstrap()
+
+    await pgBoss.workCalls[0]![2]([{ id: "job-a", data: {} }])
+
+    expect(JSON.parse(lines[0]!)).toMatchObject({
+      event: "worker_job_completed",
+      queue: "events",
+      job_id: "job-a",
+      outcome: "success",
+    })
+  })
+
+  it("logs a safe failure and rethrows the identical error so pg-boss can retry", async () => {
+    const lines: string[] = []
+    const failure = Object.assign(new Error("payload secret"), { code: "TEMP_FAILURE" })
+    const service = makeService("development", { write: (line) => lines.push(line) })
+    service.registerQueue("events", async () => {
+      throw failure
+    })
+    await service.onApplicationBootstrap()
+
+    await expect(pgBoss.workCalls[0]![2]([{ id: "job-a", data: {} }])).rejects.toBe(failure)
+    expect(JSON.parse(lines[0]!)).toMatchObject({
+      queue: "events",
+      job_id: "job-a",
+      outcome: "failure",
+      error_category: "unhandled_worker_error",
+      error_code: "TEMP_FAILURE",
+    })
+    expect(lines[0]).not.toContain("payload secret")
   })
 })
