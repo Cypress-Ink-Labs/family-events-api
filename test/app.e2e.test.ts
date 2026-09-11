@@ -209,6 +209,10 @@ describe("application bootstrap", () => {
       ["/v1/admin/users", "get", "adminListUsers"],
       ["/v1/admin/users/{id}/access", "put", "adminSetUserAccess"],
       ["/v1/admin/users/{id}", "delete", "adminDeleteUser"],
+      ["/v1/admin/invites/required", "get", "adminGetInvitesRequired"],
+      ["/v1/admin/invite-codes", "get", "adminListInviteCodes"],
+      ["/v1/admin/invite-codes", "post", "adminCreateInviteCode"],
+      ["/v1/admin/invite-codes/{id}", "delete", "adminRevokeInviteCode"],
     ] as const
     expect(Object.keys(document.paths).filter((path) => path.startsWith("/v1/admin/"))).toEqual([
       ...new Set(operations.map(([path]) => path)),
@@ -461,6 +465,28 @@ describe("application bootstrap", () => {
         disabled_reason: { type: "string", nullable: true, maxLength: 1000 },
       },
     })
+    expect(schemas.AdminInviteCodeDto).toMatchObject({
+      properties: {
+        max_uses: { type: "integer", minimum: 1, maximum: 10000 },
+        used_count: { type: "integer", minimum: 0 },
+        expires_at: { type: "string", nullable: true },
+        revoked_at: { type: "string", nullable: true },
+      },
+    })
+    expect(schemas.AdminInviteCodeDto).not.toHaveProperty("properties.code")
+    expect(schemas.AdminInviteCodeDto).not.toHaveProperty("properties.code_hash")
+    expect(schemas.AdminCreatedInviteCodeDto).toHaveProperty("properties.code")
+    const createInviteBody = document.paths["/v1/admin/invite-codes"]!.post!.requestBody!
+    if (!("content" in createInviteBody)) throw new Error("expected inline invite-code body")
+    expect(createInviteBody.content["application/json"]!.schema).toMatchObject({
+      type: "object",
+      additionalProperties: false,
+      required: ["max_uses"],
+      properties: {
+        max_uses: { type: "integer", minimum: 1, maximum: 10000 },
+        expires_at: { type: "string", format: "date-time", nullable: true },
+      },
+    })
   })
 
   it("validates raw timestamp strings, null decisions, and both cursor variants against OpenAPI", () => {
@@ -631,6 +657,11 @@ describe("application bootstrap", () => {
         "/v1/admin/users/{id}/access",
         "put",
         { is_enabled: false, disabled_reason: "policy violation" },
+      ],
+      [
+        "/v1/admin/invite-codes",
+        "post",
+        { max_uses: 1, expires_at: null, notes: "Family referral" },
       ],
     ] as const
     for (const [path, method, body] of examples) {

@@ -246,6 +246,7 @@ export class AdminValidationErrorDto {
       "invalid event id",
       "invalid source id",
       "invalid user id",
+      "invalid invite code id",
     ],
   })
   message!: string
