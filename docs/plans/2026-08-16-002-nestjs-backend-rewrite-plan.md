@@ -244,7 +244,7 @@ var list; U27 introduced `TELEGRAM_BOT_TOKEN` + `TELEGRAM_FAILURE_CHAT_ID`; U26
 introduced `OPENWEATHER_API_KEY` as optional configuration).
 
 **U32-A (staged pg-boss upgrade):** pin `pg-boss` to exactly `12.30.0` and require
-Node `>=22.12.0`. The upgrade applies schema migrations v37→v38→v39→v40 (adds
+Node `>=24.0.0`. The upgrade applies schema migrations v37→v38→v39→v40 (adds
 `job_i10` key-strict-FIFO index, `version.reindex_on`, `version.monitor_backoff_on`,
 `queue.monitor_claim_on`, and replaces the fetch index `job_i5` with `job_i11`).
 Integration tests verify the complete upgrade path, BAM command sequencing,

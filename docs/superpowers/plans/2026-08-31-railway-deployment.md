@@ -6,7 +6,7 @@
 
 **Architecture:** This plan spans two checkouts; it lives in the API repo and names app-repo files as `../family-events-app/...`. Each repo gets a `railway.toml` using the pattern proven in the legacy `family-events-web` repo (build command, start command, healthcheck path). CORS is opt-in via a new `WEB_ORIGIN` env var on the API (absent = no CORS headers, current behavior, so local same-origin and server-function usage are unaffected). No GH deploy workflows here: Railway's git integration is the deploy path until the operator decides otherwise (see Out of scope).
 
-**Tech Stack:** Railway (railpack), NestJS 11 `enableCors`, TanStack Start nitro output, Node 22.
+**Tech Stack:** Railway (railpack), NestJS 11 `enableCors`, TanStack Start nitro output, Node 24.
 
 **Spec:** Legacy `family-events-web/railway.toml` (proven buildCommand/startCommand/healthcheckPath shape); api rewrite plan `docs/plans/2026-08-16-002-nestjs-backend-rewrite-plan.md` (U32 deployment). Baseline commit: `4dbaa42` (api). Verified facts this plan builds on: API serves `/healthz` (liveness, DB-free) and `/readyz` (DB ping) from an unprefixed controller; API start is `node dist/src/main.js`; app serves `/healthz` as a TanStack server route; app start is `node .output/server/index.mjs`; app build is `vite build`.
 
@@ -15,7 +15,7 @@
 - Gates: api `pnpm check`; app `cd ../family-events-app && pnpm check && pnpm test:guards`.
 - Secrets are never written to any file in either repo. `.env.example` gains variable NAMES with placeholder values only.
 - No production URLs invented in configs; the app's `VITE_API_URL`-style variable (if the app reads one, check its `.env.example`) is documented in DEPLOYMENT.md as an operator entry, not baked into `railway.toml`.
-- Railway variables: NODE_VERSION=22 must be pinned in both services.
+- Railway variables: NODE_VERSION=24 must be pinned in both services.
 
 ---
 
@@ -190,7 +190,7 @@ Read `src/config/env.ts` and `../family-events-app/.env.example` end to end. The
 ```markdown
 # Deployment (family-events-api)
 
-Railway service, railpack build, Node 22 (`NODE_VERSION=22` service variable).
+Railway service, railpack build, Node 24 (`NODE_VERSION=24` service variable).
 Healthcheck: GET /healthz (liveness, no DB). GET /readyz pings the database.
 
 ## Service variables
@@ -202,7 +202,7 @@ Healthcheck: GET /healthz (liveness, no DB). GET /readyz pings the database.
 | WEB_ORIGIN | no | Public origin of the web app (e.g. https://<app>.up.railway.app). Enables CORS with credentials for browser calls. |
 | CUTOVER_* | no | Cutover flags from the rewrite plan; all default off. Set only during the migration window. |
 | PGBOSS_SCHEMA | no | pg-boss schema name when the default is not wanted. |
-| Node runtime | | NODE_VERSION=22 (Railway service variable, not a .env). |
+| Node runtime | | NODE_VERSION=24 (Railway service variable, not a .env). |
 
 ## Deploy flow (operator)
 
@@ -226,7 +226,7 @@ crons behind private.cron_enabled. Both must not run schedules simultaneously.
 ```markdown
 # Deployment (family-events-app)
 
-Railway service, railpack build, Node 22 (`NODE_VERSION=22` service variable).
+Railway service, railpack build, Node 24 (`NODE_VERSION=24` service variable).
 Healthcheck: GET /healthz.
 
 ## Service variables
@@ -242,7 +242,7 @@ Healthcheck: GET /healthz.
 ## Deploy flow (operator)
 
 1. Create/link the Railway service to the family-events-app repo (main branch).
-2. Set the variables above plus NODE_VERSION=22.
+2. Set the variables above plus NODE_VERSION=24.
 3. First deploy: verify /healthz returns 200, then load / in a browser:
    events should render (DB reachable), sign-in should open Clerk.
 4. Set the API service's WEB_ORIGIN to this app's public URL and redeploy the API.
