@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "description": "NestJS backend API for the Family Events platform (replaces the Supabase Edge Functions + Railway cron pipeline and the TanStack Start server layer).",
+  "engines": {
+    "node": ">=22.12.0"
+  },
   "scripts": {
     "build": "swc src scripts -d dist",
     "start": "node dist/src/main.js",
@@ -29,7 +32,7 @@
     "fast-xml-parser": "^4.5.7",
     "linkedom": "^0.18.13",
     "pg": "^8.23.0",
-    "pg-boss": "^12.27.0",
+    "pg-boss": "12.30.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.2",
     "zod": "^4.4.3"
@@ -44,6 +47,7 @@
     "@types/supertest": "^7.2.1",
     "oxfmt": "^0.63.0",
     "oxlint": "^1.78.0",
+    "pg-boss-v12-27": "npm:pg-boss@12.27.0",
     "supertest": "^7.2.2",
     "typescript": "^7.0.2",
     "unplugin-swc": "^1.5.11",
