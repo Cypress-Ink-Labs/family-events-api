@@ -45,8 +45,8 @@ importers:
         specifier: ^8.23.0
         version: 8.23.0
       pg-boss:
-        specifier: ^12.27.0
-        version: 12.27.0
+        specifier: 12.30.0
+        version: 12.30.0
       reflect-metadata:
         specifier: ^0.2.2
         version: 0.2.2
@@ -84,6 +84,9 @@ importers:
       oxlint:
         specifier: ^1.78.0
         version: 1.78.0
+      pg-boss-v12-27:
+        specifier: npm:pg-boss@12.27.0
+        version: pg-boss@12.27.0
       supertest:
         specifier: ^7.2.2
         version: 7.2.2
@@ -2028,6 +2031,11 @@ packages:
 
   pg-boss@12.27.0:
     resolution: {integrity: sha512-DawcUffyDVJvxGYvaoc7B+G1yY86dJtvugVYMAt+CtO6Lg+RSyQuAU7IRfNyhqi0Bo/JeaxLqhqIy5+twpmYlg==}
+    engines: {node: '>=22.12.0'}
+    hasBin: true
+
+  pg-boss@12.30.0:
+    resolution: {integrity: sha512-ke4Rr/uMJGwqt7DwKoWS9aa6XFlK43C0fMw1Ma0CoJrVxWSjE7ZwFLwz60dGQODESDA2+yq/B474pOH4n3d3CQ==}
     engines: {node: '>=22.12.0'}
     hasBin: true
 
@@ -4202,6 +4210,14 @@ snapshots:
   pend@1.2.0: {}
 
   pg-boss@12.27.0:
+    dependencies:
+      cron-parser: 5.10.0
+      pg: 8.23.0
+      serialize-error: 13.0.1
+    transitivePeerDependencies:
+      - pg-native
+
+  pg-boss@12.30.0:
     dependencies:
       cron-parser: 5.10.0
       pg: 8.23.0

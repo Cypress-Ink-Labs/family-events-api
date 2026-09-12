@@ -1,8 +1,8 @@
 # Deployment (family-events-api)
 
-Railway service, railpack build (`railway.toml`), Node 22 (`NODE_VERSION=22`
-service variable). Healthcheck: `GET /healthz` (liveness, no DB). `GET /readyz`
-pings the database.
+Railway service, railpack build (`railway.toml`), Node 22.12 or newer
+(`NODE_VERSION=22.12.0` service variable). Healthcheck: `GET /healthz`
+(liveness, no DB). `GET /readyz` pings the database.
 
 Authoritative variable list: `src/config/env.ts` (zod-validated at boot) plus
 the pipeline's `process.env` seams noted below. `.env.example` mirrors both.
@@ -29,7 +29,7 @@ the pipeline's `process.env` seams noted below. `.env.example` mirrors both.
 | `SCRAPER_IMAGE_HOST_ALLOWLIST` | no | Comma-separated extra ingest image hosts appended to the built-in CDN allowlist. |
 | `VAPID_PRIVATE_KEY` / `VAPID_PUBLIC_KEY` / `VAPID_SUBJECT` | required for web push | Environment fallback for Web Push credentials. Vault names `vapid_private_key`, `vapid_public_key`, and `vapid_subject` take precedence. |
 | `FCM_SERVICE_ACCOUNT_JSON` | required for mobile push | JSON service account fallback for FCM HTTP v1. Both iOS and Android subscription tokens use FCM. Vault name `fcm_service_account_json` takes precedence. |
-| `NODE_VERSION` | yes | `22` — Railway service variable, not a `.env` entry. |
+| `NODE_VERSION` | yes | `22.12.0` or a newer Node 22 release. Railway service variable, not a `.env` entry. |
 
 Note: the `AI_*`, stock-image, and allowlist variables are read through
 `process.env` seams in pipeline code rather than the zod schema; they are
