@@ -24,8 +24,18 @@ with 403. It connects over Railway IPv6 to the Supabase direct endpoint using
 the dedicated `pgboss_dashboard` login and the pinned Supabase CA. That login
 has no pg-boss write privileges.
 
-All `CUTOVER_*` flags remain disabled. The deployment creates the pg-boss v40
-schema but installs no job-family queues or schedules until U33.
+U33 has transferred the scrape family:
+
+- `CUTOVER_SCRAPE=true`;
+- `cron-scrape-sources=false` and `cron-cleanup-stale=false` in one transaction;
+- `scrape` and `scrape.dlq` are installed with the hourly scrape and 30-minute
+  cleanup schedules;
+- controlled scrape and cleanup runs succeeded, the drain chain completed, and
+  no scrape DLQ work remained.
+
+All other `CUTOVER_*` flags remain disabled. The former Railway cron services
+have zero running replicas. Database maintenance remains outside the Nest job
+families.
 
 ## Service variables
 
