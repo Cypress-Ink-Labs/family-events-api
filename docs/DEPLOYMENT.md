@@ -1,7 +1,7 @@
 # Deployment (family-events-api)
 
-Railway service, railpack build (`railway.toml`), Node 22.12 or newer
-(`NODE_VERSION=22.12.0` service variable). Healthcheck: `GET /healthz`
+Railway service, railpack build (`railway.toml`), Node 24 or newer
+(`NODE_VERSION=24` service variable). Healthcheck: `GET /healthz`
 (liveness, no DB). `GET /readyz` pings the database.
 
 Authoritative variable list: `src/config/env.ts` (zod-validated at boot) plus
@@ -29,11 +29,45 @@ the pipeline's `process.env` seams noted below. `.env.example` mirrors both.
 | `SCRAPER_IMAGE_HOST_ALLOWLIST` | no | Comma-separated extra ingest image hosts appended to the built-in CDN allowlist. |
 | `VAPID_PRIVATE_KEY` / `VAPID_PUBLIC_KEY` / `VAPID_SUBJECT` | required for web push | Environment fallback for Web Push credentials. Vault names `vapid_private_key`, `vapid_public_key`, and `vapid_subject` take precedence. |
 | `FCM_SERVICE_ACCOUNT_JSON` | required for mobile push | JSON service account fallback for FCM HTTP v1. Both iOS and Android subscription tokens use FCM. Vault name `fcm_service_account_json` takes precedence. |
-| `NODE_VERSION` | yes | `22.12.0` or a newer Node 22 release. Railway service variable, not a `.env` entry. |
+| `NODE_VERSION` | yes | `24` or newer. Railway service variable, not a `.env` entry. |
 
 Note: the `AI_*`, stock-image, and allowlist variables are read through
 `process.env` seams in pipeline code rather than the zod schema; they are
 intentionally absent from `src/config/env.ts`.
+
+## pg-boss dashboard service
+
+Run `@pg-boss/dashboard@1.7.0` as a separate Railway service from this
+repository. Build with the normal project build command, then start it with:
+
+```text
+pnpm start:dashboard
+```
+
+The startup wrapper exits before loading the dashboard unless Node is 24 or
+newer and all of these service variables pass validation:
+
+- `DATABASE_URL`: a separately credentialed URL for the same Supabase database
+  and session-pooler endpoint used by the API;
+- `PGBOSS_SCHEMA=pgboss`;
+- non-empty, distinct `PGBOSS_DASHBOARD_AUTH_USERNAME` and
+  `PGBOSS_DASHBOARD_AUTH_PASSWORD` values;
+- `PGBOSS_DASHBOARD_READ_ONLY=1`;
+- `HOST=0.0.0.0`;
+- Railway's injected `PORT`.
+
+Do not copy the API's credential-bearing `DATABASE_URL` into this service.
+Create a dedicated database login with `CONNECT`, `USAGE` on the `pgboss`
+schema, and `SELECT` on the pg-boss tables used by dashboard views. The pinned
+dashboard starts pg-boss with schema creation, migration, scheduling, and
+supervision disabled. Do not grant DDL or job-mutation privileges to the
+dashboard login.
+
+Read-only middleware permits only `GET` and `HEAD`; it rejects every other HTTP
+method before route handling. Built-in Basic Auth still protects all requests.
+Expose the service only over Railway TLS. The package documents no health
+endpoint, so do not configure a guessed HTTP health path. Use process or TCP
+health until an explicit proxy/health design is approved.
 
 ## Deploy flow (operator)
 

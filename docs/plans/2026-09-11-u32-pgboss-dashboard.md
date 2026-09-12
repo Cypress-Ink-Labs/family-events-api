@@ -10,9 +10,8 @@ read-only dashboard service
 - `family-events-api` declares `pg-boss@^12.27.0`; the resolved baseline is
   `12.27.0`.
 - The shared `pgboss` schema is version 37.
-- pg-boss `12.30.0` and `@pg-boss/dashboard@1.7.0` require Node `>=22.12.0`.
-  CI currently selects the Node 22 release line, and Railway uses
-  `NODE_VERSION=22`. Neither setting proves the required patch level.
+- pg-boss `12.30.0` and `@pg-boss/dashboard@1.7.0` support the project runtime
+  floor of Node `>=24.0.0`. CI and Railway use the Node 24 release line.
 - The API and the legacy pipeline share the same pg-boss schema. A schema
   migration affects every process that reads or writes that job store.
 
@@ -46,13 +45,13 @@ the maintenance window and single-instance migration sequence below.
 
 1. Replace the range `pg-boss@^12.27.0` with the exact pin
    `pg-boss@12.30.0` and update the lockfile through pnpm.
-2. Declare and test the Node floor `>=22.12.0`. Keep CI and deployment runtime
+2. Declare and test the Node floor `>=24.0.0`. Keep CI and deployment runtime
    declarations consistent with that floor in a separate, approved
    infrastructure change if their current selectors cannot guarantee it.
 3. Make no queue, schedule, handler, retry, retention, or `CUTOVER_*` change.
 
 Stop before dependency installation or test execution if `node --version`
-reports a version below `22.12.0`.
+reports a version below `24.0.0`.
 
 ### Schema migration inventory
 
@@ -131,7 +130,7 @@ SELECT version, status, count(*) FROM pgboss.bam GROUP BY version, status ORDER 
 
 Before startup, confirm:
 
-- Node is `>=22.12.0`;
+- Node is `>=24.0.0`;
 - the schema reports v37;
 - the migration role can alter `pgboss.version` and `pgboss.queue`, replace
   pg-boss functions, and create and drop the required indexes;
@@ -259,7 +258,7 @@ The validation entrypoint must reject startup unless:
 - username and password are distinct after validation;
 - `PGBOSS_DASHBOARD_READ_ONLY` equals the exact string `"1"`;
 - `PORT` is a valid TCP port and `HOST` is present;
-- Node is `>=22.12.0`.
+- Node is `>=24.0.0`.
 
 The validator must not log credentials or the database URL. It should print one
 actionable error naming the invalid variable, then exit nonzero before importing
@@ -276,7 +275,7 @@ least privilege.
 Unit tests:
 
 - reject every missing, empty, malformed, or wrong-value required variable;
-- reject Node below `22.12.0`;
+- reject Node below `24.0.0`;
 - accept the documented contract;
 - redact secrets and the database URL from errors and logs;
 - prove validation runs before dashboard import/start.
@@ -348,7 +347,7 @@ placeholder may remain in its verification record.
 Stop implementation or rollout and request a decision when any of these
 conditions applies:
 
-- local, CI, staging, or production Node is below `22.12.0`;
+- local, CI, staging, or production Node is below `24.0.0`;
 - the database role lacks migration, index ownership, BAM, monitor, or reindex
   permissions required by the tested path;
 - backlog, oldest-job age, database load, or lock waits exceed the accepted
