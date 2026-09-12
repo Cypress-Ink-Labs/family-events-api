@@ -54,6 +54,8 @@ newer and all of these service variables pass validation:
   `PGBOSS_DASHBOARD_AUTH_PASSWORD` values;
 - `PGBOSS_DASHBOARD_READ_ONLY=1`;
 - `HOST=0.0.0.0`;
+- `NODE_EXTRA_CA_CERTS=/app/certs/supabase-prod-ca-2021.crt` when the dedicated
+  login uses Supabase's direct endpoint;
 - Railway's injected `PORT`.
 
 Do not copy the API's credential-bearing `DATABASE_URL` into this service.
@@ -62,6 +64,13 @@ schema, and `SELECT` on the pg-boss tables used by dashboard views. The pinned
 dashboard starts pg-boss with schema creation, migration, scheduling, and
 supervision disabled. Do not grant DDL or job-mutation privileges to the
 dashboard login.
+
+The committed Supabase Root 2021 CA comes from Supabase's published
+`prod-ca-2021.crt`. Its SHA-256 fingerprint is
+`80:70:25:AD:50:D4:ED:21:9D:2C:9C:7D:29:9C:00:4F:82:4E:B0:0C:F7:F6:5A:FE:F6:07:D0:7B:72:E6:CA:FA`.
+Verify that fingerprint against the certificate downloaded from the Supabase
+project before replacing or rotating the file. Keep TLS hostname verification
+enabled; do not use `NODE_TLS_REJECT_UNAUTHORIZED=0` or `sslmode=no-verify`.
 
 Read-only middleware permits only `GET` and `HEAD`; it rejects every other HTTP
 method before route handling. Built-in Basic Auth still protects all requests.
