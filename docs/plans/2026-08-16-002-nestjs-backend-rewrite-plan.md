@@ -238,7 +238,7 @@ replacement here (poll vs SSE); the old SPA's four Supabase channels are referen
 
 ### U32 — Observability + deployment
 Sentry, structured logs, pg-boss upgrade, and read-only dashboard
-(documented U12 deviation), Railway service for the API in project `family-events-ui`,
+(documented U12 deviation), Railway services in project `family-events`,
 deploy-cli/IaC updates, secret management parity (`.env.example` is the authoritative
 var list; U27 introduced `TELEGRAM_BOT_TOKEN` + `TELEGRAM_FAILURE_CHAT_ID`; U26
 introduced `OPENWEATHER_API_KEY` as optional configuration).
@@ -255,10 +255,13 @@ for migration runbook, environment preconditions, failure policy, and verificati
 commands. U32-A does not migrate staging or production, deploy the upgrade, change
 Railway, or alter a `CUTOVER_*` flag.
 
-**U32-B (read-only dashboard, later):** separate Railway service running
+**U32-B (read-only dashboard, delivered in #49 and #50):** separate Railway service running
 `@pg-boss/dashboard@1.7.0` CLI with fail-closed startup checks (Node floor,
 Basic Auth, `PGBOSS_DASHBOARD_READ_ONLY=1`, database role verification),
-documented in the same plan.
+documented in the same plan. The production service uses a dedicated
+`pgboss_dashboard` login with pg-boss `SELECT` only, Supabase's direct IPv6
+endpoint, and the pinned Supabase Root 2021 CA. API and dashboard smoke checks
+pass with all cutover flags disabled.
 
 ### U33 — Staged cutover + decommission (operator-gated)
 Per-stage: enable pg-boss queue (Nest remains gated) → disable matching Railway cron via

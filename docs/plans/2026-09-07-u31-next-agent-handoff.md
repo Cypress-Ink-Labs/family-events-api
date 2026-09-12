@@ -4,6 +4,11 @@
 **Primary repository:** `family-events-api`  
 **Next unit:** U31-B, event editing and source administration
 
+> [!NOTE]
+> This handoff records the repository before U31 and U32 landed. The current
+> Railway project, service IDs, domains, pg-boss v40 state, and disabled cutover
+> status are maintained in `docs/DEPLOYMENT.md`.
+
 ## Mission
 
 Continue the migration from `family-events-web` and `family-events-backend` to

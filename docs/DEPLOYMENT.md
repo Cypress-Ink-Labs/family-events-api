@@ -7,6 +7,26 @@ Railway service, railpack build (`railway.toml`), Node 24 or newer
 Authoritative variable list: `src/config/env.ts` (zod-validated at boot) plus
 the pipeline's `process.env` seams noted below. `.env.example` mirrors both.
 
+## Current Railway deployment
+
+Project `family-events` (`35ac6425-4859-4203-bbd4-15744209e717`) contains two
+production services sourced from `Cypress-Ink-Labs/family-events-api` on
+`main`:
+
+- API service `295c57ed-a8f7-4405-a54b-1a2893296eec` at
+  `https://api-production-ecb3.up.railway.app`;
+- dashboard service `a3ccab3c-7743-4876-ad26-649653a337e8` at
+  `https://pgboss-dashboard-production-36fd.up.railway.app`.
+
+The API health and readiness endpoints return 200. The dashboard requires
+built-in Basic Auth, permits authenticated reads, and rejects mutation methods
+with 403. It connects over Railway IPv6 to the Supabase direct endpoint using
+the dedicated `pgboss_dashboard` login and the pinned Supabase CA. That login
+has no pg-boss write privileges.
+
+All `CUTOVER_*` flags remain disabled. The deployment creates the pg-boss v40
+schema but installs no job-family queues or schedules until U33.
+
 ## Service variables
 
 | Variable | Required | Notes |
