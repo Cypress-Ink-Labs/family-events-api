@@ -5,9 +5,9 @@
 **Next unit:** U31-B, event editing and source administration
 
 > [!NOTE]
-> This handoff records the repository before U31 and U32 landed. The current
-> Railway project, service IDs, domains, pg-boss v40 state, and disabled cutover
-> status are maintained in `docs/DEPLOYMENT.md`.
+> This handoff records the repository before U31, U32, and U33 production
+> operations. The current Railway project, service IDs, domains, pg-boss v40
+> state, and per-family cutover status are maintained in `docs/DEPLOYMENT.md`.
 
 ## Mission
 
