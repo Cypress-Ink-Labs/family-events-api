@@ -104,7 +104,7 @@ async function waitForBackgroundMigrations(pool: Pool, schema: string): Promise<
           SELECT id::text, version, name, status, error
           FROM "${schema}".bam
           WHERE version IN (38, 40)
-          ORDER BY id
+          ORDER BY created_on, id
         `
       )
     ).rows
@@ -293,7 +293,7 @@ describe("pg-boss 12.30 schema upgrade", () => {
           SELECT id::text, version, name, status, error
           FROM "${schema}".bam
           WHERE version IN (38, 40)
-          ORDER BY id
+          ORDER BY created_on, id
         `
       )
       expect(restartedBam.rows).toEqual(bamSnapshot)
