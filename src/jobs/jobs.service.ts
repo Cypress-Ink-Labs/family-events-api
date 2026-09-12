@@ -7,7 +7,7 @@ import {
   type OnApplicationShutdown,
 } from "@nestjs/common"
 import { ConfigService } from "@nestjs/config"
-import { PgBoss, type Queue, type SendOptions } from "pg-boss"
+import { PgBoss, type JobResult, type Queue, type SendOptions } from "pg-boss"
 
 import type { Env } from "../config/env.js"
 import {
@@ -17,6 +17,179 @@ import {
   STRUCTURED_LOG_SINK,
   type StructuredLogSink,
 } from "../observability/structured-log.js"
+
+/** Dashboard output is deliberately much smaller than the full structured-log stream. */
+export const JOB_OUTPUT_MAX_EVENTS = 25
+export const JOB_OUTPUT_MAX_BYTES = 32 * 1024
+// Reserve space for the output envelope, JSON punctuation, and future additive fields.
+const JOB_OUTPUT_LOG_BYTES = 24 * 1024
+const MAX_REPORTED_DURATION_MS = 2_147_483_647
+
+export interface JobSuccessOutput {
+  outcome: "success"
+  duration_ms: number
+  log_events: unknown[]
+  dropped_events: number
+}
+
+export interface JobFailureOutput {
+  outcome: "failure"
+  duration_ms: number
+  log_events: unknown[]
+  dropped_events: number
+  error_category: "aborted" | "unhandled_worker_error"
+}
+
+export type JobOutput = JobSuccessOutput | JobFailureOutput
+
+const SAFE_JOB_EVENTS = new Set([
+  "event_review_applied",
+  "event_review_dead_lettered",
+  "event_review_low_confidence",
+  "event_review_malformed_response",
+  "event_review_provider_failed",
+  "event_review_queue_claimed",
+  "event_review_source_auto_rejected",
+  "event_review_started",
+  "event_review_trace_failed",
+  "worker_job_completed",
+])
+const SAFE_LOG_LEVELS = new Set(["debug", "info", "log", "warn", "error"])
+const SAFE_NUMERIC_FIELDS = new Set([
+  "approved",
+  "attempt_count",
+  "attempts",
+  "attemptsMarked",
+  "backfilled",
+  "claimed",
+  "coords",
+  "coordsSet",
+  "count",
+  "dead",
+  "dropped",
+  "duration_ms",
+  "durationMs",
+  "emailed",
+  "errors",
+  "failed",
+  "generated",
+  "images",
+  "imagesSet",
+  "images_from_pexels",
+  "images_from_pixabay",
+  "images_from_scraper",
+  "images_from_unsplash",
+  "index",
+  "pending_after",
+  "pendingAfter",
+  "persistence_failed",
+  "processed",
+  "reaped",
+  "refreshed",
+  "rejected",
+  "retrying",
+  "sent",
+  "skipped",
+  "started",
+  "succeeded",
+  "total",
+  "tracked",
+  "updated",
+  "upserted",
+])
+const SAFE_BOOLEAN_FIELDS = new Set([
+  "enabled",
+  "moreWork",
+  "ok",
+  "persistenceFailed",
+  "stoppedEarly",
+])
+const SAFE_CONTAINER_FIELDS = new Set([
+  "attribution_backfill",
+  "attributionBackfill",
+  "email",
+  "in_app",
+  "parent_tips",
+  "parentTips",
+  "push",
+  "telegram",
+  "tracking",
+  "unsplash_tracking",
+])
+function safeErrorName(error: unknown): string | undefined {
+  try {
+    if (typeof error !== "object" || error === null) return undefined
+    const value = Reflect.get(error, "name")
+    return typeof value === "string" ? value : undefined
+  } catch {
+    return undefined
+  }
+}
+
+function safeErrorCode(error: unknown): string | undefined {
+  try {
+    if (typeof error !== "object" || error === null) return undefined
+    const value = Reflect.get(error, "code")
+    return typeof value === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(value) ? value : undefined
+  } catch {
+    return undefined
+  }
+}
+
+function projectSummaryFields(value: Record<string, unknown>, depth = 0): Record<string, unknown> {
+  const projected: Record<string, unknown> = {}
+  if (depth > 2) return projected
+  for (const [key, field] of Object.entries(value).slice(0, 50)) {
+    if (SAFE_BOOLEAN_FIELDS.has(key) && typeof field === "boolean") {
+      projected[key] = field
+    } else if (
+      SAFE_NUMERIC_FIELDS.has(key) &&
+      typeof field === "number" &&
+      Number.isFinite(field)
+    ) {
+      projected[key] = field
+    } else if (
+      SAFE_CONTAINER_FIELDS.has(key) &&
+      typeof field === "object" &&
+      field !== null &&
+      !Array.isArray(field)
+    ) {
+      const nested = projectSummaryFields(field as Record<string, unknown>, depth + 1)
+      if (Object.keys(nested).length > 0) projected[key] = nested
+    }
+  }
+  return projected
+}
+
+function projectJobLog(
+  value: unknown,
+  queue: string,
+  jobId: string
+): Record<string, unknown> | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null
+  const source = value as Record<string, unknown>
+  const projected: Record<string, unknown> = {
+    event:
+      typeof source.event === "string" && SAFE_JOB_EVENTS.has(source.event)
+        ? source.event
+        : typeof source.message === "string" && SAFE_JOB_EVENTS.has(source.message)
+          ? source.message
+          : "worker_log",
+    queue,
+    job_id: jobId,
+    ...projectSummaryFields(source),
+  }
+  if (typeof source.level === "string" && SAFE_LOG_LEVELS.has(source.level)) {
+    projected.level = source.level
+  }
+  if (source.outcome === "success" || source.outcome === "failure") {
+    projected.outcome = source.outcome
+  }
+  if (source.error_category === "aborted" || source.error_category === "unhandled_worker_error") {
+    projected.error_category = source.error_category
+  }
+  return projected
+}
 
 export type JobHandler<Data extends object> = (
   data: Data,
@@ -127,13 +300,23 @@ export class JobsService implements OnApplicationBootstrap, OnApplicationShutdow
         if (handler !== null) {
           await boss.work(
             registration.name,
-            { batchSize: 1, localConcurrency: registration.localConcurrency },
-            async ([job]) => {
-              if (job) {
-                await this.runJob(registration.name, job.id, () =>
-                  handler(job.data as never, job.id, job.signal)
-                )
-              }
+            {
+              batchSize: 1,
+              localConcurrency: registration.localConcurrency,
+              perJobResults: true,
+            },
+            async ([job]): Promise<JobResult<JobOutput>[]> => {
+              if (!job) return []
+              const output = await this.runJob(registration.name, job.id, () =>
+                handler(job.data as never, job.id, job.signal)
+              )
+              return [
+                {
+                  id: job.id,
+                  status: output.outcome === "success" ? "completed" : "failed",
+                  output,
+                },
+              ]
             }
           )
         }
@@ -168,38 +351,111 @@ export class JobsService implements OnApplicationBootstrap, OnApplicationShutdow
     return this.boss
   }
 
-  private async runJob(queue: string, jobId: string, handler: () => Promise<void>): Promise<void> {
+  private async runJob(
+    queue: string,
+    jobId: string,
+    handler: () => Promise<void>
+  ): Promise<JobOutput> {
     const started = performance.now()
-    return runWithLogCorrelation(
-      { queue, job_id: jobId, sink: this.structuredLogSink },
-      async () => {
+    const events: Array<{ value: unknown; bytes: number }> = []
+    let collectedBytes = 0
+    let droppedEvents = 0
+    const sink: StructuredLogSink = {
+      write: (line) => {
         try {
-          await handler()
-          emitStructuredLog({
-            event: "worker_job_completed",
-            queue,
-            job_id: jobId,
-            outcome: "success",
-            duration_ms: Math.round((performance.now() - started) * 100) / 100,
-          })
-        } catch (error) {
-          const details = error as { name?: unknown; code?: unknown }
-          const code =
-            typeof details.code === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(details.code)
-              ? details.code
-              : undefined
-          emitStructuredLog({
-            event: "worker_job_completed",
-            queue,
-            job_id: jobId,
-            outcome: "failure",
-            duration_ms: Math.round((performance.now() - started) * 100) / 100,
-            error_category: details.name === "AbortError" ? "aborted" : "unhandled_worker_error",
-            ...(code ? { error_code: code } : {}),
-          })
-          throw error
+          this.structuredLogSink.write(line)
+        } catch {
+          // Observability must not change request or worker outcomes. The
+          // bounded pg-boss copy can still be projected from this line.
+        }
+        let value: unknown
+        try {
+          value = projectJobLog(JSON.parse(line), queue, jobId)
+        } catch {
+          droppedEvents++
+          return
+        }
+        if (value === null) {
+          droppedEvents++
+          return
+        }
+        const persistedLine = JSON.stringify(value)
+        const bytes = Buffer.byteLength(persistedLine, "utf8")
+        const isCompletion =
+          typeof value === "object" &&
+          value !== null &&
+          (value as { event?: unknown }).event === "worker_job_completed"
+        if (bytes > JOB_OUTPUT_LOG_BYTES) {
+          droppedEvents++
+          return
+        }
+        if (isCompletion) {
+          while (
+            events.length >= JOB_OUTPUT_MAX_EVENTS ||
+            collectedBytes + bytes > JOB_OUTPUT_LOG_BYTES
+          ) {
+            const removed = events.shift()
+            if (!removed) break
+            collectedBytes -= removed.bytes
+            droppedEvents++
+          }
+        }
+        if (
+          events.length >= JOB_OUTPUT_MAX_EVENTS ||
+          collectedBytes + bytes > JOB_OUTPUT_LOG_BYTES
+        ) {
+          droppedEvents++
+          return
+        }
+        events.push({ value, bytes })
+        collectedBytes += bytes
+      },
+    }
+    return runWithLogCorrelation({ queue, job_id: jobId, sink }, async () => {
+      try {
+        await handler()
+        const duration = Math.min(
+          MAX_REPORTED_DURATION_MS,
+          Math.max(0, Math.round((performance.now() - started) * 100) / 100)
+        )
+        emitStructuredLog({
+          event: "worker_job_completed",
+          queue,
+          job_id: jobId,
+          outcome: "success",
+          duration_ms: duration,
+        })
+        return {
+          outcome: "success",
+          duration_ms: duration,
+          log_events: events.map(({ value }) => value),
+          dropped_events: droppedEvents,
+        }
+      } catch (error) {
+        const name = safeErrorName(error)
+        const code = safeErrorCode(error)
+        const duration = Math.min(
+          MAX_REPORTED_DURATION_MS,
+          Math.max(0, Math.round((performance.now() - started) * 100) / 100)
+        )
+        const errorCategory = name === "AbortError" ? "aborted" : "unhandled_worker_error"
+        emitStructuredLog({
+          event: "worker_job_completed",
+          queue,
+          job_id: jobId,
+          outcome: "failure",
+          duration_ms: duration,
+          error_category: errorCategory,
+          ...(code ? { error_code: code } : {}),
+        })
+        return {
+          outcome: "failure",
+          duration_ms: duration,
+          log_events: events.map(({ value }) => value),
+          dropped_events: droppedEvents,
+          error_category: errorCategory,
         }
       }
-    )
+    })
   }
 }
