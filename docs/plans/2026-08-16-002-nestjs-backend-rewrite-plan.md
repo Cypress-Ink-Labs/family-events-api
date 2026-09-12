@@ -272,6 +272,12 @@ cutover via `CUTOVER_<FAMILY>`/`CUTOVER_FAMILIES`. Coordinates with operator-gat
 U7 (FK retype), U11 (production cutover), U18 (old-pipeline decommission). Old
 pipeline remains the single writer for any stage/family not yet flipped.
 
+**Scrape family cut over:** `CUTOVER_SCRAPE=true`; the hourly scrape and
+half-hourly stale-run cleanup legacy labels were disabled in one transaction.
+Both controlled tasks succeeded, the source drain chain completed, and the
+scrape DLQ remained empty. Tag, review, digest, reminders, and notify remain
+disabled pending their provider credentials and controlled-recipient smokes.
+
 ## Sequencing and parallelism
 
 U21+U22 unblock everything consumer-facing; U23 unblocks U24–U26 (parallel) and
