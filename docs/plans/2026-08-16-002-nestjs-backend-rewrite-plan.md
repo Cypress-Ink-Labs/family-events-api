@@ -261,7 +261,7 @@ Basic Auth, `PGBOSS_DASHBOARD_READ_ONLY=1`, database role verification),
 documented in the same plan. The production service uses a dedicated
 `pgboss_dashboard` login with pg-boss `SELECT` only, Supabase's direct IPv6
 endpoint, and the pinned Supabase Root 2021 CA. API and dashboard smoke checks
-pass with all cutover flags disabled.
+passed at the U32 pre-cutover baseline with all cutover flags disabled.
 
 ### U33 — Staged cutover + decommission (operator-gated)
 Per-stage: enable pg-boss queue (Nest remains gated) → disable matching Railway cron via
@@ -272,11 +272,12 @@ cutover via `CUTOVER_<FAMILY>`/`CUTOVER_FAMILIES`. Coordinates with operator-gat
 U7 (FK retype), U11 (production cutover), U18 (old-pipeline decommission). Old
 pipeline remains the single writer for any stage/family not yet flipped.
 
-**Scrape family cut over:** `CUTOVER_SCRAPE=true`; the hourly scrape and
-half-hourly stale-run cleanup legacy labels were disabled in one transaction.
-Both controlled tasks succeeded, the source drain chain completed, and the
-scrape DLQ remained empty. Tag, review, digest, reminders, and notify remain
-disabled pending their provider credentials and controlled-recipient smokes.
+**Scrape, tag, and review families cut over:** `CUTOVER_SCRAPE=true`,
+`CUTOVER_TAG=true`, and `CUTOVER_REVIEW=true`. Each legacy replacement label
+was disabled only after queue, DLQ, schedule, and gated-dispatch verification.
+Controlled tasks and catch-up runs succeeded; the scrape drain and eligible
+review backlog completed without family DLQ work. Digest, reminders, and notify
+remain disabled pending delivery credentials and controlled-recipient smokes.
 
 ## Sequencing and parallelism
 
