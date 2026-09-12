@@ -84,6 +84,12 @@ intentionally absent from `src/config/env.ts`.
 
 ## pg-boss dashboard service
 
+For completed jobs, the dashboard **Output** panel shows a persisted, bounded
+copy of the worker's already-redacted structured log events (at most 25 events
+and 32 KiB), including the completion event and a dropped-event count. Railway
+logs remain the full structured-log stream; job payloads, raw exceptions,
+headers, credentials, and other unredacted data are not copied into job output.
+
 Run `@pg-boss/dashboard@1.7.0` as a separate Railway service from this
 repository. Build with the normal project build command, then start it with:
 
