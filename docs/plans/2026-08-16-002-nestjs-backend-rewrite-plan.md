@@ -237,11 +237,28 @@ admin (list/toggle/schedule/history — now backed by pg-boss). Decide realtime
 replacement here (poll vs SSE); the old SPA's four Supabase channels are reference.
 
 ### U32 — Observability + deployment
-Sentry, structured logs, `@pg-boss/dashboard` as separate basic-auth Railway service
+Sentry, structured logs, pg-boss upgrade, and read-only dashboard
 (documented U12 deviation), Railway service for the API in project `family-events-ui`,
 deploy-cli/IaC updates, secret management parity (`.env.example` is the authoritative
 var list; U27 introduced `TELEGRAM_BOT_TOKEN` + `TELEGRAM_FAILURE_CHAT_ID`; U26
 introduced `OPENWEATHER_API_KEY` as optional configuration).
+
+**U32-A (staged pg-boss upgrade):** pin `pg-boss` to exactly `12.30.0` and require
+Node `>=22.12.0`. The upgrade applies schema migrations v37→v38→v39→v40 (adds
+`job_i10` key-strict-FIFO index, `version.reindex_on`, `version.monitor_backoff_on`,
+`queue.monitor_claim_on`, and replaces the fetch index `job_i5` with `job_i11`).
+Integration tests verify the complete upgrade path, BAM command sequencing,
+queue/schedule survival, monitor state seeding, and index retirement. The migration
+runbook documents staging, production, rollback boundaries, and read-only dashboard
+considerations. See [U32 migration and dashboard plan](./2026-09-11-u32-pgboss-dashboard.md)
+for migration runbook, environment preconditions, failure policy, and verification
+commands. U32-A does not migrate staging or production, deploy the upgrade, change
+Railway, or alter a `CUTOVER_*` flag.
+
+**U32-B (read-only dashboard, later):** separate Railway service running
+`@pg-boss/dashboard@1.7.0` CLI with fail-closed startup checks (Node floor,
+Basic Auth, `PGBOSS_DASHBOARD_READ_ONLY=1`, database role verification),
+documented in the same plan.
 
 ### U33 — Staged cutover + decommission (operator-gated)
 Per-stage: enable pg-boss queue (Nest remains gated) → disable matching Railway cron via
