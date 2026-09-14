@@ -234,8 +234,12 @@ describe("U23 data layer (integration, real RPCs)", () => {
       "age_max",
       "price",
       "is_free",
+      "admission_cost_state",
+      "admission_amount",
+      "admission_cost_evidence",
       "source_url",
       "source_name",
+      "source_details_fetched_at",
       "images",
       "status",
       "recurrence_info",
@@ -248,6 +252,7 @@ describe("U23 data layer (integration, real RPCs)", () => {
       "tags",
       "is_favorited",
       "is_in_calendar",
+      "age_match",
     ].toSorted()
 
     const SEARCHED_KEYS = [
@@ -268,6 +273,7 @@ describe("U23 data layer (integration, real RPCs)", () => {
       "images",
       "status",
       "is_featured",
+      "age_match",
     ].toSorted()
 
     it("EnrichedEvent rows carry exactly the contract keys", async () => {

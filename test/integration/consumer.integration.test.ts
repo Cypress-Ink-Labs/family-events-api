@@ -66,6 +66,7 @@ describe("consumer read HTTP API", () => {
     await ensureConsumerSimilaritySchema(db)
     await db.query("CREATE SCHEMA IF NOT EXISTS auth")
     await db.query("CREATE TABLE IF NOT EXISTS auth.users (id uuid PRIMARY KEY, email text)")
+    await db.query("ALTER TABLE auth.users ADD COLUMN IF NOT EXISTS email text")
     await db.query(`CREATE TABLE IF NOT EXISTS public.clerk_user_mapping (
       clerk_user_id text PRIMARY KEY,
       supabase_uuid uuid NOT NULL UNIQUE REFERENCES auth.users (id) ON DELETE CASCADE,
