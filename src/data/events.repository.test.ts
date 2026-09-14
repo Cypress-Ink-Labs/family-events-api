@@ -90,6 +90,24 @@ describe("EventsRepository.listMapEvents", () => {
     expect(sql).toContain("AS age_match")
     expect(params).toEqual([null, "weekend", "2026-08-16T15:00:00Z", [2, 7], "any", true, "any"])
   })
+
+  it("counts every invalid coordinate before transferring at most 200 valid rows", async () => {
+    const { db, query } = makeDb()
+    await new EventsRepository(db).listMapEvents({
+      range: "upcoming",
+      now: "2026-08-16T15:00:00Z",
+      ages: [],
+      ageMode: "all",
+      includeUnknownAge: false,
+    })
+    const sql = query.mock.calls[0]![0]
+    expect(sql).toContain("WITH matching AS MATERIALIZED")
+    expect(sql).toContain("count(*) FILTER")
+    expect(sql).toContain("latitude NOT BETWEEN -90 AND 90")
+    expect(sql.indexOf("admission_cost_state")).toBeLessThan(sql.indexOf("coordinate_counts"))
+    expect(sql.indexOf("LIMIT 200")).toBeLessThan(sql.indexOf("SELECT limited.*"))
+    expect(sql).toContain("LEFT JOIN limited ON true")
+  })
 })
 
 describe("EventsRepository.discoverEvents", () => {

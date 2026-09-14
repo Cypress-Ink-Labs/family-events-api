@@ -24,6 +24,9 @@ DECLARE
     'age_max',
     'price',
     'is_free',
+    'admission_cost_state',
+    'admission_amount',
+    'admission_cost_evidence',
     'is_outdoor',
     'source_url',
     'source_name',
@@ -80,6 +83,11 @@ BEGIN
   IF p_patch ? 'status'
      AND (p_patch->>'status') NOT IN ('draft', 'published', 'rejected', 'archived') THEN
     RAISE EXCEPTION 'ADMIN_EVENT_INVALID_STATUS';
+  END IF;
+
+  IF p_patch ? 'admission_cost_state'
+     AND (p_patch->>'admission_cost_state') NOT IN ('free', 'paid', 'unknown') THEN
+    RAISE EXCEPTION 'ADMIN_EVENT_INVALID_ADMISSION_COST_STATE';
   END IF;
 
   RETURN p_patch;
@@ -153,6 +161,9 @@ DECLARE
   next_age_min integer;
   next_age_max integer;
   next_price numeric;
+  next_admission_cost_state public.admission_cost_state;
+  next_admission_amount numeric;
+  next_admission_cost_evidence text;
   v_status_changed boolean := false;
   v_tags_changed boolean := false;
   v_decision_type text;
@@ -196,6 +207,23 @@ BEGIN
     WHEN patch ? 'price' THEN (patch->>'price')::numeric
     ELSE before_row.price
   END;
+  next_admission_cost_state := CASE
+    WHEN patch ? 'admission_cost_state'
+      THEN (patch->>'admission_cost_state')::public.admission_cost_state
+    ELSE before_row.admission_cost_state
+  END;
+  next_admission_amount := CASE
+    WHEN patch ? 'admission_amount' AND jsonb_typeof(patch->'admission_amount') = 'null' THEN NULL
+    WHEN patch ? 'admission_amount' THEN (patch->>'admission_amount')::numeric
+    ELSE before_row.admission_amount
+  END;
+  next_admission_cost_evidence := CASE
+    WHEN patch ? 'admission_cost_evidence'
+         AND jsonb_typeof(patch->'admission_cost_evidence') = 'null' THEN NULL
+    WHEN patch ? 'admission_cost_evidence'
+      THEN NULLIF(btrim(patch->>'admission_cost_evidence'), '')
+    ELSE before_row.admission_cost_evidence
+  END;
 
   IF next_title IS NULL THEN
     RAISE EXCEPTION 'ADMIN_EVENT_TITLE_REQUIRED';
@@ -211,6 +239,21 @@ BEGIN
   END IF;
   IF next_price IS NOT NULL AND next_price < 0 THEN
     RAISE EXCEPTION 'ADMIN_EVENT_INVALID_PRICE';
+  END IF;
+  IF next_admission_amount IS NOT NULL AND next_admission_amount < 0 THEN
+    RAISE EXCEPTION 'ADMIN_EVENT_INVALID_ADMISSION_AMOUNT';
+  END IF;
+  IF next_admission_cost_state = 'unknown'
+     AND (next_admission_amount IS NOT NULL OR next_admission_cost_evidence IS NOT NULL) THEN
+    RAISE EXCEPTION 'ADMIN_EVENT_UNKNOWN_ADMISSION_HAS_EVIDENCE';
+  END IF;
+  IF next_admission_cost_state = 'free'
+     AND (next_admission_amount IS NOT NULL OR next_admission_cost_evidence IS NULL) THEN
+    RAISE EXCEPTION 'ADMIN_EVENT_INVALID_FREE_ADMISSION';
+  END IF;
+  IF next_admission_cost_state = 'paid'
+     AND next_admission_cost_evidence IS NULL THEN
+    RAISE EXCEPTION 'ADMIN_EVENT_PAID_ADMISSION_EVIDENCE_REQUIRED';
   END IF;
 
   next_locked_fields := CASE
@@ -244,6 +287,9 @@ BEGIN
          age_max = next_age_max,
          price = next_price,
          is_free = CASE WHEN patch ? 'is_free' THEN (patch->>'is_free')::boolean ELSE is_free END,
+         admission_cost_state = next_admission_cost_state,
+         admission_amount = next_admission_amount,
+         admission_cost_evidence = next_admission_cost_evidence,
          is_outdoor = CASE WHEN patch ? 'is_outdoor' AND jsonb_typeof(patch->'is_outdoor') = 'null' THEN NULL WHEN patch ? 'is_outdoor' THEN (patch->>'is_outdoor')::boolean ELSE is_outdoor END,
          source_url = CASE WHEN patch ? 'source_url' AND jsonb_typeof(patch->'source_url') = 'null' THEN NULL WHEN patch ? 'source_url' THEN patch->>'source_url' ELSE source_url END,
          source_name = CASE WHEN patch ? 'source_name' AND jsonb_typeof(patch->'source_name') = 'null' THEN NULL WHEN patch ? 'source_name' THEN patch->>'source_name' ELSE source_name END,

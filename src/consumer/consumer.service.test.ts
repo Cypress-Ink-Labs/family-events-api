@@ -38,7 +38,7 @@ function makeService(opts?: { cities?: City[]; weatherFit?: string }): {
 } {
   const listEvents = vi.fn(async () => [])
   const discoverEvents = vi.fn(async () => [])
-  const listMapEvents = vi.fn(async () => [])
+  const listMapEvents = vi.fn(async () => ({ events: [], omittedWithoutCoordinates: 0 }))
   const findSimilarEventsById = vi.fn(async () => [])
   const searchEvents = vi.fn(async () => [])
   const listFavorites = vi.fn(async () => [])
@@ -266,23 +266,24 @@ describe("ConsumerService.getEventDetail", () => {
 describe("ConsumerService.listMapEvents", () => {
   it("requests 200 coordinate-bearing events and returns only finite numeric coordinates", async () => {
     const { service, listMapEvents } = makeService()
-    listMapEvents.mockResolvedValueOnce([
-      {
-        id: "event-1",
-        title: "Mappable",
-        latitude: "30.22",
-        longitude: "-92.02",
-        start_datetime: "2026-08-16T15:00:00+00:00",
-        timezone: "America/Chicago",
-        venue_name: "Library",
-        is_free: true,
-        admission_cost_state: "free",
-        admission_amount: null,
-        age_match: "confirmed",
-      },
-      { id: "event-2", latitude: null, longitude: "-92.02" },
-      { id: "event-3", latitude: "1e9999", longitude: "-92.02" },
-    ])
+    listMapEvents.mockResolvedValueOnce({
+      events: [
+        {
+          id: "event-1",
+          title: "Mappable",
+          latitude: "30.22",
+          longitude: "-92.02",
+          start_datetime: "2026-08-16T15:00:00+00:00",
+          timezone: "America/Chicago",
+          venue_name: "Library",
+          is_free: true,
+          admission_cost_state: "free",
+          admission_amount: null,
+          age_match: "confirmed",
+        },
+      ],
+      omittedWithoutCoordinates: 2,
+    })
 
     await expect(
       service.listMapEvents({

@@ -24,7 +24,6 @@ import { WeatherService } from "./weather.service.js"
 
 const PLAN_LIMIT = 5
 const DETAIL_SIMILAR_LIMIT = 4
-const MAP_LIMIT = 200
 
 // Consumers render in this zone when an event/city has none; the app's
 // src/lib/dates.ts uses the same default.
@@ -169,7 +168,7 @@ export class ConsumerService {
     events: MapEvent[]
     omitted_without_coordinates: number
   }> {
-    const events = await this.eventsRepository.listMapEvents({
+    const result = await this.eventsRepository.listMapEvents({
       cityId: input.cityId,
       range: input.range,
       now: new Date().toISOString(),
@@ -179,25 +178,9 @@ export class ConsumerService {
       cost: input.cost ?? "any",
     })
     const mapped: MapEvent[] = []
-    let omittedWithoutCoordinates = 0
-    for (const event of events) {
-      if (event.latitude === null || event.longitude === null) {
-        omittedWithoutCoordinates += 1
-        continue
-      }
+    for (const event of result.events) {
       const latitude = Number(event.latitude)
       const longitude = Number(event.longitude)
-      if (
-        !Number.isFinite(latitude) ||
-        !Number.isFinite(longitude) ||
-        latitude < -90 ||
-        latitude > 90 ||
-        longitude < -180 ||
-        longitude > 180
-      ) {
-        omittedWithoutCoordinates += 1
-        continue
-      }
       mapped.push({
         id: event.id,
         title: event.title,
@@ -213,8 +196,8 @@ export class ConsumerService {
       })
     }
     return {
-      events: mapped.slice(0, MAP_LIMIT),
-      omitted_without_coordinates: omittedWithoutCoordinates,
+      events: mapped,
+      omitted_without_coordinates: result.omittedWithoutCoordinates,
     }
   }
 

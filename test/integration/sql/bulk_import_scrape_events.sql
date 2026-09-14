@@ -1,6 +1,6 @@
 -- Extracted VERBATIM from family-events-backend migrations for integration tests (U28):
--- - private def: family-events-backend
---   20260902002000_source_details_freshness.sql (latest revision)
+-- - private def: family-events-backend baseline plus API-owned
+--   20260902004000_preserve_omitted_source_details_fetched_at.sql
 -- - public wrapper: 20260601002000_event_ingestion_admin_foundation.sql
 -- GRANT/REVOKE statements stripped: the bare test database has no anon/
 -- authenticated/service_role roles.
@@ -56,6 +56,7 @@ BEGIN
       (elem->>'source_name')::text              AS source_name,
       NULLIF(elem->>'source_details_fetched_at', '')::timestamptz
                                                    AS source_details_fetched_at,
+      elem ? 'source_details_fetched_at'            AS has_source_details_fetched_at,
       COALESCE(elem->'images', '[]'::jsonb)     AS images,
       NULLIF(elem->>'price', '')::numeric       AS price,
       COALESCE((elem->>'is_free')::boolean, false) AS is_free,
@@ -168,7 +169,7 @@ BEGIN
       source_url     = CASE WHEN 'source_url'     = ANY(e.admin_locked_fields) THEN e.source_url     ELSE t.source_url     END,
       source_name    = CASE WHEN 'source_name'    = ANY(e.admin_locked_fields) THEN e.source_name    ELSE t.source_name    END,
       source_id      = CASE WHEN 'source_id'      = ANY(e.admin_locked_fields) THEN e.source_id      ELSE p_source_id      END,
-      source_details_fetched_at = t.source_details_fetched_at,
+      source_details_fetched_at = CASE WHEN t.has_source_details_fetched_at THEN t.source_details_fetched_at ELSE e.source_details_fetched_at END,
       images         = CASE WHEN 'images'         = ANY(e.admin_locked_fields) THEN e.images         ELSE t.images         END,
       price          = CASE WHEN 'price'          = ANY(e.admin_locked_fields) THEN e.price          ELSE t.price          END,
       is_free        = CASE WHEN 'is_free'        = ANY(e.admin_locked_fields) THEN e.is_free        ELSE t.is_free        END,

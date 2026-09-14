@@ -222,23 +222,34 @@ export interface AdmissionCostExtraction {
 }
 
 export function extractAdmissionCost(text: string): AdmissionCostExtraction {
+  const negatedFreeMatch = text.match(/\b(?:not|isn'?t|no longer) free(?: admission)?\b/i)
   const freePatterns = [
     /\bfree admission\b/i,
     /^free\b/i,
     /\badmission (?:is )?free\b/i,
     /\bfree event\b/i,
-    /\bno (?:admission )?(?:cost|charge)\b/i,
+    /\bno (?:admission|ticket|entry|registration|attendance) (?:cost|charge)\b/i,
     /\bno cost to attend\b/i,
     /\bfree and open to (?:the )?public\b/i,
   ]
-  for (const pattern of freePatterns) {
-    const match = text.match(pattern)
-    if (match) return { state: "free", amount: null, evidence: match[0] }
+  if (!negatedFreeMatch) {
+    for (const pattern of freePatterns) {
+      const match = text.match(pattern)
+      if (match) return { state: "free", amount: null, evidence: match[0] }
+    }
   }
 
-  const amountMatch = text.match(/\$\s*(\d+(?:\.\d{1,2})?)/)
+  const amountMatch = text.match(
+    /(?:\b(?:admission|tickets?|entry|registration|attendance)\b[^.!?\n]{0,40}?\$\s*(\d+(?:\.\d{1,2})?)|\$\s*(\d+(?:\.\d{1,2})?)[^.!?\n]{0,40}?\b(?:admission|tickets?|entry|registration|attendance)\b)/i
+  )
   if (amountMatch) {
-    return { state: "paid", amount: Number(amountMatch[1]), evidence: amountMatch[0] }
+    const amount = amountMatch[1] ?? amountMatch[2]
+    const evidence = amountMatch[0].match(/\$\s*\d+(?:\.\d{1,2})?/)?.[0] ?? amountMatch[0]
+    return { state: "paid", amount: Number(amount), evidence }
+  }
+
+  if (negatedFreeMatch) {
+    return { state: "paid", amount: null, evidence: negatedFreeMatch[0] }
   }
 
   const paidPatterns = [
@@ -246,7 +257,6 @@ export function extractAdmissionCost(text: string): AdmissionCostExtraction {
     /\b(?:admission|entry|registration) fee\b/i,
     /\b(?:admission|cost|price) varies\b/i,
     /\bfees? appl(?:y|ies)\b/i,
-    /\b(?:not|isn'?t|no longer) free\b/i,
   ]
   for (const pattern of paidPatterns) {
     const match = text.match(pattern)
@@ -256,8 +266,13 @@ export function extractAdmissionCost(text: string): AdmissionCostExtraction {
 }
 
 export function extractPrice(text: string): { price: number | null; isFree: boolean } {
-  const admission = extractAdmissionCost(text)
-  return { price: admission.amount, isFree: admission.state === "free" }
+  const amountMatch = text.match(/\$\s*(\d+(?:\.\d{1,2})?)/)
+  const isNegatedFree = /\b(?:not|isn'?t|no longer) free\b/i.test(text)
+  const isFree = !isNegatedFree && /\bfree\b/i.test(text)
+  return {
+    price: !isFree && amountMatch ? Number(amountMatch[1]) : null,
+    isFree,
+  }
 }
 
 /**

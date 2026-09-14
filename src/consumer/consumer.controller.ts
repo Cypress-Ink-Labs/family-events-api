@@ -17,6 +17,7 @@ import {
 import {
   AdmissionCostFilterDto,
   CityDto,
+  DiscoveryRangeDto,
   EnrichedEventDto,
   EventDetailDto,
   EventsPageDto,
@@ -54,6 +55,12 @@ export class ConsumerController {
   })
   @ApiQuery({ type: EventsQueryDto })
   @ApiQuery({
+    name: "range",
+    required: false,
+    enum: DiscoveryRangeDto,
+    schema: { default: DiscoveryRangeDto.Weekend },
+  })
+  @ApiQuery({
     name: "cost",
     required: false,
     enum: AdmissionCostFilterDto,
@@ -76,6 +83,12 @@ export class ConsumerController {
     security: OPTIONAL_CLERK_SECURITY,
   })
   @ApiQuery({ type: MapQueryDto })
+  @ApiQuery({
+    name: "range",
+    required: false,
+    enum: DiscoveryRangeDto,
+    schema: { default: DiscoveryRangeDto.Weekend },
+  })
   @ApiQuery({
     name: "cost",
     required: false,

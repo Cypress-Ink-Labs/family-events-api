@@ -1,6 +1,12 @@
 // Ported verbatim from family-events-backend supabase/functions/scrape-source/parsers/macaroni-kid.ts (U28).
 
-import { cleanDescription, extractPrice, parseIsoDate, stripHtml } from "../parsing.js"
+import {
+  cleanDescription,
+  extractAdmissionCost,
+  extractPrice,
+  parseIsoDate,
+  stripHtml,
+} from "../parsing.js"
 import { validateExternalUrl } from "../url-validation.js"
 import type { EventSourceRow, ParsedEvent } from "../types.js"
 import type { SourceParser } from "./_lib/types.js"
@@ -168,10 +174,19 @@ export function mapMacaroniKidEvent(raw: unknown, sourceBase: string): ParsedEve
   const numericCost = asNumber(node.cost) ?? asNumber(node.price)
   const priceFromText = extractPrice(costText)
   const price = numericCost ?? priceFromText.price
-  const isFree = price === 0 || priceFromText.isFree
-  const admissionCostState = isFree ? "free" : price !== null ? "paid" : "unknown"
+  const extractedAdmission = extractAdmissionCost(costText)
+  const admissionAmount = price ?? extractedAdmission.amount
+  const isFree = admissionAmount === 0 || priceFromText.isFree
+  const admissionCostState = isFree
+    ? "free"
+    : admissionAmount !== null
+      ? "paid"
+      : extractedAdmission.state
   const admissionCostEvidence =
-    admissionCostState === "unknown" ? null : costText.trim() || `Source cost field: ${price}`
+    admissionCostState === "unknown"
+      ? null
+      : (extractedAdmission.evidence ??
+        (costText.trim() || `Source cost field: ${admissionAmount}`))
 
   return {
     title,
@@ -186,7 +201,7 @@ export function mapMacaroniKidEvent(raw: unknown, sourceBase: string): ParsedEve
     price,
     isFree,
     admissionCostState,
-    admissionAmount: admissionCostState === "paid" ? price : null,
+    admissionAmount: admissionCostState === "paid" ? admissionAmount : null,
     admissionCostEvidence,
   }
 }

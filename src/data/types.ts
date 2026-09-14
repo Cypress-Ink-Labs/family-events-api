@@ -113,6 +113,11 @@ export interface MappableEvent {
   age_match: AgeMatch | null
 }
 
+export interface MapEventsResult {
+  events: MappableEvent[]
+  omittedWithoutCoordinates: number
+}
+
 export interface SearchEventsInput {
   keyword?: string | null
   cityId?: string | null

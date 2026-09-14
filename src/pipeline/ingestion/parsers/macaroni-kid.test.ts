@@ -69,6 +69,23 @@ describe("macaroni-kid parser", () => {
     expect(parsed.imageUrl).toBe("https://images.macaronikid.com/park.jpg")
   })
 
+  it("preserves paid admission evidence without a numeric amount", () => {
+    const parsed = mapMacaroniKidEvent(
+      {
+        name: "Ticketed Park Day",
+        start: "2026-06-01T14:00:00.000Z",
+        cost: "Admission fee applies",
+      },
+      "https://lafayettela.macaronikid.com/events"
+    )
+
+    expect(parsed).toMatchObject({
+      admissionCostState: "paid",
+      admissionAmount: null,
+      admissionCostEvidence: "Admission fee",
+    })
+  })
+
   it("mapMacaroniKidEvent rejects nodes without title or start", () => {
     expect(mapMacaroniKidEvent({ start: "2026-06-01T14:00:00Z" }, "https://x.example/events")).toBe(
       null

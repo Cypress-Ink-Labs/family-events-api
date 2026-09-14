@@ -618,7 +618,7 @@ describe("consumer read HTTP API", () => {
     })
   })
 
-  it("applies the map limit after excluding events without coordinates", async () => {
+  it("counts all matching invalid coordinates before limiting valid map events", async () => {
     await db.query(
       `INSERT INTO public.events
        (title, start_datetime, timezone, city_id, latitude, longitude, is_free, status)
@@ -647,6 +647,7 @@ describe("consumer read HTTP API", () => {
     expect(response.body.events).toEqual([
       expect.objectContaining({ id: mapped, title: "Mapped after unmapped rows" }),
     ])
+    expect(response.body.omitted_without_coordinates).toBe(200)
   })
 
   it("rejects invalid map query parameters", async () => {

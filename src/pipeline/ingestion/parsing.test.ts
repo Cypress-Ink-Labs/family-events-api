@@ -250,6 +250,19 @@ describe("extractAdmissionCost", () => {
       evidence: null,
     })
   })
+
+  it("rejects unrelated costs and handles negated free admission", () => {
+    expect(extractAdmissionCost("Not free admission")).toEqual({
+      state: "paid",
+      amount: null,
+      evidence: "Not free admission",
+    })
+    expect(extractAdmissionCost("No charge for parking. Snacks $5.")).toEqual({
+      state: "unknown",
+      amount: null,
+      evidence: null,
+    })
+  })
 })
 
 describe("dedupKey", () => {

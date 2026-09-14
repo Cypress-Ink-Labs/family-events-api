@@ -268,7 +268,6 @@ describe("application bootstrap", () => {
       properties: {
         source_details_fetched_at: {
           type: "string",
-          format: "date-time",
           nullable: true,
         },
       },

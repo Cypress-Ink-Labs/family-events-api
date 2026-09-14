@@ -30,7 +30,11 @@ describe("migration ownership", () => {
 
   it("loads every repository migration with its rollback", async () => {
     const migrations = await loadMigrations(path.resolve("schema/migrations"))
-    expect(migrations.map(({ version }) => version)).toEqual(["20260902002000", "20260902003000"])
+    expect(migrations.map(({ version }) => version)).toEqual([
+      "20260902002000",
+      "20260902003000",
+      "20260902004000",
+    ])
   })
 
   it("requires a paired rollback and rejects embedded transactions", async () => {

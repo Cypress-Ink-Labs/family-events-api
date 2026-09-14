@@ -238,10 +238,14 @@ function prepEventPayload(parsed: ParsedEvent, ctx: EventPayloadContext): Record
     : (parsed.admissionCostState ?? extractedAdmission.state)
   const admissionAmount = isManualSource
     ? null
-    : (parsed.admissionAmount ?? extractedAdmission.amount)
+    : parsed.admissionAmount !== undefined
+      ? parsed.admissionAmount
+      : extractedAdmission.amount
   const admissionCostEvidence = isManualSource
     ? null
-    : (parsed.admissionCostEvidence ?? extractedAdmission.evidence)
+    : parsed.admissionCostEvidence !== undefined
+      ? parsed.admissionCostEvidence
+      : extractedAdmission.evidence
 
   return {
     title: parsed.title,

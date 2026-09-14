@@ -3204,6 +3204,20 @@
             }
           },
           {
+            "name": "range",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": "weekend",
+              "enum": [
+                "today",
+                "weekend",
+                "upcoming"
+              ],
+              "type": "string"
+            }
+          },
+          {
             "required": false,
             "name": "city_id",
             "in": "query",
@@ -3409,6 +3423,20 @@
                 "free",
                 "paid",
                 "unknown"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "name": "range",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": "weekend",
+              "enum": [
+                "today",
+                "weekend",
+                "upcoming"
               ],
               "type": "string"
             }
@@ -5951,9 +5979,8 @@
           },
           "source_details_fetched_at": {
             "type": "string",
-            "format": "date-time",
             "nullable": true,
-            "description": "Raw timestamp of the last successful retrieval of this listing's source details; null when unavailable"
+            "description": "Raw PostgreSQL timestamp of the last successful retrieval of this listing's source details; null when unavailable"
           },
           "images": {
             "oneOf": [

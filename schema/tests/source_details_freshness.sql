@@ -208,6 +208,72 @@ BEGIN
   END IF;
 END $$;
 
+-- On same-source updates, key omission preserves the last successful
+-- per-listing retrieval while an explicit JSON null deliberately clears it.
+SELECT public.bulk_import_scrape_events(
+  (SELECT id FROM _freshness_fx WHERE key = 'run_a'),
+  (SELECT id FROM _freshness_fx WHERE key = 'source_a'),
+  jsonb_build_array(
+    pg_temp.event_payload(
+      'Unchanged success',
+      'https://source-a.example/unchanged',
+      'Freshness source A',
+      '2026-06-03T13:30:00+00'
+    ) - 'source_details_fetched_at'
+  )
+);
+
+DO $$
+BEGIN
+  IF (SELECT source_details_fetched_at
+        FROM public.events
+       WHERE source_id = (SELECT id FROM _freshness_fx WHERE key = 'source_a')
+         AND source_url = 'https://source-a.example/unchanged')
+       IS DISTINCT FROM '2026-06-02T13:30:00.654321+00'::timestamptz
+  THEN
+    RAISE EXCEPTION 'SOURCE_FRESHNESS_OMITTED_KEY_DID_NOT_PRESERVE';
+  END IF;
+END $$;
+
+SELECT public.bulk_import_scrape_events(
+  (SELECT id FROM _freshness_fx WHERE key = 'run_a'),
+  (SELECT id FROM _freshness_fx WHERE key = 'source_a'),
+  jsonb_build_array(
+    pg_temp.event_payload(
+      'Unchanged success',
+      'https://source-a.example/unchanged',
+      'Freshness source A',
+      NULL
+    )
+  )
+);
+
+DO $$
+BEGIN
+  IF (SELECT source_details_fetched_at
+        FROM public.events
+       WHERE source_id = (SELECT id FROM _freshness_fx WHERE key = 'source_a')
+         AND source_url = 'https://source-a.example/unchanged') IS NOT NULL
+  THEN
+    RAISE EXCEPTION 'SOURCE_FRESHNESS_EXPLICIT_NULL_DID_NOT_CLEAR';
+  END IF;
+END $$;
+
+-- Restore a successful retrieval so the remaining assertions continue to prove
+-- that unrelated bookkeeping and cross-source writes preserve a known value.
+SELECT public.bulk_import_scrape_events(
+  (SELECT id FROM _freshness_fx WHERE key = 'run_a'),
+  (SELECT id FROM _freshness_fx WHERE key = 'source_a'),
+  jsonb_build_array(
+    pg_temp.event_payload(
+      'Unchanged success',
+      'https://source-a.example/unchanged',
+      'Freshness source A',
+      '2026-06-02T13:30:00.654321+00'
+    )
+  )
+);
+
 -- A malformed per-listing timestamp rejects the write instead of borrowing a
 -- run-level time or erasing the prior successful retrieval.
 DO $$

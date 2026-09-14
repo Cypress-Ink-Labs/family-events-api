@@ -85,10 +85,9 @@ export class EnrichedEventDto implements EnrichedEvent {
 
   @ApiProperty({
     type: String,
-    format: "date-time",
     nullable: true,
     description:
-      "Raw timestamp of the last successful retrieval of this listing's source details; null when unavailable",
+      "Raw PostgreSQL timestamp of the last successful retrieval of this listing's source details; null when unavailable",
   })
   source_details_fetched_at!: string | null
 

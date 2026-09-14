@@ -6,6 +6,7 @@ import type {
   EnrichedEvent,
   ListEventsInput,
   ListMapEventsInput,
+  MapEventsResult,
   MappableEvent,
   SearchedEvent,
   SearchEventsInput,
@@ -178,6 +179,7 @@ ORDER BY candidate.start_datetime ASC, candidate.id ASC
 `
 
 const MAP_SQL = `
+WITH matching AS MATERIALIZED (
 SELECT
   e.id, e.title, e.latitude, e.longitude, e.start_datetime, e.timezone,
   e.venue_name, e.is_free, e.admission_cost_state, e.admission_amount,
@@ -219,7 +221,28 @@ WHERE e.status = 'published'::public.event_status
     $7::text = 'any'
     OR e.admission_cost_state::text = $7::text
   )
-ORDER BY e.start_datetime ASC, e.id ASC
+),
+coordinate_counts AS (
+  SELECT count(*) FILTER (
+    WHERE latitude IS NULL OR longitude IS NULL
+       OR latitude NOT BETWEEN -90 AND 90
+       OR longitude NOT BETWEEN -180 AND 180
+  )::int AS omitted_without_coordinates
+  FROM matching
+),
+limited AS (
+  SELECT *
+  FROM matching
+  WHERE latitude IS NOT NULL AND longitude IS NOT NULL
+    AND latitude BETWEEN -90 AND 90
+    AND longitude BETWEEN -180 AND 180
+  ORDER BY start_datetime ASC, id ASC
+  LIMIT 200
+)
+SELECT limited.*, coordinate_counts.omitted_without_coordinates
+FROM coordinate_counts
+LEFT JOIN limited ON true
+ORDER BY limited.start_datetime ASC, limited.id ASC
 `
 
 const SEARCH_SQL = `
@@ -297,16 +320,23 @@ export class EventsRepository {
     ])
   }
 
-  async listMapEvents(input: ListMapEventsInput): Promise<MappableEvent[]> {
-    return this.db.query<MappableEvent>(MAP_SQL, [
-      input.cityId ?? null,
-      input.range,
-      input.now,
-      input.ages,
-      input.ageMode,
-      input.includeUnknownAge,
-      input.cost ?? "any",
-    ])
+  async listMapEvents(input: ListMapEventsInput): Promise<MapEventsResult> {
+    const rows = await this.db.query<MappableEvent & { omitted_without_coordinates: number }>(
+      MAP_SQL,
+      [
+        input.cityId ?? null,
+        input.range,
+        input.now,
+        input.ages,
+        input.ageMode,
+        input.includeUnknownAge,
+        input.cost ?? "any",
+      ]
+    )
+    return {
+      events: rows.filter((row) => row.id !== null),
+      omittedWithoutCoordinates: rows[0]?.omitted_without_coordinates ?? 0,
+    }
   }
 
   async searchEvents(input: SearchEventsInput = {}): Promise<SearchedEvent[]> {

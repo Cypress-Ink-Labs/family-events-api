@@ -393,6 +393,26 @@ describe("listing-level source retrieval provenance", () => {
       admission_amount: null,
       admission_cost_evidence: null,
     })
+
+    const explicitNullDb = new FakeDb()
+    explicitNullDb.bulkResult = { imported: 1, updated: 0, skipped: 0, enqueued: 0 }
+    await importParsedSourceEvents(
+      explicitNullDb,
+      buildSource(),
+      "run-explicit-null",
+      [
+        buildParsedEvent({
+          description: "Admission is $12",
+          admissionAmount: null,
+          admissionCostEvidence: null,
+        }),
+      ],
+      "2026-05-01T10:00:00.000Z"
+    )
+    expect(explicitNullDb.bulkCalls[0]?.[0]).toMatchObject({
+      admission_amount: null,
+      admission_cost_evidence: null,
+    })
   })
 
   it("does not create listing provenance for omitted, invalid, or manual events", async () => {
