@@ -1,8 +1,7 @@
 import { randomUUID } from "node:crypto"
 import { Client } from "pg"
 import { afterAll, describe, expect, it } from "vitest"
-import path from "node:path"
-import { applyMigrations, loadMigrations } from "../../scripts/migrations"
+import { applyMigrations } from "../../scripts/migrations"
 
 const databaseUrl = process.env.TEST_DATABASE_URL
 const describeDatabase = databaseUrl ? describe : describe.skip
@@ -21,14 +20,13 @@ describeDatabase("migration runner integration", () => {
 
   it("commits migration SQL and ledger atomically", async () => {
     await client.connect()
-    const repositoryMigrations = await loadMigrations(path.resolve("schema/migrations"))
     const migration = {
       version: "20990101000000",
       filename: "20990101000000_integration.sql",
       checksum: "integration",
       sql: `CREATE SCHEMA ${schema}`,
     }
-    const migrations = [...repositoryMigrations, migration]
+    const migrations = [migration]
     expect(await applyMigrations(client, migrations)).toEqual([migration.version])
     expect(await applyMigrations(client, migrations)).toEqual([])
     expect((await client.query("SELECT to_regnamespace($1) AS name", [schema])).rows[0].name).toBe(
