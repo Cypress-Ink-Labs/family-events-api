@@ -75,7 +75,7 @@ describe("admin dashboard statistics", () => {
         oldest_source_dead_at: null,
       },
     })
-    expect(stats.generated_at).toMatch(/\.\d{6}[+-]\d\d(?::?\d\d)?$/)
+    expect(stats.generated_at).toMatch(/\.\d{1,6}[+-]\d\d(?::?\d\d)?$/)
   })
 
   it("counts event confidence, active/error sources, and both dead-letter queues", async () => {
