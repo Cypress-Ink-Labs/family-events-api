@@ -133,11 +133,25 @@ health until an explicit proxy/health design is approved.
 
 ## Deploy flow (operator)
 
+New database migrations after the deprecated `family-events-backend` baseline
+are owned by this repository in `schema/migrations`. Run `pnpm db:migrate` once as
+a release step before starting code that depends on a new schema. The command
+uses `DATABASE_URL`, serializes runners with a Postgres advisory lock, and
+records checksums in `private.api_schema_migrations`; it is safe to repeat.
+The API's bare-Postgres integration job tests the migration runner itself. The
+app's database CI constructs the frozen baseline, applies this ledger, and runs
+`pnpm test:schema` for baseline-dependent migration semantics.
+Never modify an applied migration. Add a new timestamped migration and paired
+`_down.sql` rollback instead. Rollbacks are operator-reviewed recovery artifacts
+and are not run automatically.
+
 1. Create/link the Railway service to this repo (git integration, `main` branch).
 2. Set the service variables above. Never paste secrets into files or chat.
-3. First deploy: verify `/healthz` returns 200 and `/readyz` returns 200 (DB reachable).
-4. Smoke: `GET /v1/events` returns events from the shared database.
-5. After the app service exists, set `WEB_ORIGIN` to its public URL and redeploy.
+3. Run `pnpm db:migrate` against the target database. Review failures; never bypass
+   missing-file or checksum-drift protection.
+4. First deploy: verify `/healthz` returns 200 and `/readyz` returns 200 (DB reachable).
+5. Smoke: `GET /v1/events` returns events from the shared database.
+6. After the app service exists, set `WEB_ORIGIN` to its public URL and redeploy.
 
 ## After cutover (informational)
 
