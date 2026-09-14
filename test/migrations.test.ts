@@ -93,4 +93,31 @@ describe("migration ownership", () => {
       ])
     ).rejects.toThrow("drifted")
   })
+
+  it("rejects an applied ledger that skips an earlier repository migration", async () => {
+    const first = {
+      version: "20260902002000",
+      filename: "20260902002000_first.sql",
+      checksum: "first",
+      sql: "SELECT 1",
+    }
+    const second = {
+      version: "20260902003000",
+      filename: "20260902003000_second.sql",
+      checksum: "second",
+      sql: "SELECT 2",
+    }
+    const client = new FakeClient()
+    client.rows = [
+      {
+        version: second.version,
+        filename: second.filename,
+        checksum: second.checksum,
+      },
+    ]
+
+    await expect(applyMigrations(client, [first, second])).rejects.toThrow(
+      "not a prefix of the repository history"
+    )
+  })
 })

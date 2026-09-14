@@ -3236,15 +3236,6 @@
             }
           },
           {
-            "required": false,
-            "name": "range",
-            "in": "query",
-            "schema": {
-              "default": "weekend",
-              "type": "string"
-            }
-          },
-          {
             "description": "Legacy explicit lower bound; cannot be combined with range",
             "required": false,
             "name": "date_from",
@@ -3447,15 +3438,6 @@
             "in": "query",
             "schema": {
               "format": "uuid",
-              "type": "string"
-            }
-          },
-          {
-            "required": false,
-            "name": "range",
-            "in": "query",
-            "schema": {
-              "default": "weekend",
               "type": "string"
             }
           },

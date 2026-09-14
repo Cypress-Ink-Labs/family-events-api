@@ -76,9 +76,9 @@ BEGIN
   SELECT pg_get_functiondef(
     'public.events_enriched(uuid,text,uuid,uuid[],timestamptz,timestamptz,timestamptz,uuid,integer)'::regprocedure
   ) INTO definition;
-  changed := replace(
+  changed := regexp_replace(
     definition,
-    'price numeric, is_free boolean, admission_cost_state admission_cost_state, admission_amount numeric, admission_cost_evidence text, source_url text',
+    E'price numeric, is_free boolean, admission_cost_state (public\\.)?admission_cost_state, admission_amount numeric, admission_cost_evidence text, source_url text',
     'price numeric, is_free boolean, source_url text'
   );
   IF changed = definition THEN RAISE EXCEPTION 'admission rollback could not restore events_enriched row type'; END IF;
