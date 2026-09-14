@@ -1,6 +1,6 @@
--- Restore the canonical cursor-based events_enriched RPC after
--- 20260601018000_fix_events_enriched_enum_cast.sql accidentally recreated the
--- old offset signature. Keep the enum-safe status comparison from that fix.
+-- Extracted from family-events-backend
+-- 20260902002000_source_details_freshness.sql. The backend migration owns the
+-- canonical cursor signature and listing-level freshness projection.
 
 DROP FUNCTION IF EXISTS public.events_enriched(
   uuid, text, integer, integer, uuid, uuid[], timestamptz, timestamptz
@@ -33,8 +33,12 @@ RETURNS TABLE (
   age_max                   integer,
   price                     numeric,
   is_free                   boolean,
+  admission_cost_state      public.admission_cost_state,
+  admission_amount          numeric,
+  admission_cost_evidence   text,
   source_url                text,
   source_name               text,
+  source_details_fetched_at timestamptz,
   source_id                 uuid,
   images                    jsonb,
   status                    text,
@@ -65,7 +69,8 @@ AS $$
     e.id, e.title, e.description, e.start_datetime, e.end_datetime, e.timezone,
     e.venue_name, e.address, e.city_id, e.latitude, e.longitude,
     e.age_min, e.age_max, e.price, e.is_free,
-    e.source_url, e.source_name, e.source_id, e.images, e.status::text,
+    e.admission_cost_state, e.admission_amount, e.admission_cost_evidence,
+    e.source_url, e.source_name, e.source_details_fetched_at, e.source_id, e.images, e.status::text,
     e.ai_confidence, e.ai_tag_provider, e.recurrence_info, e.is_featured,
     e.is_outdoor, e.parent_tips, e.parent_tips_generated_at,
     e.view_count,

@@ -15,7 +15,9 @@ import {
   type OptionalIdentifiedRequest,
 } from "../auth/optional-clerk.guard.js"
 import {
+  AdmissionCostFilterDto,
   CityDto,
+  DiscoveryRangeDto,
   EnrichedEventDto,
   EventDetailDto,
   EventsPageDto,
@@ -52,6 +54,19 @@ export class ConsumerController {
     security: OPTIONAL_CLERK_SECURITY,
   })
   @ApiQuery({ type: EventsQueryDto })
+  @ApiQuery({
+    name: "range",
+    required: false,
+    enum: DiscoveryRangeDto,
+    schema: { default: DiscoveryRangeDto.Weekend },
+  })
+  @ApiQuery({
+    name: "cost",
+    required: false,
+    enum: AdmissionCostFilterDto,
+    description: "Evidence-backed admission classification",
+    schema: { default: AdmissionCostFilterDto.Any },
+  })
   @ApiOkResponse({ type: EventsPageDto })
   @ApiBadRequestResponse({ description: "Invalid query parameters or cursor" })
   listEvents(
@@ -68,11 +83,24 @@ export class ConsumerController {
     security: OPTIONAL_CLERK_SECURITY,
   })
   @ApiQuery({ type: MapQueryDto })
+  @ApiQuery({
+    name: "range",
+    required: false,
+    enum: DiscoveryRangeDto,
+    schema: { default: DiscoveryRangeDto.Weekend },
+  })
+  @ApiQuery({
+    name: "cost",
+    required: false,
+    enum: AdmissionCostFilterDto,
+    description: "Evidence-backed admission classification",
+    schema: { default: AdmissionCostFilterDto.Any },
+  })
   @ApiOkResponse({ type: MapEventsDto })
   @ApiBadRequestResponse({ description: "Invalid query parameters" })
   async listMapEvents(@Query() query: Record<string, unknown>): Promise<MapEventsDto> {
     const input = parseMapQuery(query)
-    return { events: await this.consumer.listMapEvents(input.cityId) }
+    return this.consumer.listMapEvents(input)
   }
 
   @Get("events/:id")

@@ -338,6 +338,122 @@ class FakeDb implements ProcessSourceDb {
   }
 }
 
+describe("listing-level source retrieval provenance", () => {
+  it("advances the payload timestamp when unchanged event details are successfully fetched again", async () => {
+    const db = new FakeDb()
+    db.bulkResult = { imported: 0, updated: 1, skipped: 0, enqueued: 0 }
+    const event = buildParsedEvent()
+
+    await importParsedSourceEvents(
+      db,
+      buildSource(),
+      "run-first",
+      [event],
+      "2026-05-01T10:00:00.000Z"
+    )
+    await importParsedSourceEvents(
+      db,
+      buildSource(),
+      "run-second",
+      [event],
+      "2026-05-02T11:30:00.000Z"
+    )
+
+    expect(db.bulkCalls[0]?.[0]?.source_details_fetched_at).toBe("2026-05-01T10:00:00.000Z")
+    expect(db.bulkCalls[1]?.[0]?.source_details_fetched_at).toBe("2026-05-02T11:30:00.000Z")
+  })
+
+  it("passes only explicit source admission evidence to bulk ingestion", async () => {
+    const freeDb = new FakeDb()
+    freeDb.bulkResult = { imported: 1, updated: 0, skipped: 0, enqueued: 0 }
+    await importParsedSourceEvents(
+      freeDb,
+      buildSource(),
+      "run-free",
+      [buildParsedEvent({ description: "Free admission for families", isFree: true })],
+      "2026-05-01T10:00:00.000Z"
+    )
+    expect(freeDb.bulkCalls[0]?.[0]).toMatchObject({
+      admission_cost_state: "free",
+      admission_amount: null,
+      admission_cost_evidence: "Free admission",
+    })
+
+    const unknownDb = new FakeDb()
+    unknownDb.bulkResult = { imported: 1, updated: 0, skipped: 0, enqueued: 0 }
+    await importParsedSourceEvents(
+      unknownDb,
+      buildSource(),
+      "run-unknown",
+      [buildParsedEvent({ description: "See source for details", isFree: false, price: null })],
+      "2026-05-01T10:00:00.000Z"
+    )
+    expect(unknownDb.bulkCalls[0]?.[0]).toMatchObject({
+      admission_cost_state: "unknown",
+      admission_amount: null,
+      admission_cost_evidence: null,
+    })
+
+    const explicitNullDb = new FakeDb()
+    explicitNullDb.bulkResult = { imported: 1, updated: 0, skipped: 0, enqueued: 0 }
+    await importParsedSourceEvents(
+      explicitNullDb,
+      buildSource(),
+      "run-explicit-null",
+      [
+        buildParsedEvent({
+          description: "Admission is $12",
+          admissionAmount: null,
+          admissionCostEvidence: null,
+        }),
+      ],
+      "2026-05-01T10:00:00.000Z"
+    )
+    expect(explicitNullDb.bulkCalls[0]?.[0]).toMatchObject({
+      admission_amount: null,
+      admission_cost_evidence: null,
+    })
+  })
+
+  it("does not create listing provenance for omitted, invalid, or manual events", async () => {
+    const omittedDb = new FakeDb()
+    await importParsedSourceEvents(
+      omittedDb,
+      buildSource(),
+      "run-omitted",
+      [],
+      "2026-05-02T11:30:00.000Z"
+    )
+    expect(omittedDb.bulkCalls).toEqual([])
+
+    const invalidDb = new FakeDb()
+    await importParsedSourceEvents(
+      invalidDb,
+      buildSource(),
+      "run-invalid",
+      [buildParsedEvent({ title: "" })],
+      "2026-05-02T11:30:00.000Z"
+    )
+    expect(invalidDb.bulkCalls).toEqual([])
+
+    const manualDb = new FakeDb()
+    manualDb.bulkResult = { imported: 1, updated: 0, skipped: 0, enqueued: 0 }
+    await importParsedSourceEvents(
+      manualDb,
+      buildSource({ source_type: "manual" }),
+      "run-manual",
+      [buildParsedEvent({ sourceUrl: null })],
+      "2026-05-02T11:30:00.000Z"
+    )
+    expect(manualDb.bulkCalls[0]?.[0]?.source_details_fetched_at).toBeNull()
+    expect(manualDb.bulkCalls[0]?.[0]).toMatchObject({
+      admission_cost_state: "unknown",
+      admission_amount: null,
+      admission_cost_evidence: null,
+    })
+  })
+})
+
 describe("stale escalation", () => {
   it("3 consecutive zero-result scrapes triggers stale status and audit log", async () => {
     // Source has already seen 2 consecutive zero-result scrapes.

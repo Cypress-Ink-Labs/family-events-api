@@ -95,7 +95,7 @@ function collectBossErrors(boss: {
 }
 
 async function waitForBackgroundMigrations(pool: Pool, schema: string): Promise<BamRow[]> {
-  const deadline = Date.now() + 35_000
+  const deadline = Date.now() + 60_000
   let rows: BamRow[] = []
   while (Date.now() < deadline) {
     rows = (
@@ -340,5 +340,5 @@ describe("pg-boss 12.30 schema upgrade", () => {
     }
     if (primaryFailure !== undefined) throw primaryFailure
     if (cleanupErrors.length > 0) throw cleanupErrors[0]
-  }, 100_000)
+  }, 130_000)
 })

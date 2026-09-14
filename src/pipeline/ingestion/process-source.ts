@@ -23,6 +23,7 @@ import {
   titleTokens,
 } from "../dedup.js"
 import type { ParserContext } from "./parser-context.js"
+import { extractAdmissionCost } from "./parsing.js"
 // tag-fanout retired in Phase 4 — replaced by event_tag_queue + cron worker.
 // scrape-source now just enqueues, returning immediately.
 import type { EventSourceRow, ParsedEvent, RunStatus, SourceResult } from "./types.js"
@@ -224,11 +225,27 @@ interface EventPayloadContext {
   source: EventSourceRow
   timezone: string
   cityCentroid: { latitude: number | null; longitude: number | null } | null
+  detailsFetchedAt: string
 }
 
 function prepEventPayload(parsed: ParsedEvent, ctx: EventPayloadContext): Record<string, unknown> {
   const isOutdoor = deriveIsOutdoorFromParsedEvent(parsed)
   const imageCandidates = deriveRawImageCandidates(parsed)
+  const extractedAdmission = extractAdmissionCost(`${parsed.title} ${parsed.description}`)
+  const isManualSource = ctx.source.source_type === "manual"
+  const admissionCostState = isManualSource
+    ? "unknown"
+    : (parsed.admissionCostState ?? extractedAdmission.state)
+  const admissionAmount = isManualSource
+    ? null
+    : parsed.admissionAmount !== undefined
+      ? parsed.admissionAmount
+      : extractedAdmission.amount
+  const admissionCostEvidence = isManualSource
+    ? null
+    : parsed.admissionCostEvidence !== undefined
+      ? parsed.admissionCostEvidence
+      : extractedAdmission.evidence
 
   return {
     title: parsed.title,
@@ -241,9 +258,15 @@ function prepEventPayload(parsed: ParsedEvent, ctx: EventPayloadContext): Record
     city_id: ctx.source.city_id,
     source_url: parsed.sourceUrl ?? null,
     source_name: ctx.source.name,
+    // This value comes from the successful extraction boundary, never parser
+    // content or an admin-edit payload. Manual listings have no source fetch.
+    source_details_fetched_at: ctx.source.source_type === "manual" ? null : ctx.detailsFetchedAt,
     images: imageCandidates,
     price: parsed.price ?? null,
     is_free: Boolean(parsed.isFree),
+    admission_cost_state: admissionCostState,
+    admission_amount: admissionAmount,
+    admission_cost_evidence: admissionCostEvidence,
     is_outdoor: isOutdoor,
     latitude: ctx.cityCentroid?.latitude ?? null,
     longitude: ctx.cityCentroid?.longitude ?? null,
@@ -697,7 +720,8 @@ export async function importParsedSourceEvents(
   db: ProcessSourceDb,
   source: EventSourceRow,
   runId: string,
-  parsedEvents: ParsedEvent[]
+  parsedEvents: ParsedEvent[],
+  detailsFetchedAt = new Date().toISOString()
 ): Promise<SourceResult> {
   let status: RunStatus = "success"
   let eventsFound = 0
@@ -749,7 +773,12 @@ export async function importParsedSourceEvents(
     if (validEvents.length === 0) {
       await flushProgress()
     } else {
-      const payloadContext: EventPayloadContext = { source, timezone, cityCentroid }
+      const payloadContext: EventPayloadContext = {
+        source,
+        timezone,
+        cityCentroid,
+        detailsFetchedAt,
+      }
       const payloads = validEvents.map((parsed) => prepEventPayload(parsed, payloadContext))
 
       const dedup = await applyCrossSourceDedup(db, source, runId, payloads)

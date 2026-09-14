@@ -18,6 +18,9 @@ export const ADMIN_EDITABLE_EVENT_FIELDS = [
   "age_max",
   "price",
   "is_free",
+  "admission_cost_state",
+  "admission_amount",
+  "admission_cost_evidence",
   "is_outdoor",
   "source_url",
   "source_name",
@@ -82,6 +85,9 @@ const eventPatch = z
     age_max: z.number().int().min(0).nullable().optional(),
     price: z.number().finite().min(0).max(99_999_999.99).nullable().optional(),
     is_free: z.boolean().optional(),
+    admission_cost_state: z.enum(["free", "paid", "unknown"]).optional(),
+    admission_amount: z.number().finite().min(0).max(99_999_999.99).nullable().optional(),
+    admission_cost_evidence: nullableText(2_000).optional(),
     is_outdoor: z.boolean().nullable().optional(),
     source_url: httpUrl.nullable().optional(),
     source_name: nullableText(300).optional(),
@@ -154,6 +160,9 @@ export interface AdminEventPatch {
   ageMax?: number | null
   price?: number | null
   isFree?: boolean
+  admissionCostState?: "free" | "paid" | "unknown"
+  admissionAmount?: number | null
+  admissionCostEvidence?: string | null
   isOutdoor?: boolean | null
   sourceUrl?: string | null
   sourceName?: string | null
@@ -207,6 +216,13 @@ export function parseAdminUpdateEventBody(body: unknown): AdminUpdateEventInput 
       ...(patch.age_max !== undefined ? { ageMax: patch.age_max } : {}),
       ...(patch.price !== undefined ? { price: patch.price } : {}),
       ...(patch.is_free !== undefined ? { isFree: patch.is_free } : {}),
+      ...(patch.admission_cost_state !== undefined
+        ? { admissionCostState: patch.admission_cost_state }
+        : {}),
+      ...(patch.admission_amount !== undefined ? { admissionAmount: patch.admission_amount } : {}),
+      ...(patch.admission_cost_evidence !== undefined
+        ? { admissionCostEvidence: patch.admission_cost_evidence }
+        : {}),
       ...(patch.is_outdoor !== undefined ? { isOutdoor: patch.is_outdoor } : {}),
       ...(patch.source_url !== undefined ? { sourceUrl: patch.source_url } : {}),
       ...(patch.source_name !== undefined ? { sourceName: patch.source_name } : {}),

@@ -215,37 +215,64 @@ export function cleanDescription(value: string | null | undefined): string {
   return stripHtml(stripShortcodes(value))
 }
 
-export function extractPrice(text: string): { price: number | null; isFree: boolean } {
-  const lower = text.toLowerCase()
+export interface AdmissionCostExtraction {
+  state: "free" | "paid" | "unknown"
+  amount: number | null
+  evidence: string | null
+}
 
-  const priceMatch = text.match(/\$\s*(\d+(?:\.\d{1,2})?)/)
-
-  // Negated "free" wording is not free admission; when a dollar amount is
-  // present it wins, otherwise fall through as unknown price.
-  const negatedFreePatterns = [/\bnot\s+free\b/, /\bisn'?t\s+free\b/, /\bno\s+longer\s+free\b/]
-  const negatedFree = negatedFreePatterns.some((pattern) => pattern.test(lower))
-
-  if (!negatedFree) {
-    const freePatterns = [
-      /\bfree\b/,
-      /\bno cost\b/,
-      /\bno charge\b/,
-      /\bcomplimentary\b/,
-      /\bfree admission\b/,
-      /\bfree event\b/,
-    ]
+export function extractAdmissionCost(text: string): AdmissionCostExtraction {
+  const negatedFreeMatch = text.match(/\b(?:not|isn'?t|no longer) free(?: admission)?\b/i)
+  const freePatterns = [
+    /\bfree admission\b/i,
+    /^free\b/i,
+    /\badmission (?:is )?free\b/i,
+    /\bfree event\b/i,
+    /\bno (?:admission|ticket|entry|registration|attendance) (?:cost|charge)\b/i,
+    /\bno cost to attend\b/i,
+    /\bfree and open to (?:the )?public\b/i,
+  ]
+  if (!negatedFreeMatch) {
     for (const pattern of freePatterns) {
-      if (pattern.test(lower)) {
-        return { price: null, isFree: true }
-      }
+      const match = text.match(pattern)
+      if (match) return { state: "free", amount: null, evidence: match[0] }
     }
   }
 
-  if (priceMatch) {
-    return { price: Number(priceMatch[1]), isFree: false }
+  const amountMatch = text.match(
+    /(?:\b(?:admission|tickets?|entry|registration|attendance)\b[^.!?\n]{0,40}?\$\s*(\d+(?:\.\d{1,2})?)|\$\s*(\d+(?:\.\d{1,2})?)[^.!?\n]{0,40}?\b(?:admission|tickets?|entry|registration|attendance)\b)/i
+  )
+  if (amountMatch) {
+    const amount = amountMatch[1] ?? amountMatch[2]
+    const evidence = amountMatch[0].match(/\$\s*\d+(?:\.\d{1,2})?/)?.[0] ?? amountMatch[0]
+    return { state: "paid", amount: Number(amount), evidence }
   }
 
-  return { price: null, isFree: false }
+  if (negatedFreeMatch) {
+    return { state: "paid", amount: null, evidence: negatedFreeMatch[0] }
+  }
+
+  const paidPatterns = [
+    /\bpaid admission\b/i,
+    /\b(?:admission|entry|registration) fee\b/i,
+    /\b(?:admission|cost|price) varies\b/i,
+    /\bfees? appl(?:y|ies)\b/i,
+  ]
+  for (const pattern of paidPatterns) {
+    const match = text.match(pattern)
+    if (match) return { state: "paid", amount: null, evidence: match[0] }
+  }
+  return { state: "unknown", amount: null, evidence: null }
+}
+
+export function extractPrice(text: string): { price: number | null; isFree: boolean } {
+  const amountMatch = text.match(/\$\s*(\d+(?:\.\d{1,2})?)/)
+  const isNegatedFree = /\b(?:not|isn'?t|no longer) free\b/i.test(text)
+  const isFree = !isNegatedFree && /\bfree\b/i.test(text)
+  return {
+    price: !isFree && amountMatch ? Number(amountMatch[1]) : null,
+    isFree,
+  }
 }
 
 /**
