@@ -68,11 +68,29 @@ export class EnrichedEventDto implements EnrichedEvent {
   @ApiProperty()
   is_free!: boolean
 
+  @ApiProperty({ enum: ["free", "paid", "unknown"] })
+  admission_cost_state!: "free" | "paid" | "unknown"
+
+  @ApiProperty({ type: String, nullable: true, description: "Exact PostgreSQL numeric string" })
+  admission_amount!: string | null
+
+  @ApiProperty({ type: String, nullable: true })
+  admission_cost_evidence!: string | null
+
   @ApiProperty({ type: String, nullable: true })
   source_url!: string | null
 
   @ApiProperty({ type: String, nullable: true })
   source_name!: string | null
+
+  @ApiProperty({
+    type: String,
+    format: "date-time",
+    nullable: true,
+    description:
+      "Raw timestamp of the last successful retrieval of this listing's source details; null when unavailable",
+  })
+  source_details_fetched_at!: string | null
 
   @ApiProperty(JSON_VALUE_PROPERTY)
   images!: Json
@@ -109,6 +127,13 @@ export class EnrichedEventDto implements EnrichedEvent {
 
   @ApiProperty()
   is_in_calendar!: boolean
+
+  @ApiProperty({
+    enum: ["confirmed", "unknown"],
+    nullable: true,
+    description: "Age suitability for the selected ages; null when ages were not selected",
+  })
+  age_match!: "confirmed" | "unknown" | null
 }
 
 export class CityDto implements City {
@@ -218,20 +243,67 @@ export class MapEventDto {
   start_datetime!: string
 
   @ApiProperty({ type: String, nullable: true })
+  timezone!: string | null
+
+  @ApiProperty({ type: String, nullable: true })
   venue_name!: string | null
 
   @ApiProperty()
   is_free!: boolean
+
+  @ApiProperty({ enum: ["free", "paid", "unknown"] })
+  admission_cost_state!: "free" | "paid" | "unknown"
+
+  @ApiProperty({ type: String, nullable: true })
+  admission_amount!: string | null
+
+  @ApiProperty({
+    enum: ["confirmed", "unknown"],
+    nullable: true,
+    description: "Age suitability for the selected ages; null when ages were not selected",
+  })
+  age_match!: "confirmed" | "unknown" | null
 }
 
 export class MapEventsDto {
   @ApiProperty({ type: [MapEventDto], maxItems: 200 })
   events!: MapEventDto[]
+
+  @ApiProperty({ type: "integer", minimum: 0 })
+  omitted_without_coordinates!: number
+}
+
+export enum DiscoveryRangeDto {
+  Today = "today",
+  Weekend = "weekend",
+  Upcoming = "upcoming",
+}
+
+export enum AdmissionCostFilterDto {
+  Any = "any",
+  Free = "free",
+  Paid = "paid",
+  Unknown = "unknown",
 }
 
 export class MapQueryDto {
   @ApiPropertyOptional({ format: "uuid" })
   city_id?: string
+
+  @ApiPropertyOptional({ enum: DiscoveryRangeDto, default: DiscoveryRangeDto.Weekend })
+  range?: DiscoveryRangeDto
+
+  @ApiPropertyOptional({
+    description: "Comma-separated, unique child ages from 0 through 17 (maximum 10)",
+    example: "2,7",
+  })
+  ages?: string
+
+  @ApiPropertyOptional({ enum: ["all", "any"], default: "all" })
+  age_mode?: "all" | "any"
+
+  @ApiPropertyOptional({ default: false })
+  include_unknown_age?: boolean
 }
 
 export class FavoriteEventsDto {
@@ -337,10 +409,21 @@ export class EventsQueryDto {
   @ApiPropertyOptional({ maxLength: 100 })
   keyword?: string
 
-  @ApiPropertyOptional({ format: "date-time" })
+  @ApiPropertyOptional({ enum: DiscoveryRangeDto, default: DiscoveryRangeDto.Weekend })
+  range?: DiscoveryRangeDto
+
+  @ApiPropertyOptional({
+    type: String,
+    format: "date-time",
+    description: "Legacy explicit lower bound; cannot be combined with range",
+  })
   date_from?: string
 
-  @ApiPropertyOptional({ format: "date-time" })
+  @ApiPropertyOptional({
+    type: String,
+    format: "date-time",
+    description: "Legacy explicit upper bound; cannot be combined with range",
+  })
   date_to?: string
 
   @ApiPropertyOptional()
@@ -348,6 +431,19 @@ export class EventsQueryDto {
 
   @ApiPropertyOptional({ type: "integer", minimum: 0 })
   kid_age?: number
+
+  @ApiPropertyOptional({
+    description:
+      "Comma-separated, unique child ages from 0 through 17 (maximum 10); cannot be combined with kid_age",
+    example: "2,7",
+  })
+  ages?: string
+
+  @ApiPropertyOptional({ enum: ["all", "any"], default: "all" })
+  age_mode?: "all" | "any"
+
+  @ApiPropertyOptional({ default: false })
+  include_unknown_age?: boolean
 
   @ApiPropertyOptional({ description: "Base64 keyset cursor returned by the previous page" })
   cursor?: string

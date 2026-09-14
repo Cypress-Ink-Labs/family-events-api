@@ -467,7 +467,10 @@ export async function processSourceQueueRow(
     db,
     runnable.source,
     runnable.runId,
-    extraction.parsedEvents
+    extraction.parsedEvents,
+    // Capture only after extraction succeeds. Fetch failures return above and
+    // omitted events never enter this per-listing payload.
+    new Date().toISOString()
   )
 
   if (result.status !== "success" && result.status !== "partial") {

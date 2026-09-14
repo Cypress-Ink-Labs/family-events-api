@@ -8,6 +8,11 @@
 
 import type { Json } from "../db/json.js"
 
+export type AgeMatch = "confirmed" | "unknown"
+export type AgeMode = "all" | "any"
+export type AdmissionCostState = "free" | "paid" | "unknown"
+export type AdmissionCostFilter = "any" | AdmissionCostState
+
 export interface EnrichedEvent {
   id: string
   title: string
@@ -24,8 +29,12 @@ export interface EnrichedEvent {
   age_max: number | null
   price: string | null
   is_free: boolean
+  admission_cost_state: AdmissionCostState
+  admission_amount: string | null
+  admission_cost_evidence: string | null
   source_url: string | null
   source_name: string | null
+  source_details_fetched_at: string | null
   images: Json
   status: string
   recurrence_info: Json
@@ -38,11 +47,33 @@ export interface EnrichedEvent {
   tags: Json
   is_favorited: boolean
   is_in_calendar: boolean
+  /** Present only when child ages were selected for this discovery result. */
+  age_match: AgeMatch | null
 }
 
 export interface EventCursor {
   startDatetime: string
   id: string
+}
+
+export type DiscoveryRange = "today" | "weekend" | "upcoming"
+
+export interface DiscoverEventsInput {
+  range: DiscoveryRange | null
+  now: string
+  cityId?: string | null
+  keyword?: string | null
+  cost?: AdmissionCostFilter
+  /** Legacy compatibility only; false is not interpreted as evidence of paid admission. */
+  isFree?: boolean | null
+  dateFrom?: string | null
+  dateTo?: string | null
+  ages: number[]
+  ageMode: AgeMode
+  includeUnknownAge: boolean
+  limit?: number
+  after?: EventCursor | null
+  userKey?: string | null
 }
 
 export interface ListEventsInput {
@@ -60,17 +91,26 @@ export interface ListEventsInput {
 
 export interface ListMapEventsInput {
   cityId?: string | null
-  limit?: number
+  range: DiscoveryRange
+  now: string
+  ages: number[]
+  ageMode: AgeMode
+  includeUnknownAge: boolean
+  cost?: AdmissionCostFilter
 }
 
 export interface MappableEvent {
   id: string
   title: string
-  latitude: string
-  longitude: string
+  latitude: string | null
+  longitude: string | null
   start_datetime: string
+  timezone: string | null
   venue_name: string | null
   is_free: boolean
+  admission_cost_state: AdmissionCostState
+  admission_amount: string | null
+  age_match: AgeMatch | null
 }
 
 export interface SearchEventsInput {
@@ -111,6 +151,7 @@ export interface SearchedEvent {
   images: Json
   status: string
   is_featured: boolean
+  age_match: AgeMatch | null
 }
 
 /** Consumer detail contract: the app renders only the linked event id and title. */

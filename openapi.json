@@ -738,6 +738,25 @@
                       "is_free": {
                         "type": "boolean"
                       },
+                      "admission_cost_state": {
+                        "type": "string",
+                        "enum": [
+                          "free",
+                          "paid",
+                          "unknown"
+                        ]
+                      },
+                      "admission_amount": {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 99999999.99,
+                        "nullable": true
+                      },
+                      "admission_cost_evidence": {
+                        "type": "string",
+                        "nullable": true,
+                        "maxLength": 2000
+                      },
                       "is_outdoor": {
                         "type": "boolean",
                         "nullable": true
@@ -3169,6 +3188,22 @@
         "operationId": "ConsumerController_listEvents",
         "parameters": [
           {
+            "name": "cost",
+            "required": false,
+            "in": "query",
+            "description": "Evidence-backed admission classification",
+            "schema": {
+              "default": "any",
+              "enum": [
+                "any",
+                "free",
+                "paid",
+                "unknown"
+              ],
+              "type": "string"
+            }
+          },
+          {
             "required": false,
             "name": "city_id",
             "in": "query",
@@ -3188,6 +3223,16 @@
           },
           {
             "required": false,
+            "name": "range",
+            "in": "query",
+            "schema": {
+              "default": "weekend",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Legacy explicit lower bound; cannot be combined with range",
+            "required": false,
             "name": "date_from",
             "in": "query",
             "schema": {
@@ -3196,6 +3241,7 @@
             }
           },
           {
+            "description": "Legacy explicit upper bound; cannot be combined with range",
             "required": false,
             "name": "date_to",
             "in": "query",
@@ -3219,6 +3265,34 @@
             "schema": {
               "minimum": 0,
               "type": "integer"
+            }
+          },
+          {
+            "description": "Comma-separated, unique child ages from 0 through 17 (maximum 10); cannot be combined with kid_age",
+            "required": false,
+            "name": "ages",
+            "in": "query",
+            "schema": {
+              "example": "2,7",
+              "type": "string"
+            }
+          },
+          {
+            "required": false,
+            "name": "age_mode",
+            "in": "query",
+            "schema": {
+              "default": "all",
+              "type": "string"
+            }
+          },
+          {
+            "required": false,
+            "name": "include_unknown_age",
+            "in": "query",
+            "schema": {
+              "default": false,
+              "type": "boolean"
             }
           },
           {
@@ -3324,12 +3398,65 @@
         "operationId": "ConsumerController_listMapEvents",
         "parameters": [
           {
+            "name": "cost",
+            "required": false,
+            "in": "query",
+            "description": "Evidence-backed admission classification",
+            "schema": {
+              "default": "any",
+              "enum": [
+                "any",
+                "free",
+                "paid",
+                "unknown"
+              ],
+              "type": "string"
+            }
+          },
+          {
             "required": false,
             "name": "city_id",
             "in": "query",
             "schema": {
               "format": "uuid",
               "type": "string"
+            }
+          },
+          {
+            "required": false,
+            "name": "range",
+            "in": "query",
+            "schema": {
+              "default": "weekend",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Comma-separated, unique child ages from 0 through 17 (maximum 10)",
+            "required": false,
+            "name": "ages",
+            "in": "query",
+            "schema": {
+              "example": "2,7",
+              "type": "string"
+            }
+          },
+          {
+            "required": false,
+            "name": "age_mode",
+            "in": "query",
+            "schema": {
+              "default": "all",
+              "type": "string"
+            }
+          },
+          {
+            "required": false,
+            "name": "include_unknown_age",
+            "in": "query",
+            "schema": {
+              "default": false,
+              "type": "boolean"
             }
           }
         ],
@@ -4451,6 +4578,24 @@
           "is_free": {
             "type": "boolean"
           },
+          "admission_cost_state": {
+            "type": "string",
+            "enum": [
+              "free",
+              "paid",
+              "unknown"
+            ]
+          },
+          "admission_amount": {
+            "type": "string",
+            "nullable": true,
+            "description": "Exact PostgreSQL numeric string"
+          },
+          "admission_cost_evidence": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 2000
+          },
           "is_outdoor": {
             "type": "boolean",
             "nullable": true
@@ -4558,6 +4703,9 @@
           "age_max",
           "price",
           "is_free",
+          "admission_cost_state",
+          "admission_amount",
+          "admission_cost_evidence",
           "is_outdoor",
           "source_url",
           "source_name",
@@ -5776,6 +5924,23 @@
           "is_free": {
             "type": "boolean"
           },
+          "admission_cost_state": {
+            "type": "string",
+            "enum": [
+              "free",
+              "paid",
+              "unknown"
+            ]
+          },
+          "admission_amount": {
+            "type": "string",
+            "nullable": true,
+            "description": "Exact PostgreSQL numeric string"
+          },
+          "admission_cost_evidence": {
+            "type": "string",
+            "nullable": true
+          },
           "source_url": {
             "type": "string",
             "nullable": true
@@ -5783,6 +5948,12 @@
           "source_name": {
             "type": "string",
             "nullable": true
+          },
+          "source_details_fetched_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "Raw timestamp of the last successful retrieval of this listing's source details; null when unavailable"
           },
           "images": {
             "oneOf": [
@@ -5879,6 +6050,15 @@
           },
           "is_in_calendar": {
             "type": "boolean"
+          },
+          "age_match": {
+            "type": "string",
+            "enum": [
+              "confirmed",
+              "unknown"
+            ],
+            "nullable": true,
+            "description": "Age suitability for the selected ages; null when ages were not selected"
           }
         },
         "required": [
@@ -5897,8 +6077,12 @@
           "age_max",
           "price",
           "is_free",
+          "admission_cost_state",
+          "admission_amount",
+          "admission_cost_evidence",
           "source_url",
           "source_name",
+          "source_details_fetched_at",
           "images",
           "status",
           "recurrence_info",
@@ -5910,7 +6094,8 @@
           "rating_count",
           "tags",
           "is_favorited",
-          "is_in_calendar"
+          "is_in_calendar",
+          "age_match"
         ]
       },
       "EventsPageDto": {
@@ -5954,12 +6139,37 @@
             "type": "string",
             "format": "date-time"
           },
+          "timezone": {
+            "type": "string",
+            "nullable": true
+          },
           "venue_name": {
             "type": "string",
             "nullable": true
           },
           "is_free": {
             "type": "boolean"
+          },
+          "admission_cost_state": {
+            "type": "string",
+            "enum": [
+              "free",
+              "paid",
+              "unknown"
+            ]
+          },
+          "admission_amount": {
+            "type": "string",
+            "nullable": true
+          },
+          "age_match": {
+            "type": "string",
+            "enum": [
+              "confirmed",
+              "unknown"
+            ],
+            "nullable": true,
+            "description": "Age suitability for the selected ages; null when ages were not selected"
           }
         },
         "required": [
@@ -5968,8 +6178,12 @@
           "latitude",
           "longitude",
           "start_datetime",
+          "timezone",
           "venue_name",
-          "is_free"
+          "is_free",
+          "admission_cost_state",
+          "admission_amount",
+          "age_match"
         ]
       },
       "MapEventsDto": {
@@ -5981,10 +6195,15 @@
             "items": {
               "$ref": "#/components/schemas/MapEventDto"
             }
+          },
+          "omitted_without_coordinates": {
+            "type": "integer",
+            "minimum": 0
           }
         },
         "required": [
-          "events"
+          "events",
+          "omitted_without_coordinates"
         ]
       },
       "SimilarEventDto": {

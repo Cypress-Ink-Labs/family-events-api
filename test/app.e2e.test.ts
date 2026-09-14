@@ -263,6 +263,16 @@ describe("application bootstrap", () => {
         rejection_rate: { type: "number", minimum: 0, maximum: 100 },
       },
     })
+    expect(document.components!.schemas!.EnrichedEventDto).toMatchObject({
+      required: expect.arrayContaining(["source_details_fetched_at"]),
+      properties: {
+        source_details_fetched_at: {
+          type: "string",
+          format: "date-time",
+          nullable: true,
+        },
+      },
+    })
     expect(document.components!.schemas!.AdminDashboardStatsDto).toMatchObject({
       properties: {
         generated_at: {
@@ -714,6 +724,9 @@ describe("application bootstrap", () => {
       age_max: 12,
       price: null,
       is_free: true,
+      admission_cost_state: "free",
+      admission_amount: null,
+      admission_cost_evidence: "Free admission",
       is_outdoor: null,
       source_url: null,
       source_name: null,

@@ -37,6 +37,11 @@ export async function ensureCatalogSchema(db: DbService): Promise<void> {
   // a definition change in this file. Safe because connections come from
   // createIntegrationDb(), which refuses non-disposable databases.
   await db.query(`
+    DROP FUNCTION IF EXISTS public.events_enriched(
+      uuid, text, uuid, uuid[], timestamptz, timestamptz, timestamptz, uuid, integer
+    )
+  `)
+  await db.query(`
     DROP TABLE IF EXISTS
       public.comments, public.user_preferred_cities, public.user_profiles,
       public.event_image_attributions, public.user_calendar_events, public.favorites,
@@ -45,6 +50,7 @@ export async function ensureCatalogSchema(db: DbService): Promise<void> {
   `)
   await db.query("DROP TYPE IF EXISTS public.llm_event_review_status CASCADE")
   await db.query("DROP TYPE IF EXISTS public.event_status CASCADE")
+  await db.query("DROP TYPE IF EXISTS public.admission_cost_state CASCADE")
   await db.query(
     "CREATE TYPE public.event_status AS ENUM ('draft', 'published', 'rejected', 'archived')"
   )
@@ -53,6 +59,7 @@ export async function ensureCatalogSchema(db: DbService): Promise<void> {
       'not_required', 'pending', 'succeeded', 'failed', 'skipped'
     )
   `)
+  await db.query("CREATE TYPE public.admission_cost_state AS ENUM ('free', 'paid', 'unknown')")
   await db.query(`
     CREATE TABLE public.cities (
       id uuid PRIMARY KEY,
@@ -84,8 +91,12 @@ export async function ensureCatalogSchema(db: DbService): Promise<void> {
       age_max integer,
       price numeric,
       is_free boolean NOT NULL DEFAULT false,
+      admission_cost_state public.admission_cost_state NOT NULL DEFAULT 'unknown',
+      admission_amount numeric,
+      admission_cost_evidence text,
       source_url text,
       source_name text,
+      source_details_fetched_at timestamptz,
       source_id uuid,
       images jsonb NOT NULL DEFAULT '[]'::jsonb,
       status public.event_status NOT NULL DEFAULT 'draft',
@@ -104,6 +115,11 @@ export async function ensureCatalogSchema(db: DbService): Promise<void> {
       llm_review_status public.llm_event_review_status NOT NULL DEFAULT 'not_required',
       created_at timestamptz NOT NULL DEFAULT now(),
       updated_at timestamptz NOT NULL DEFAULT now()
+      , CONSTRAINT events_admission_cost_evidence_check CHECK (
+        (admission_cost_state = 'unknown' AND admission_amount IS NULL AND admission_cost_evidence IS NULL)
+        OR (admission_cost_state = 'free' AND admission_amount IS NULL AND NULLIF(btrim(admission_cost_evidence), '') IS NOT NULL)
+        OR (admission_cost_state = 'paid' AND (admission_amount IS NULL OR admission_amount >= 0) AND NULLIF(btrim(admission_cost_evidence), '') IS NOT NULL)
+      )
     )
   `)
   await db.query(`

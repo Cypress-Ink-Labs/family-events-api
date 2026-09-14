@@ -24,6 +24,7 @@ const CITY: City = {
 
 function makeService(opts?: { cities?: City[]; weatherFit?: string }): {
   service: ConsumerService
+  discoverEvents: ReturnType<typeof vi.fn>
   listEvents: ReturnType<typeof vi.fn>
   listMapEvents: ReturnType<typeof vi.fn>
   findSimilarEventsById: ReturnType<typeof vi.fn>
@@ -36,6 +37,7 @@ function makeService(opts?: { cities?: City[]; weatherFit?: string }): {
   snapshot: ReturnType<typeof vi.fn>
 } {
   const listEvents = vi.fn(async () => [])
+  const discoverEvents = vi.fn(async () => [])
   const listMapEvents = vi.fn(async () => [])
   const findSimilarEventsById = vi.fn(async () => [])
   const searchEvents = vi.fn(async () => [])
@@ -53,6 +55,7 @@ function makeService(opts?: { cities?: City[]; weatherFit?: string }): {
   }))
   const service = new ConsumerService(
     {
+      discoverEvents,
       listEvents,
       listMapEvents,
       findSimilarEventsById,
@@ -68,6 +71,7 @@ function makeService(opts?: { cities?: City[]; weatherFit?: string }): {
   )
   return {
     service,
+    discoverEvents,
     listEvents,
     listMapEvents,
     findSimilarEventsById,
@@ -269,25 +273,52 @@ describe("ConsumerService.listMapEvents", () => {
         latitude: "30.22",
         longitude: "-92.02",
         start_datetime: "2026-08-16T15:00:00+00:00",
+        timezone: "America/Chicago",
         venue_name: "Library",
         is_free: true,
+        admission_cost_state: "free",
+        admission_amount: null,
+        age_match: "confirmed",
       },
       { id: "event-2", latitude: null, longitude: "-92.02" },
       { id: "event-3", latitude: "1e9999", longitude: "-92.02" },
     ])
 
-    await expect(service.listMapEvents(CITY.id)).resolves.toEqual([
-      {
-        id: "event-1",
-        title: "Mappable",
-        latitude: 30.22,
-        longitude: -92.02,
-        start_datetime: "2026-08-16T15:00:00+00:00",
-        venue_name: "Library",
-        is_free: true,
-      },
-    ])
-    expect(listMapEvents).toHaveBeenCalledWith({ cityId: CITY.id, limit: 200 })
+    await expect(
+      service.listMapEvents({
+        cityId: CITY.id,
+        range: "weekend",
+        ages: [3],
+        ageMode: "all",
+        includeUnknownAge: false,
+      })
+    ).resolves.toEqual({
+      events: [
+        {
+          id: "event-1",
+          title: "Mappable",
+          latitude: 30.22,
+          longitude: -92.02,
+          start_datetime: "2026-08-16T15:00:00+00:00",
+          timezone: "America/Chicago",
+          venue_name: "Library",
+          is_free: true,
+          admission_cost_state: "free",
+          admission_amount: null,
+          age_match: "confirmed",
+        },
+      ],
+      omitted_without_coordinates: 2,
+    })
+    expect(listMapEvents).toHaveBeenCalledWith({
+      cityId: CITY.id,
+      range: "weekend",
+      now: expect.any(String),
+      ages: [3],
+      ageMode: "all",
+      includeUnknownAge: false,
+      cost: "any",
+    })
   })
 })
 
@@ -339,18 +370,23 @@ describe("ConsumerService.listEvents cursor", () => {
   const QUERY = {
     cityId: null,
     keyword: null,
+    range: "weekend" as const,
     dateFrom: null,
     dateTo: null,
     isFree: null,
-    kidAge: null,
+    ages: [],
+    ageMode: "all" as const,
+    includeUnknownAge: false,
     after: null,
     limit: 3,
   }
 
   it("emits no cursor when the result set exactly fills one page", async () => {
-    const { service, listEvents } = makeService()
+    const { service, discoverEvents } = makeService()
     const rows = [mockRow(0), mockRow(1), mockRow(2)]
-    listEvents.mockImplementation(async (input: { limit: number }) => rows.slice(0, input.limit))
+    discoverEvents.mockImplementation(async (input: { limit: number }) =>
+      rows.slice(0, input.limit)
+    )
 
     const page = await service.listEvents(QUERY, null)
 
@@ -359,9 +395,11 @@ describe("ConsumerService.listEvents cursor", () => {
   })
 
   it("trims the probe row and emits its predecessor's cursor when more rows exist", async () => {
-    const { service, listEvents } = makeService()
+    const { service, discoverEvents } = makeService()
     const rows = [mockRow(0), mockRow(1), mockRow(2), mockRow(3)]
-    listEvents.mockImplementation(async (input: { limit: number }) => rows.slice(0, input.limit))
+    discoverEvents.mockImplementation(async (input: { limit: number }) =>
+      rows.slice(0, input.limit)
+    )
 
     const page = await service.listEvents(QUERY, null)
 
@@ -372,15 +410,15 @@ describe("ConsumerService.listEvents cursor", () => {
     })
   })
 
-  it("probes limit+1 on the search path too", async () => {
-    const { service, listEvents, searchEvents } = makeService()
-    const hits = [mockRow(0), mockRow(1), mockRow(2), mockRow(3)]
-    searchEvents.mockResolvedValue(hits)
-    listEvents.mockResolvedValue(hits.slice(0, 3))
+  it("probes limit+1 with keyword and date filters in the same query", async () => {
+    const { service, discoverEvents } = makeService()
+    discoverEvents.mockResolvedValue([mockRow(0), mockRow(1), mockRow(2), mockRow(3)])
 
     const page = await service.listEvents({ ...QUERY, keyword: "splash" }, null)
 
-    expect(searchEvents).toHaveBeenCalledWith(expect.objectContaining({ limit: 4 }))
+    expect(discoverEvents).toHaveBeenCalledWith(
+      expect.objectContaining({ range: "weekend", keyword: "splash", limit: 4 })
+    )
     expect(page.events).toHaveLength(3)
     expect(page.next_cursor).not.toBeNull()
   })

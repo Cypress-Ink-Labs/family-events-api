@@ -45,6 +45,7 @@ describe("EventsRepository.listEvents", () => {
     await new EventsRepository(db).listEvents()
     expect(query.mock.calls[0]?.[0]).not.toContain("SELECT *")
     expect(query.mock.calls[0]?.[0]).not.toContain("search_vector")
+    expect(query.mock.calls[0]?.[0]).toContain("source_details_fetched_at")
   })
 
   it("re-applies the requested status after event-id hydration", async () => {
@@ -55,15 +56,82 @@ describe("EventsRepository.listEvents", () => {
 })
 
 describe("EventsRepository.listMapEvents", () => {
-  it("filters usable coordinates before applying the map limit", async () => {
+  it("uses the same local range and ended-event predicates as Explore", async () => {
     const { db, query } = makeDb()
-    await new EventsRepository(db).listMapEvents({ cityId: "city-1", limit: 200 })
+    await new EventsRepository(db).listMapEvents({
+      cityId: "city-1",
+      range: "weekend",
+      now: "2026-08-16T15:00:00Z",
+      ages: [],
+      ageMode: "all",
+      includeUnknownAge: false,
+    })
     const [sql, params] = query.mock.calls[0]!
-    expect(sql.indexOf("latitude IS NOT NULL")).toBeLessThan(sql.indexOf("LIMIT"))
-    expect(sql.indexOf("longitude IS NOT NULL")).toBeLessThan(sql.indexOf("LIMIT"))
-    expect(sql).toContain("latitude BETWEEN -90 AND 90")
-    expect(sql).toContain("longitude BETWEEN -180 AND 180")
-    expect(params).toEqual(["city-1", 200])
+    expect(sql).toContain("AT TIME ZONE z.zone")
+    expect(sql).toContain("e.end_datetime IS NULL AND e.start_datetime >= $3")
+    expect(params).toEqual(["city-1", "weekend", "2026-08-16T15:00:00Z", [], "all", false, "any"])
+  })
+
+  it("applies the shared tri-state age predicate before map ordering", async () => {
+    const { db, query } = makeDb()
+    await new EventsRepository(db).listMapEvents({
+      range: "weekend",
+      now: "2026-08-16T15:00:00Z",
+      ages: [2, 7],
+      ageMode: "any",
+      includeUnknownAge: true,
+    })
+    const [sql, params] = query.mock.calls[0]!
+    expect(sql.indexOf("age_min IS NOT NULL AND age_max IS NOT NULL")).toBeLessThan(
+      sql.indexOf("ORDER BY")
+    )
+    expect(sql).toContain("age < age_min")
+    expect(sql).toContain("age > age_max")
+    expect(sql).toContain("AS age_match")
+    expect(params).toEqual([null, "weekend", "2026-08-16T15:00:00Z", [2, 7], "any", true, "any"])
+  })
+})
+
+describe("EventsRepository.discoverEvents", () => {
+  it("filters before the keyset limit and hydrates only matching ids", async () => {
+    const { db, query } = makeDb()
+    await new EventsRepository(db).discoverEvents({
+      range: "weekend",
+      now: "2026-08-16T15:00:00Z",
+      cityId: "city",
+      keyword: "storytime",
+      ages: [2, 7],
+      ageMode: "all",
+      includeUnknownAge: true,
+      limit: 25,
+      after: { startDatetime: "after-start", id: "after-id" },
+    })
+    const [sql, params] = query.mock.calls[0]!
+    expect(sql.indexOf("e.end_datetime")).toBeLessThan(sql.indexOf("LIMIT"))
+    expect(sql.indexOf("age_min IS NOT NULL AND age_max IS NOT NULL")).toBeLessThan(
+      sql.indexOf("LIMIT")
+    )
+    expect(sql).toContain("AT TIME ZONE z.zone")
+    expect(sql).toContain("p_event_ids => ARRAY(SELECT id FROM candidates)")
+    expect(sql).toContain("ee.source_details_fetched_at")
+    expect(sql.indexOf("e.admission_cost_state")).toBeLessThan(sql.indexOf("LIMIT"))
+    expect(params).toEqual([
+      "weekend",
+      "2026-08-16T15:00:00Z",
+      "city",
+      "storytime",
+      null,
+      [2, 7],
+      "all",
+      true,
+      null,
+      null,
+      "after-start",
+      "after-id",
+      25,
+      null,
+      null,
+    ])
   })
 })
 
@@ -91,6 +159,14 @@ describe("EventsRepository.searchEvents", () => {
       null,
       null,
     ])
+  })
+
+  it("does not post-filter the limited legacy RPC result by multi-age criteria", async () => {
+    const { db, query } = makeDb()
+    await new EventsRepository(db).searchEvents()
+    const [sql] = query.mock.calls[0]!
+    expect(sql).toContain("NULL::text AS age_match")
+    expect(sql).not.toContain("unnest(")
   })
 })
 

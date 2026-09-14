@@ -1,5 +1,6 @@
 -- Extracted VERBATIM from family-events-backend migrations for integration tests (U28):
--- - private def: 20260601017000_event_status_enum_and_validate_checks.sql (latest revision)
+-- - private def: family-events-backend
+--   20260902002000_source_details_freshness.sql (latest revision)
 -- - public wrapper: 20260601002000_event_ingestion_admin_foundation.sql
 -- GRANT/REVOKE statements stripped: the bare test database has no anon/
 -- authenticated/service_role roles.
@@ -53,6 +54,8 @@ BEGIN
       NULLIF(elem->>'city_id', '')::uuid        AS city_id,
       NULLIF(elem->>'source_url', '')::text     AS source_url,
       (elem->>'source_name')::text              AS source_name,
+      NULLIF(elem->>'source_details_fetched_at', '')::timestamptz
+                                                   AS source_details_fetched_at,
       COALESCE(elem->'images', '[]'::jsonb)     AS images,
       NULLIF(elem->>'price', '')::numeric       AS price,
       COALESCE((elem->>'is_free')::boolean, false) AS is_free,
@@ -93,7 +96,7 @@ BEGIN
       title, description, start_datetime, end_datetime, timezone,
       venue_name, address, city_id, latitude, longitude,
       price, is_free, is_outdoor,
-      source_url, source_name, source_id,
+      source_url, source_name, source_details_fetched_at, source_id,
       images, status,
       llm_review_status,
       llm_review_decision,
@@ -110,7 +113,7 @@ BEGIN
       s.title, s.description, s.start_datetime, s.end_datetime, s.timezone,
       s.venue_name, s.address, s.city_id, s.latitude, s.longitude,
       s.price, s.is_free, s.is_outdoor,
-      s.source_url, s.source_name, p_source_id,
+      s.source_url, s.source_name, s.source_details_fetched_at, p_source_id,
       s.images,
       CASE
         WHEN v_processing_mode = 'auto_approve'::public.event_processing_mode THEN 'published'::public.event_status
@@ -165,6 +168,7 @@ BEGIN
       source_url     = CASE WHEN 'source_url'     = ANY(e.admin_locked_fields) THEN e.source_url     ELSE t.source_url     END,
       source_name    = CASE WHEN 'source_name'    = ANY(e.admin_locked_fields) THEN e.source_name    ELSE t.source_name    END,
       source_id      = CASE WHEN 'source_id'      = ANY(e.admin_locked_fields) THEN e.source_id      ELSE p_source_id      END,
+      source_details_fetched_at = t.source_details_fetched_at,
       images         = CASE WHEN 'images'         = ANY(e.admin_locked_fields) THEN e.images         ELSE t.images         END,
       price          = CASE WHEN 'price'          = ANY(e.admin_locked_fields) THEN e.price          ELSE t.price          END,
       is_free        = CASE WHEN 'is_free'        = ANY(e.admin_locked_fields) THEN e.is_free        ELSE t.is_free        END,

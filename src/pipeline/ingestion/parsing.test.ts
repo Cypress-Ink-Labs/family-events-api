@@ -5,6 +5,7 @@ import {
   cleanDescription,
   decodeHtml,
   dedupKey,
+  extractAdmissionCost,
   extractPrice,
   isoCalendarComponentsValid,
   parseIcalDate,
@@ -188,10 +189,10 @@ describe("extractPrice", () => {
     })
   })
 
-  it("detects complimentary", () => {
+  it("does not treat a complimentary item as no-charge admission", () => {
     expect(extractPrice("Complimentary snacks provided")).toEqual({
       price: null,
-      isFree: true,
+      isFree: false,
     })
   })
 
@@ -223,6 +224,31 @@ describe("extractPrice", () => {
       isFree: false,
     })
     expect(extractPrice("This event isn't free")).toEqual({ price: null, isFree: false })
+  })
+})
+
+describe("extractAdmissionCost", () => {
+  it("requires admission evidence and keeps the amount independently nullable", () => {
+    expect(extractAdmissionCost("Free admission for every family")).toEqual({
+      state: "free",
+      amount: null,
+      evidence: "Free admission",
+    })
+    expect(extractAdmissionCost("Admission fee applies; see source for amount")).toEqual({
+      state: "paid",
+      amount: null,
+      evidence: "Admission fee",
+    })
+    expect(extractAdmissionCost("Tickets are $12.50")).toEqual({
+      state: "paid",
+      amount: 12.5,
+      evidence: "$12.50",
+    })
+    expect(extractAdmissionCost("See source for details")).toEqual({
+      state: "unknown",
+      amount: null,
+      evidence: null,
+    })
   })
 })
 

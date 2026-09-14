@@ -2,30 +2,55 @@ import { BadRequestException } from "@nestjs/common"
 import { z } from "zod"
 
 import type { EventCursor } from "../data/types.js"
+import type { DiscoveryRange } from "../data/types.js"
+import type { AdmissionCostFilter } from "../data/types.js"
 import { decodeCursor } from "./cursor.js"
 
+export const MAX_CHILD_AGE = 17
+export const MAX_CHILDREN = 10
+export type AgeMode = "all" | "any"
+
 const integerString = z.string().regex(/^\d+$/)
+const discoveryRange = z.enum(["today", "weekend", "upcoming"])
 const querySchema = z.strictObject({
   city_id: z.uuid().optional(),
   keyword: z.string().trim().min(1).max(100).optional(), // legacy events-api capped keyword at 100
+  range: discoveryRange.optional(),
   date_from: z.iso.datetime({ offset: true }).optional(),
   date_to: z.iso.datetime({ offset: true }).optional(),
   is_free: z.enum(["true", "false"]).optional(),
+  cost: z.enum(["any", "free", "paid", "unknown"]).optional(),
   kid_age: integerString.optional(),
+  ages: z
+    .string()
+    .regex(/^\d+(,\d+)*$/)
+    .optional(),
+  age_mode: z.enum(["all", "any"]).optional(),
+  include_unknown_age: z.enum(["true", "false"]).optional(),
   cursor: z.string().min(1).optional(),
   limit: integerString.optional(),
 })
 const eventIdSchema = z.uuid()
 
+export interface AgeQuery {
+  ages: number[]
+  ageMode: AgeMode
+  includeUnknownAge: boolean
+}
+
 export interface ExploreQuery {
   cityId: string | null
   keyword: string | null
+  range: DiscoveryRange | null
   dateFrom: string | null
   dateTo: string | null
   isFree: boolean | null
-  kidAge: number | null
+  cost?: AdmissionCostFilter
   after: EventCursor | null
   limit: number
+  ages: number[]
+  ageMode: AgeMode
+  includeUnknownAge: boolean
 }
 
 export function parseExploreQuery(query: unknown): ExploreQuery {
@@ -35,25 +60,32 @@ export function parseExploreQuery(query: unknown): ExploreQuery {
   }
 
   const limit = result.data.limit === undefined ? 24 : Number(result.data.limit)
-  const kidAge = result.data.kid_age === undefined ? null : Number(result.data.kid_age)
-  if (
-    limit < 1 ||
-    limit > 100 ||
-    !Number.isSafeInteger(limit) ||
-    (kidAge !== null && !Number.isSafeInteger(kidAge))
-  ) {
+  if (limit < 1 || limit > 100 || !Number.isSafeInteger(limit)) {
     throw new BadRequestException("invalid query parameters")
   }
+  const ageQuery = parseAgeQuery(result.data)
+  if (result.data.cost !== undefined && result.data.is_free !== undefined) {
+    throw new BadRequestException("cost cannot be combined with is_free")
+  }
+  if (
+    result.data.range !== undefined &&
+    (result.data.date_from !== undefined || result.data.date_to !== undefined)
+  ) {
+    throw new BadRequestException("range cannot be combined with date_from or date_to")
+  }
+  const usesExplicitDates = result.data.date_from !== undefined || result.data.date_to !== undefined
 
   return {
     cityId: result.data.city_id ?? null,
     keyword: result.data.keyword ?? null,
+    range: usesExplicitDates ? null : (result.data.range ?? "weekend"),
     dateFrom: result.data.date_from ?? null,
     dateTo: result.data.date_to ?? null,
     isFree: result.data.is_free === undefined ? null : result.data.is_free === "true",
-    kidAge,
+    cost: result.data.cost ?? "any",
     after: result.data.cursor === undefined ? null : decodeCursor(result.data.cursor),
     limit,
+    ...ageQuery,
   }
 }
 
@@ -64,10 +96,20 @@ const planQuerySchema = z.strictObject({
 
 const mapQuerySchema = z.strictObject({
   city_id: z.uuid().optional(),
+  range: discoveryRange.optional(),
+  ages: z
+    .string()
+    .regex(/^\d+(,\d+)*$/)
+    .optional(),
+  age_mode: z.enum(["all", "any"]).optional(),
+  include_unknown_age: z.enum(["true", "false"]).optional(),
+  cost: z.enum(["any", "free", "paid", "unknown"]).optional(),
 })
 
-export interface MapQuery {
+export interface MapQuery extends AgeQuery {
   cityId: string | null
+  range: DiscoveryRange
+  cost?: AdmissionCostFilter
 }
 
 export function parseMapQuery(query: unknown): MapQuery {
@@ -75,7 +117,12 @@ export function parseMapQuery(query: unknown): MapQuery {
   if (!result.success) {
     throw new BadRequestException("invalid query parameters")
   }
-  return { cityId: result.data.city_id ?? null }
+  return {
+    cityId: result.data.city_id ?? null,
+    range: result.data.range ?? "weekend",
+    cost: result.data.cost ?? "any",
+    ...parseAgeQuery(result.data),
+  }
 }
 
 export interface PlanQuery {
@@ -102,4 +149,41 @@ export function parseEventId(id: string): string {
   const result = eventIdSchema.safeParse(id)
   if (!result.success) throw new BadRequestException("invalid event id")
   return result.data
+}
+
+function parseAgeQuery(input: {
+  ages?: string
+  kid_age?: string
+  age_mode?: AgeMode
+  include_unknown_age?: "true" | "false"
+}): AgeQuery {
+  if (input.ages !== undefined && input.kid_age !== undefined) {
+    throw new BadRequestException("invalid query parameters")
+  }
+
+  const rawAges =
+    input.ages !== undefined
+      ? input.ages.split(",")
+      : input.kid_age !== undefined
+        ? [input.kid_age]
+        : []
+  const ages = rawAges.map(Number)
+  const hasInvalidAge = ages.some(
+    (age) => !Number.isSafeInteger(age) || age < 0 || age > MAX_CHILD_AGE
+  )
+  if (hasInvalidAge || ages.length > MAX_CHILDREN || new Set(ages).size !== ages.length) {
+    throw new BadRequestException("invalid query parameters")
+  }
+  if (
+    ages.length === 0 &&
+    (input.age_mode !== undefined || input.include_unknown_age !== undefined)
+  ) {
+    throw new BadRequestException("invalid query parameters")
+  }
+
+  return {
+    ages,
+    ageMode: input.age_mode ?? "all",
+    includeUnknownAge: input.include_unknown_age === "true",
+  }
 }

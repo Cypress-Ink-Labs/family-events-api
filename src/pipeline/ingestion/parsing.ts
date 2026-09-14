@@ -215,37 +215,49 @@ export function cleanDescription(value: string | null | undefined): string {
   return stripHtml(stripShortcodes(value))
 }
 
+export interface AdmissionCostExtraction {
+  state: "free" | "paid" | "unknown"
+  amount: number | null
+  evidence: string | null
+}
+
+export function extractAdmissionCost(text: string): AdmissionCostExtraction {
+  const freePatterns = [
+    /\bfree admission\b/i,
+    /^free\b/i,
+    /\badmission (?:is )?free\b/i,
+    /\bfree event\b/i,
+    /\bno (?:admission )?(?:cost|charge)\b/i,
+    /\bno cost to attend\b/i,
+    /\bfree and open to (?:the )?public\b/i,
+  ]
+  for (const pattern of freePatterns) {
+    const match = text.match(pattern)
+    if (match) return { state: "free", amount: null, evidence: match[0] }
+  }
+
+  const amountMatch = text.match(/\$\s*(\d+(?:\.\d{1,2})?)/)
+  if (amountMatch) {
+    return { state: "paid", amount: Number(amountMatch[1]), evidence: amountMatch[0] }
+  }
+
+  const paidPatterns = [
+    /\bpaid admission\b/i,
+    /\b(?:admission|entry|registration) fee\b/i,
+    /\b(?:admission|cost|price) varies\b/i,
+    /\bfees? appl(?:y|ies)\b/i,
+    /\b(?:not|isn'?t|no longer) free\b/i,
+  ]
+  for (const pattern of paidPatterns) {
+    const match = text.match(pattern)
+    if (match) return { state: "paid", amount: null, evidence: match[0] }
+  }
+  return { state: "unknown", amount: null, evidence: null }
+}
+
 export function extractPrice(text: string): { price: number | null; isFree: boolean } {
-  const lower = text.toLowerCase()
-
-  const priceMatch = text.match(/\$\s*(\d+(?:\.\d{1,2})?)/)
-
-  // Negated "free" wording is not free admission; when a dollar amount is
-  // present it wins, otherwise fall through as unknown price.
-  const negatedFreePatterns = [/\bnot\s+free\b/, /\bisn'?t\s+free\b/, /\bno\s+longer\s+free\b/]
-  const negatedFree = negatedFreePatterns.some((pattern) => pattern.test(lower))
-
-  if (!negatedFree) {
-    const freePatterns = [
-      /\bfree\b/,
-      /\bno cost\b/,
-      /\bno charge\b/,
-      /\bcomplimentary\b/,
-      /\bfree admission\b/,
-      /\bfree event\b/,
-    ]
-    for (const pattern of freePatterns) {
-      if (pattern.test(lower)) {
-        return { price: null, isFree: true }
-      }
-    }
-  }
-
-  if (priceMatch) {
-    return { price: Number(priceMatch[1]), isFree: false }
-  }
-
-  return { price: null, isFree: false }
+  const admission = extractAdmissionCost(text)
+  return { price: admission.amount, isFree: admission.state === "free" }
 }
 
 /**

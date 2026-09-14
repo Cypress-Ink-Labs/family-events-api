@@ -58,6 +58,9 @@ export interface ParsedEvent {
   images: string[]
   price: number | null
   isFree: boolean
+  admissionCostState?: "free" | "paid" | "unknown"
+  admissionAmount?: number | null
+  admissionCostEvidence?: string | null
 }
 
 export interface SourceResult {

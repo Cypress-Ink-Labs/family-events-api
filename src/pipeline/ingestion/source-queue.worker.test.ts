@@ -335,6 +335,7 @@ describe("processSourceQueueRow", () => {
 
   it("schedules retry when parser fetch fails", async () => {
     const db = new FakeQueueDb()
+    let importCalls = 0
 
     const result = await processSourceQueueRow(
       db,
@@ -343,10 +344,15 @@ describe("processSourceQueueRow", () => {
         parser: parser({
           fetchArtifact: () => Promise.reject(new Error("fetch failed")),
         }),
+        importParsedSourceEvents: () => {
+          importCalls += 1
+          throw new Error("failed retrieval must not reach listing import")
+        },
       })
     )
 
     expect(result).toEqual({ outcome: "retry", imported: 0 })
+    expect(importCalls).toBe(0)
     expect(db.traces.at(-1)?.status).toBe("error")
     expect(db.runErrors.at(-1)?.error).toBe("fetch failed")
     expect(db.retries.at(-1)).toEqual({ queueId: 42, attemptCount: 1, error: "fetch failed" })

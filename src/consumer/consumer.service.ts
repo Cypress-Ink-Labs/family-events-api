@@ -19,7 +19,7 @@ import type {
 } from "../data/types.js"
 import { zonedDayStartUtc } from "../pipeline/zoned-time.js"
 import { encodeCursor } from "./cursor.js"
-import type { ExploreQuery, PlanQuery } from "./consumer.query.js"
+import type { ExploreQuery, MapQuery, PlanQuery } from "./consumer.query.js"
 import { WeatherService } from "./weather.service.js"
 
 const PLAN_LIMIT = 5
@@ -54,8 +54,12 @@ export interface MapEvent {
   latitude: number
   longitude: number
   start_datetime: string
+  timezone: string | null
   venue_name: string | null
   is_free: boolean
+  admission_cost_state: "free" | "paid" | "unknown"
+  admission_amount: string | null
+  age_match: "confirmed" | "unknown" | null
 }
 
 function toPublicEventComment(comment: EventComment): PublicEventComment {
@@ -91,55 +95,29 @@ export class ConsumerService {
   }
 
   async listEvents(input: ExploreQuery, userKey: string | null): Promise<EventsPage> {
-    const usesSearch = input.keyword !== null || input.isFree !== null || input.kidAge !== null
     // Probe one row past the limit so next_cursor is emitted only when a next
     // page actually exists (an exactly-full last page must not advertise an
     // empty one). Same pattern as the legacy events-api edge function.
     const probeLimit = input.limit + 1
-    let events: EnrichedEvent[]
-    let hasMore: boolean
-
-    if (usesSearch) {
-      const hits = await this.eventsRepository.searchEvents({
-        keyword: input.keyword,
-        cityId: input.cityId,
-        dateFrom: input.dateFrom,
-        dateTo: input.dateTo,
-        isFree: input.isFree,
-        ageMin: input.kidAge,
-        ageMax: input.kidAge,
-        limit: probeLimit,
-        after: input.after,
-      })
-      hasMore = hits.length > input.limit
-      const pageHits = hasMore ? hits.slice(0, input.limit) : hits
-      events =
-        pageHits.length === 0
-          ? []
-          : await this.eventsRepository.listEvents({
-              eventIds: pageHits.map((hit) => hit.id),
-              userKey,
-              limit: input.limit,
-            })
-      const order = new Map(pageHits.map((hit, index) => [hit.id, index]))
-      events.sort(
-        (left, right) =>
-          (order.get(left.id) ?? Number.MAX_SAFE_INTEGER) -
-          (order.get(right.id) ?? Number.MAX_SAFE_INTEGER)
-      )
-    } else {
-      events = await this.eventsRepository.listEvents({
-        cityId: input.cityId,
-        dateFrom: input.dateFrom,
-        dateTo: input.dateTo,
-        userKey,
-        limit: probeLimit,
-        after: input.after,
-      })
-      hasMore = events.length > input.limit
-      if (hasMore) {
-        events = events.slice(0, input.limit)
-      }
+    let events = await this.eventsRepository.discoverEvents({
+      range: input.range,
+      now: new Date().toISOString(),
+      cityId: input.cityId,
+      keyword: input.keyword,
+      cost: input.cost ?? "any",
+      isFree: input.isFree,
+      dateFrom: input.dateFrom,
+      dateTo: input.dateTo,
+      ages: input.ages,
+      ageMode: input.ageMode,
+      includeUnknownAge: input.includeUnknownAge,
+      userKey,
+      limit: probeLimit,
+      after: input.after,
+    })
+    const hasMore = events.length > input.limit
+    if (hasMore) {
+      events = events.slice(0, input.limit)
     }
 
     const last = events.at(-1)
@@ -187,25 +165,57 @@ export class ConsumerService {
     }
   }
 
-  async listMapEvents(cityId: string | null): Promise<MapEvent[]> {
-    const events = await this.eventsRepository.listMapEvents({ cityId, limit: MAP_LIMIT })
+  async listMapEvents(input: MapQuery): Promise<{
+    events: MapEvent[]
+    omitted_without_coordinates: number
+  }> {
+    const events = await this.eventsRepository.listMapEvents({
+      cityId: input.cityId,
+      range: input.range,
+      now: new Date().toISOString(),
+      ages: input.ages,
+      ageMode: input.ageMode,
+      includeUnknownAge: input.includeUnknownAge,
+      cost: input.cost ?? "any",
+    })
     const mapped: MapEvent[] = []
+    let omittedWithoutCoordinates = 0
     for (const event of events) {
-      if (event.latitude === null || event.longitude === null) continue
+      if (event.latitude === null || event.longitude === null) {
+        omittedWithoutCoordinates += 1
+        continue
+      }
       const latitude = Number(event.latitude)
       const longitude = Number(event.longitude)
-      if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) continue
+      if (
+        !Number.isFinite(latitude) ||
+        !Number.isFinite(longitude) ||
+        latitude < -90 ||
+        latitude > 90 ||
+        longitude < -180 ||
+        longitude > 180
+      ) {
+        omittedWithoutCoordinates += 1
+        continue
+      }
       mapped.push({
         id: event.id,
         title: event.title,
         latitude,
         longitude,
         start_datetime: event.start_datetime,
+        timezone: event.timezone,
         venue_name: event.venue_name,
         is_free: event.is_free,
+        admission_cost_state: event.admission_cost_state,
+        admission_amount: event.admission_amount,
+        age_match: event.age_match,
       })
     }
-    return mapped
+    return {
+      events: mapped.slice(0, MAP_LIMIT),
+      omitted_without_coordinates: omittedWithoutCoordinates,
+    }
   }
 
   async listFavoriteEvents(userKey: string): Promise<EnrichedEvent[]> {

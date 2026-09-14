@@ -26,6 +26,9 @@ export interface AdminEditableEventRow {
   age_max: number | null
   price: string | null
   is_free: boolean
+  admission_cost_state: "free" | "paid" | "unknown"
+  admission_amount: string | null
+  admission_cost_evidence: string | null
   is_outdoor: boolean | null
   source_url: string | null
   source_name: string | null
@@ -62,6 +65,7 @@ export interface AdminEventEditorDetail {
 const EVENT_SQL = `
 SELECT id, title, description, start_datetime, end_datetime, timezone, venue_name,
        address, city_id, latitude, longitude, age_min, age_max, price, is_free,
+       admission_cost_state, admission_amount, admission_cost_evidence,
        is_outdoor, source_url, source_name, source_id, images, status,
        recurrence_info, is_featured, admin_locked_fields, admin_last_edited_at,
        admin_last_edited_by, created_at, updated_at
@@ -99,6 +103,13 @@ export function toDatabaseEventPatch(patch: AdminEventPatch): Record<string, unk
     ...(patch.ageMax !== undefined ? { age_max: patch.ageMax } : {}),
     ...(patch.price !== undefined ? { price: patch.price } : {}),
     ...(patch.isFree !== undefined ? { is_free: patch.isFree } : {}),
+    ...(patch.admissionCostState !== undefined
+      ? { admission_cost_state: patch.admissionCostState }
+      : {}),
+    ...(patch.admissionAmount !== undefined ? { admission_amount: patch.admissionAmount } : {}),
+    ...(patch.admissionCostEvidence !== undefined
+      ? { admission_cost_evidence: patch.admissionCostEvidence }
+      : {}),
     ...(patch.isOutdoor !== undefined ? { is_outdoor: patch.isOutdoor } : {}),
     ...(patch.sourceUrl !== undefined ? { source_url: patch.sourceUrl } : {}),
     ...(patch.sourceName !== undefined ? { source_name: patch.sourceName } : {}),

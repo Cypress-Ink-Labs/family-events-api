@@ -89,6 +89,15 @@ export class AdminEditableEventDto {
   @ApiProperty()
   is_free!: boolean
 
+  @ApiProperty({ enum: ["free", "paid", "unknown"] })
+  admission_cost_state!: "free" | "paid" | "unknown"
+
+  @ApiProperty({ type: String, nullable: true, description: "Exact PostgreSQL numeric string" })
+  admission_amount!: string | null
+
+  @ApiProperty({ type: String, nullable: true, maxLength: 2000 })
+  admission_cost_evidence!: string | null
+
   @ApiProperty({ type: Boolean, nullable: true })
   is_outdoor!: boolean | null
 
@@ -185,6 +194,14 @@ export const ADMIN_EVENT_UPDATE_BODY_SCHEMA: RequestBodySchema = {
         age_max: { type: "integer", minimum: 0, nullable: true },
         price: { type: "number", minimum: 0, maximum: 99_999_999.99, nullable: true },
         is_free: { type: "boolean" },
+        admission_cost_state: { type: "string", enum: ["free", "paid", "unknown"] },
+        admission_amount: {
+          type: "number",
+          minimum: 0,
+          maximum: 99_999_999.99,
+          nullable: true,
+        },
+        admission_cost_evidence: NULLABLE_STRING(2_000),
         is_outdoor: { type: "boolean", nullable: true },
         source_url: {
           type: "string",

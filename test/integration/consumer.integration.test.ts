@@ -5,7 +5,7 @@ import { type INestApplication } from "@nestjs/common"
 import { ConfigModule } from "@nestjs/config"
 import { Test } from "@nestjs/testing"
 import request from "supertest"
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest"
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { AuthModule } from "../../src/auth/auth.module.js"
 import { PgExceptionFilter } from "../../src/common/pg-exception.filter.js"
@@ -65,7 +65,7 @@ describe("consumer read HTTP API", () => {
     await ensureCatalogSchema(db)
     await ensureConsumerSimilaritySchema(db)
     await db.query("CREATE SCHEMA IF NOT EXISTS auth")
-    await db.query("CREATE TABLE IF NOT EXISTS auth.users (id uuid PRIMARY KEY)")
+    await db.query("CREATE TABLE IF NOT EXISTS auth.users (id uuid PRIMARY KEY, email text)")
     await db.query(`CREATE TABLE IF NOT EXISTS public.clerk_user_mapping (
       clerk_user_id text PRIMARY KEY,
       supabase_uuid uuid NOT NULL UNIQUE REFERENCES auth.users (id) ON DELETE CASCADE,
@@ -79,6 +79,8 @@ describe("consumer read HTTP API", () => {
   })
 
   beforeEach(async () => {
+    vi.useFakeTimers({ toFake: ["Date"] })
+    vi.setSystemTime(new Date("2026-08-14T17:00:00.000Z"))
     vi.mocked(verifyToken).mockClear()
     await truncateCatalog(db)
     await db.query("TRUNCATE public.clerk_user_mapping, auth.users CASCADE")
@@ -94,7 +96,11 @@ describe("consumer read HTTP API", () => {
        ($1, 'Outdoor', 'outdoor', '#222222'), ($2, 'Free', 'free', '#111111')`,
       [TAG_OUTDOOR, TAG_FREE]
     )
-    await db.query("INSERT INTO auth.users (id) VALUES ($1), ($2)", [USER_READER, USER_OTHER])
+    await db.query(
+      `INSERT INTO auth.users (id, email) VALUES
+       ($1, 'reader@example.com'), ($2, 'other@example.com')`,
+      [USER_READER, USER_OTHER]
+    )
     await db.query(
       `INSERT INTO public.clerk_user_mapping
        (clerk_user_id, supabase_uuid, email, role) VALUES
@@ -114,32 +120,57 @@ describe("consumer read HTTP API", () => {
     await app.close()
   })
 
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
   async function insertEvent(input: {
     title: string
     description?: string
     start?: string
+    end?: string | null
+    timezone?: string
     cityId?: string
     latitude?: number | null
     longitude?: number | null
     status?: "draft" | "published"
     isFree?: boolean
+    admissionCostState?: "free" | "paid" | "unknown"
+    admissionAmount?: number | null
+    admissionCostEvidence?: string | null
+    ageMin?: number | null
+    ageMax?: number | null
   }): Promise<string> {
     const id = randomUUID()
+    const admissionCostState =
+      input.admissionCostState ?? (input.isFree === false ? "unknown" : "free")
+    const admissionCostEvidence =
+      input.admissionCostEvidence ?? (admissionCostState === "unknown" ? null : "Free admission")
     await db.query(
       `INSERT INTO public.events (
-         id, title, description, start_datetime, timezone, city_id,
-         latitude, longitude, is_free, status
-       ) VALUES ($1, $2, $3, $4, 'America/Chicago', $5, $6, $7, $8, $9)`,
+         id, title, description, start_datetime, end_datetime, timezone, city_id,
+         latitude, longitude, is_free, status, age_min, age_max,
+         admission_cost_state, admission_amount, admission_cost_evidence
+       ) VALUES (
+         $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16
+       )`,
       [
         id,
         input.title,
         input.description ?? null,
         input.start ?? "2026-08-16T15:00:00+00:00",
+        input.end ?? null,
+        input.timezone ?? "America/Chicago",
         input.cityId ?? CITY,
         input.latitude ?? null,
         input.longitude ?? null,
         input.isFree ?? true,
         input.status ?? "published",
+        input.ageMin ?? null,
+        input.ageMax ?? null,
+        admissionCostState,
+        input.admissionAmount ?? null,
+        admissionCostEvidence,
       ]
     )
     return id
@@ -165,23 +196,91 @@ describe("consumer read HTTP API", () => {
 
     const page1 = await request(app.getHttpServer())
       .get("/v1/events")
-      .query({ limit: 1 })
+      .query({ range: "upcoming", limit: 1 })
       .expect(200)
     expect(page1.body.events.map((event: { id: string }) => event.id)).toEqual([first])
     expect(page1.body.next_cursor).toEqual(expect.any(String))
 
     const page2 = await request(app.getHttpServer())
       .get("/v1/events")
-      .query({ limit: 1, cursor: page1.body.next_cursor })
+      .query({ range: "upcoming", limit: 1, cursor: page1.body.next_cursor })
       .expect(200)
     expect(page2.body.events.map((event: { id: string }) => event.id)).toEqual([second])
   })
 
+  it("keeps weekend, city, age, and cost filters stable across pagination and Map", async () => {
+    const first = await insertEvent({
+      title: "Combined first",
+      start: "2026-08-15T15:00:00+00:00",
+      cityId: CITY,
+      ageMin: 2,
+      ageMax: 7,
+      latitude: 30.2,
+      longitude: -92,
+    })
+    const second = await insertEvent({
+      title: "Combined second",
+      start: "2026-08-16T15:00:00+00:00",
+      cityId: CITY,
+      ageMin: 1,
+      ageMax: 8,
+      latitude: 30.3,
+      longitude: -92,
+    })
+    await insertEvent({
+      title: "Wrong age",
+      start: "2026-08-15T16:00:00+00:00",
+      cityId: CITY,
+      ageMin: 8,
+      ageMax: 12,
+      latitude: 30.4,
+      longitude: -92,
+    })
+    await insertEvent({
+      title: "Wrong city",
+      start: "2026-08-15T17:00:00+00:00",
+      cityId: OTHER_CITY,
+      ageMin: 2,
+      ageMax: 7,
+      latitude: 30.5,
+      longitude: -91,
+    })
+    await insertEvent({
+      title: "Wrong cost",
+      start: "2026-08-15T18:00:00+00:00",
+      cityId: CITY,
+      ageMin: 2,
+      ageMax: 7,
+      latitude: 30.6,
+      longitude: -92,
+      isFree: false,
+      admissionCostState: "paid",
+      admissionCostEvidence: "Admission fee applies",
+    })
+
+    const query = { range: "weekend", city_id: CITY, ages: "2,7", cost: "free", limit: 1 }
+    const page1 = await request(app.getHttpServer()).get("/v1/events").query(query).expect(200)
+    const page2 = await request(app.getHttpServer())
+      .get("/v1/events")
+      .query({ ...query, cursor: page1.body.next_cursor })
+      .expect(200)
+    expect(page1.body.events.map((event: { id: string }) => event.id)).toEqual([first])
+    expect(page2.body.events.map((event: { id: string }) => event.id)).toEqual([second])
+    expect(page2.body.next_cursor).toBeNull()
+
+    const map = await request(app.getHttpServer())
+      .get("/v1/events/map")
+      .query({ range: "weekend", city_id: CITY, ages: "2,7", cost: "free" })
+      .expect(200)
+    expect(map.body.events.map((event: { id: string }) => event.id)).toEqual([first, second])
+    expect(map.body.omitted_without_coordinates).toBe(0)
+  })
+
   it("returns no next_cursor when the page exactly fills the limit", async () => {
     for (let i = 0; i < 3; i++) {
-      await insertEvent({ title: `Boundary event ${i}`, start: `2026-08-1${i + 1}T15:00:00+00:00` })
+      await insertEvent({ title: `Boundary event ${i}`, start: `2026-08-1${i + 5}T15:00:00+00:00` })
     }
-    const res = await request(app.getHttpServer()).get("/v1/events?limit=3")
+    const res = await request(app.getHttpServer()).get("/v1/events?range=upcoming&limit=3")
     expect(res.status).toBe(200)
     expect(res.body.events).toHaveLength(3)
     expect(res.body.next_cursor).toBeNull()
@@ -196,7 +295,7 @@ describe("consumer read HTTP API", () => {
 
     const response = await request(app.getHttpServer())
       .get("/v1/events")
-      .query({ keyword: "storytime library" })
+      .query({ range: "upcoming", keyword: "storytime library" })
       .expect(200)
 
     expect(response.body.events.map((event: { id: string }) => event.id)).toEqual([match])
@@ -207,6 +306,169 @@ describe("consumer read HTTP API", () => {
     })
   })
 
+  it("matches multiple ages with inclusive all/any and explicit unknown semantics", async () => {
+    const exact = await insertEvent({ title: "Inclusive 2 to 7", ageMin: 2, ageMax: 7 })
+    const younger = await insertEvent({ title: "Young children", ageMin: 2, ageMax: 4 })
+    const older = await insertEvent({ title: "Older children", ageMin: 7, ageMax: 10 })
+    const partial = await insertEvent({ title: "Partial lower bound", ageMin: 5, ageMax: null })
+    const unknown = await insertEvent({ title: "No age evidence" })
+    const mismatch = await insertEvent({ title: "Known mismatch", ageMin: 8, ageMax: 10 })
+
+    const all = await request(app.getHttpServer())
+      .get("/v1/events")
+      .query({ ages: "2,7" })
+      .expect(200)
+    expect(all.body.events.map((event: { id: string }) => event.id)).toEqual([exact])
+    expect(all.body.events[0].age_match).toBe("confirmed")
+
+    const any = await request(app.getHttpServer())
+      .get("/v1/events")
+      .query({ ages: "2,7", age_mode: "any" })
+      .expect(200)
+    const anyIds = any.body.events.map((event: { id: string }) => event.id)
+    expect(anyIds).toHaveLength(3)
+    expect(anyIds).toEqual(expect.arrayContaining([exact, younger, older]))
+
+    const allWithUnknown = await request(app.getHttpServer())
+      .get("/v1/events")
+      .query({ ages: "2,7", include_unknown_age: "true" })
+      .expect(200)
+    const allUnknownIds = allWithUnknown.body.events.map((event: { id: string }) => event.id)
+    expect(allUnknownIds).toHaveLength(2)
+    expect(allUnknownIds).toEqual(expect.arrayContaining([exact, unknown]))
+    expect(
+      allWithUnknown.body.events.find((event: { id: string }) => event.id === unknown)
+    ).toMatchObject({ age_match: "unknown" })
+
+    const anyWithUnknown = await request(app.getHttpServer())
+      .get("/v1/events")
+      .query({ ages: "2,7", age_mode: "any", include_unknown_age: "true" })
+      .expect(200)
+    const anyUnknownIds = anyWithUnknown.body.events.map((event: { id: string }) => event.id)
+    expect(anyUnknownIds).toContain(partial)
+    expect(anyUnknownIds).toContain(unknown)
+    expect(anyUnknownIds).not.toContain(mismatch)
+  })
+
+  it("applies the same age query to mappable events", async () => {
+    const match = await insertEvent({
+      title: "Mappable match",
+      ageMin: 2,
+      ageMax: 7,
+      latitude: 30.2,
+      longitude: -92,
+    })
+    await insertEvent({
+      title: "Mappable mismatch",
+      ageMin: 8,
+      ageMax: 10,
+      latitude: 30.3,
+      longitude: -92,
+    })
+
+    const response = await request(app.getHttpServer())
+      .get("/v1/events/map")
+      .query({ ages: "2,7" })
+      .expect(200)
+    expect(response.body.events.map((event: { id: string }) => event.id)).toEqual([match])
+    expect(response.body.events[0].age_match).toBe("confirmed")
+  })
+
+  it("evaluates Sunday/Monday boundaries in each event's local timezone", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] })
+    vi.setSystemTime(new Date("2026-08-17T04:30:00.000Z"))
+    const chicagoSunday = await insertEvent({
+      title: "Chicago Sunday night",
+      start: "2026-08-17T04:00:00Z",
+      end: "2026-08-17T06:00:00Z",
+      timezone: "America/Chicago",
+    })
+    const newYorkOldWeekend = await insertEvent({
+      title: "New York old weekend",
+      start: "2026-08-16T16:00:00Z",
+      end: "2026-08-22T16:00:00Z",
+      timezone: "America/New_York",
+      cityId: OTHER_CITY,
+    })
+    const newYorkNextWeekend = await insertEvent({
+      title: "New York next weekend",
+      start: "2026-08-21T16:00:00Z",
+      timezone: "America/New_York",
+      cityId: OTHER_CITY,
+    })
+
+    const response = await request(app.getHttpServer()).get("/v1/events").expect(200)
+    const ids = response.body.events.map((event: { id: string }) => event.id)
+    expect(ids).toContain(chicagoSunday)
+    expect(ids).toContain(newYorkNextWeekend)
+    expect(ids).not.toContain(newYorkOldWeekend)
+  })
+
+  it("keeps the spring-forward Sunday in the local Friday–Sunday weekend", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] })
+    vi.setSystemTime(new Date("2026-03-08T06:30:00.000Z"))
+    const lateSunday = await insertEvent({
+      title: "DST Sunday evening",
+      start: "2026-03-09T03:30:00Z",
+      timezone: "America/Chicago",
+    })
+
+    const response = await request(app.getHttpServer()).get("/v1/events").expect(200)
+    expect(response.body.events.map((event: { id: string }) => event.id)).toContain(lateSunday)
+  })
+
+  it("excludes ended and passed unknown-end events without hiding their detail", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] })
+    vi.setSystemTime(new Date("2026-08-16T17:00:00.000Z"))
+    const ended = await insertEvent({
+      title: "Already ended",
+      start: "2026-08-16T14:00:00Z",
+      end: "2026-08-16T16:00:00Z",
+    })
+    const ongoing = await insertEvent({
+      title: "Still underway",
+      start: "2026-08-16T14:00:00Z",
+      end: "2026-08-16T18:00:00Z",
+    })
+    const unknownPassed = await insertEvent({
+      title: "Unknown end, start passed",
+      start: "2026-08-16T16:00:00Z",
+      end: null,
+    })
+    const unknownFuture = await insertEvent({
+      title: "Unknown end, not started",
+      start: "2026-08-16T18:00:00Z",
+      end: null,
+    })
+
+    const response = await request(app.getHttpServer()).get("/v1/events").expect(200)
+    const ids = response.body.events.map((event: { id: string }) => event.id)
+    expect(ids).toEqual([ongoing, unknownFuture])
+    expect(ids).not.toContain(ended)
+    expect(ids).not.toContain(unknownPassed)
+
+    const detail = await request(app.getHttpServer()).get(`/v1/events/${unknownPassed}`).expect(200)
+    expect(detail.body).toMatchObject({ id: unknownPassed, end_datetime: null })
+  })
+
+  it("does not substitute upcoming events for an empty weekend", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] })
+    vi.setSystemTime(new Date("2026-08-12T17:00:00.000Z"))
+    const tuesday = await insertEvent({
+      title: "Next Tuesday",
+      start: "2026-08-18T15:00:00Z",
+    })
+
+    const weekend = await request(app.getHttpServer()).get("/v1/events").expect(200)
+    expect(weekend.body).toEqual({ events: [], next_cursor: null })
+
+    const upcoming = await request(app.getHttpServer())
+      .get("/v1/events")
+      .query({ range: "upcoming" })
+      .expect(200)
+    expect(upcoming.body.events.map((event: { id: string }) => event.id)).toEqual([tuesday])
+  })
+
   it("returns event detail and 404 for a missing event", async () => {
     const id = await insertEvent({ title: "Detail" })
 
@@ -214,6 +476,24 @@ describe("consumer read HTTP API", () => {
     expect(found.body).toMatchObject({ id, title: "Detail" })
 
     await request(app.getHttpServer()).get(`/v1/events/${randomUUID()}`).expect(404)
+  })
+
+  it("preserves raw listing freshness timestamps and nullable unknowns", async () => {
+    const fetched = await insertEvent({ title: "Fetched source details" })
+    const unknown = await insertEvent({ title: "Unknown source freshness" })
+    await db.query(
+      "UPDATE public.events SET source_details_fetched_at = $2::timestamptz WHERE id = $1",
+      [fetched, "2026-08-14T12:34:56.123456+00:00"]
+    )
+
+    const fetchedResponse = await request(app.getHttpServer())
+      .get(`/v1/events/${fetched}`)
+      .expect(200)
+    const unknownResponse = await request(app.getHttpServer())
+      .get(`/v1/events/${unknown}`)
+      .expect(200)
+    expect(fetchedResponse.body.source_details_fetched_at).toBe("2026-08-14 12:34:56.123456+00")
+    expect(unknownResponse.body.source_details_fetched_at).toBeNull()
   })
 
   it("personalizes detail for a mapped Clerk identity", async () => {
@@ -314,7 +594,7 @@ describe("consumer read HTTP API", () => {
 
     const response = await request(app.getHttpServer())
       .get("/v1/events/map")
-      .query({ city_id: CITY })
+      .query({ city_id: CITY, range: "upcoming" })
       .expect(200)
 
     expect(response.body).toEqual({
@@ -325,10 +605,15 @@ describe("consumer read HTTP API", () => {
           latitude: 30.22,
           longitude: -92.02,
           start_datetime: "2026-08-16 15:00:00+00",
+          timezone: "America/Chicago",
           venue_name: null,
           is_free: false,
+          admission_cost_state: "unknown",
+          admission_amount: null,
+          age_match: null,
         },
       ],
+      omitted_without_coordinates: 1,
     })
   })
 
@@ -355,7 +640,7 @@ describe("consumer read HTTP API", () => {
 
     const response = await request(app.getHttpServer())
       .get("/v1/events/map")
-      .query({ city_id: CITY })
+      .query({ city_id: CITY, range: "upcoming" })
       .expect(200)
 
     expect(response.body.events).toEqual([
