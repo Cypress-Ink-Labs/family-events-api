@@ -101,10 +101,17 @@ describe("EventsRepository.listMapEvents", () => {
       includeUnknownAge: false,
     })
     const sql = query.mock.calls[0]![0]
+    const admissionProjection =
+      "e.venue_name, e.is_free, e.admission_cost_state, e.admission_amount,"
+    const coordinateCountsCte = "coordinate_counts AS ("
     expect(sql).toContain("WITH matching AS MATERIALIZED")
     expect(sql).toContain("count(*) FILTER")
     expect(sql).toContain("latitude NOT BETWEEN -90 AND 90")
-    expect(sql.indexOf("admission_cost_state")).toBeLessThan(sql.indexOf("coordinate_counts"))
+    expect(sql).toContain(admissionProjection)
+    expect(sql).toContain(coordinateCountsCte)
+    expect(sql.indexOf(admissionProjection)).toBeLessThan(sql.indexOf(coordinateCountsCte))
+    expect(sql).toContain("LIMIT 200")
+    expect(sql).toContain("SELECT limited.*")
     expect(sql.indexOf("LIMIT 200")).toBeLessThan(sql.indexOf("SELECT limited.*"))
     expect(sql).toContain("LEFT JOIN limited ON true")
   })

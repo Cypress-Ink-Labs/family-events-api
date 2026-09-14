@@ -289,9 +289,6 @@ export class MapQueryDto {
   @ApiPropertyOptional({ format: "uuid" })
   city_id?: string
 
-  @ApiPropertyOptional({ enum: DiscoveryRangeDto, default: DiscoveryRangeDto.Weekend })
-  range?: DiscoveryRangeDto
-
   @ApiPropertyOptional({
     description: "Comma-separated, unique child ages from 0 through 17 (maximum 10)",
     example: "2,7",
@@ -407,9 +404,6 @@ export class EventsQueryDto {
 
   @ApiPropertyOptional({ maxLength: 100 })
   keyword?: string
-
-  @ApiPropertyOptional({ enum: DiscoveryRangeDto, default: DiscoveryRangeDto.Weekend })
-  range?: DiscoveryRangeDto
 
   @ApiPropertyOptional({
     type: String,

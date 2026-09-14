@@ -97,7 +97,13 @@ async function reconcile(client: Queryable, migrations: Migration[]): Promise<Se
       throw new Error(`Applied migration ${version} has drifted from the repository`)
     }
   }
-  return new Set(result.rows.map((row) => String(row.version)))
+  const appliedVersions = result.rows.map((row) => String(row.version))
+  for (const [index, version] of appliedVersions.entries()) {
+    if (version !== migrations[index]?.version) {
+      throw new Error("Applied migrations are not a prefix of the repository history")
+    }
+  }
+  return new Set(appliedVersions)
 }
 
 export async function applyMigrations(

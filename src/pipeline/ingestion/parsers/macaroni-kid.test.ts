@@ -86,6 +86,23 @@ describe("macaroni-kid parser", () => {
     })
   })
 
+  it("does not let free parking override paid admission", () => {
+    const parsed = mapMacaroniKidEvent(
+      {
+        name: "Ticketed Park Day",
+        start: "2026-06-01T14:00:00.000Z",
+        cost: "Admission $10; free parking",
+      },
+      "https://lafayettela.macaronikid.com/events"
+    )
+
+    expect(parsed).toMatchObject({
+      isFree: false,
+      admissionCostState: "paid",
+      admissionAmount: 10,
+    })
+  })
+
   it("mapMacaroniKidEvent rejects nodes without title or start", () => {
     expect(mapMacaroniKidEvent({ start: "2026-06-01T14:00:00Z" }, "https://x.example/events")).toBe(
       null
