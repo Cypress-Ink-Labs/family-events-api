@@ -1,8 +1,8 @@
 # NestJS backend rewrite plan (reconstructed) — units U20–U33
 
-**Status:** U20–U30 done. Reminder email/in-app/push, digest email/Telegram, and
+**Status:** U20–U31 done. Reminder email/in-app/push, digest email/Telegram, and
 event-change email/in-app/Web Push/FCM are merged. Only direct APNs is deferred
-within U30; U31–U33 follow.
+within U30; admin dead-letter API (U31) is landed; U32–U33 follow.
 Railway configuration is merged and empty `api` / `app` shadow services exist,
 but neither service is deployed because production database and Clerk variables
 have not been supplied.
@@ -228,13 +228,21 @@ Vault credentials take precedence over environment fallbacks. Scheduled digests
 resolve the validated Telegram token once per run; `testEmail` stays email-only,
 without token lookup or pacing. See [deployment details](../DEPLOYMENT.md).
 
-### U31 — Admin API port
-The ~30 `admin_*` RPCs as operator-guarded endpoints: review queue (cursor
-`(created_at, id)`, limit 200/max 500), facets, status/batch/delete, event editor +
-unlock, sources CRUD + scrape-now + bulk processing mode, dead-letter retry/delete
-(incl. U2 redrive), users/access/invites, AI settings, dashboards/stats, cron
-admin (list/toggle/schedule/history — now backed by pg-boss). Decide realtime
-replacement here (poll vs SSE); the old SPA's four Supabase channels are reference.
+### U31 — Admin API port 🟡 (dead-letter slice landed)
+
+**Dead-letter API landed** ([PR #41](https://github.com/Cypress-Ink-Labs/family-events-api/pull/41)):
+guarded source/tag durable dead-letter list, retry, and delete endpoints with
+pagination using opaque keyset cursors across nullable finish timestamps (preserving
+PostgreSQL bigint IDs as decimal strings). Authoritative source/tag retry and delete
+RPCs preserve source-row retention and tag-row removal behavior. Retry distinguishes
+newly queued vs already-active results. Transactional retry/delete audits capture
+actor, snapshot, entity, and resulting queue metadata.
+
+Remaining: review queue (cursor `(created_at, id)`, limit 200/max 500), facets,
+status/batch/delete, event editor + unlock, sources CRUD + scrape-now + bulk
+processing mode, users/access/invites, AI settings, dashboards/stats, cron admin
+(list/toggle/schedule/history — now backed by pg-boss). Decide realtime replacement
+here (poll vs SSE); the old SPA's four Supabase channels are reference.
 
 ### U32 — Observability + deployment
 Sentry, structured logs, pg-boss upgrade, and read-only dashboard
