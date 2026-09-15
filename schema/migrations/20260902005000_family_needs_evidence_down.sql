@@ -15,14 +15,20 @@ BEGIN
       NULLIF(btrim(elem->>'reservation_details'), '') AS reservation_details,
 $remove$,
     '');
-  changed := replace(changed, 'admission_cost_evidence, parking_details, reservation_details, is_outdoor,', 'admission_cost_evidence, is_outdoor,');
-  changed := replace(changed, 's.admission_cost_evidence, s.parking_details, s.reservation_details, s.is_outdoor,', 's.admission_cost_evidence, s.is_outdoor,');
-  changed := replace(changed,
+  IF changed = definition THEN RAISE EXCEPTION 'family details rollback: bulk parsing replacement failed'; END IF;
+  definition := changed;
+  changed := replace(definition, 'admission_cost_evidence, parking_details, reservation_details, is_outdoor,', 'admission_cost_evidence, is_outdoor,');
+  IF changed = definition THEN RAISE EXCEPTION 'family details rollback: bulk columns replacement failed'; END IF;
+  definition := changed;
+  changed := replace(definition, 's.admission_cost_evidence, s.parking_details, s.reservation_details, s.is_outdoor,', 's.admission_cost_evidence, s.is_outdoor,');
+  IF changed = definition THEN RAISE EXCEPTION 'family details rollback: bulk values replacement failed'; END IF;
+  definition := changed;
+  changed := replace(definition,
     $remove$      parking_details = CASE WHEN 'parking_details' = ANY(e.admin_locked_fields) THEN e.parking_details ELSE t.parking_details END,
       reservation_details = CASE WHEN 'reservation_details' = ANY(e.admin_locked_fields) THEN e.reservation_details ELSE t.reservation_details END,
 $remove$,
     '');
-  IF changed = definition THEN RAISE EXCEPTION 'family details rollback: bulk replacement failed'; END IF;
+  IF changed = definition THEN RAISE EXCEPTION 'family details rollback: bulk update replacement failed'; END IF;
   EXECUTE changed;
 
   SELECT pg_get_functiondef('private.admin_validate_event_patch(jsonb)'::regprocedure) INTO definition;
@@ -36,7 +42,9 @@ $remove$, '');
   changed := replace(definition, $remove$  next_parking_details text;
   next_reservation_details text;
 $remove$, '');
-  changed := replace(changed,
+  IF changed = definition THEN RAISE EXCEPTION 'family details rollback: admin declarations replacement failed'; END IF;
+  definition := changed;
+  changed := replace(definition,
     $remove$  next_parking_details := CASE
     WHEN patch ? 'parking_details' AND jsonb_typeof(patch->'parking_details') = 'null' THEN NULL
     WHEN patch ? 'parking_details' THEN NULLIF(btrim(patch->>'parking_details'), '')
@@ -48,7 +56,9 @@ $remove$, '');
     ELSE before_row.reservation_details
   END;
 $remove$, '');
-  changed := replace(changed,
+  IF changed = definition THEN RAISE EXCEPTION 'family details rollback: admin values replacement failed'; END IF;
+  definition := changed;
+  changed := replace(definition,
     $remove$         parking_details = next_parking_details,
          reservation_details = next_reservation_details,
 $remove$,
@@ -62,12 +72,14 @@ $remove$,
   changed := replace(definition,
     'admission_cost_evidence text, parking_details text, reservation_details text, source_url text',
     'admission_cost_evidence text, source_url text');
+  IF changed = definition THEN RAISE EXCEPTION 'family details rollback: events_enriched return replacement failed'; END IF;
+  definition := changed;
   changed := regexp_replace(
-    changed,
+    definition,
     E'e\\.admission_cost_evidence,\\s+e\\.parking_details,\\s+e\\.reservation_details,\\s+e\\.source_url,',
     'e.admission_cost_evidence, e.source_url,'
   );
-  IF changed = definition THEN RAISE EXCEPTION 'family details rollback: events_enriched replacement failed'; END IF;
+  IF changed = definition THEN RAISE EXCEPTION 'family details rollback: events_enriched projection replacement failed'; END IF;
   DROP FUNCTION public.events_enriched(
     uuid, text, uuid, uuid[], timestamptz, timestamptz, timestamptz, uuid, integer
   );

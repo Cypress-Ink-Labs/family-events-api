@@ -198,6 +198,8 @@ CREATE TABLE public.event_family_need_evidence (
   )
 );
 
+ALTER TABLE public.event_family_need_evidence ENABLE ROW LEVEL SECURITY;
+
 CREATE INDEX event_family_need_evidence_current_idx
   ON public.event_family_need_evidence (
     event_id,

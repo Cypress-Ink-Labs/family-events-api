@@ -7353,15 +7353,61 @@
             "description": "Age suitability for the selected ages; null when ages were not selected"
           },
           "family_needs": {
-            "type": "object",
-            "additionalProperties": {
-              "type": "string",
-              "enum": [
-                "confirmed",
-                "contradicted",
-                "unknown"
-              ]
-            }
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "indoor",
+                  "outdoor",
+                  "wheelchair_accessible",
+                  "sensory_friendly",
+                  "stroller_friendly"
+                ],
+                "properties": {
+                  "indoor": {
+                    "type": "string",
+                    "enum": [
+                      "confirmed",
+                      "contradicted",
+                      "unknown"
+                    ]
+                  },
+                  "outdoor": {
+                    "type": "string",
+                    "enum": [
+                      "confirmed",
+                      "contradicted",
+                      "unknown"
+                    ]
+                  },
+                  "wheelchair_accessible": {
+                    "type": "string",
+                    "enum": [
+                      "confirmed",
+                      "contradicted",
+                      "unknown"
+                    ]
+                  },
+                  "sensory_friendly": {
+                    "type": "string",
+                    "enum": [
+                      "confirmed",
+                      "contradicted",
+                      "unknown"
+                    ]
+                  },
+                  "stroller_friendly": {
+                    "type": "string",
+                    "enum": [
+                      "confirmed",
+                      "contradicted",
+                      "unknown"
+                    ]
+                  }
+                }
+              }
+            ]
           }
         },
         "required": [
@@ -7478,15 +7524,61 @@
             "description": "Age suitability for the selected ages; null when ages were not selected"
           },
           "family_needs": {
-            "type": "object",
-            "additionalProperties": {
-              "type": "string",
-              "enum": [
-                "confirmed",
-                "contradicted",
-                "unknown"
-              ]
-            }
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "indoor",
+                  "outdoor",
+                  "wheelchair_accessible",
+                  "sensory_friendly",
+                  "stroller_friendly"
+                ],
+                "properties": {
+                  "indoor": {
+                    "type": "string",
+                    "enum": [
+                      "confirmed",
+                      "contradicted",
+                      "unknown"
+                    ]
+                  },
+                  "outdoor": {
+                    "type": "string",
+                    "enum": [
+                      "confirmed",
+                      "contradicted",
+                      "unknown"
+                    ]
+                  },
+                  "wheelchair_accessible": {
+                    "type": "string",
+                    "enum": [
+                      "confirmed",
+                      "contradicted",
+                      "unknown"
+                    ]
+                  },
+                  "sensory_friendly": {
+                    "type": "string",
+                    "enum": [
+                      "confirmed",
+                      "contradicted",
+                      "unknown"
+                    ]
+                  },
+                  "stroller_friendly": {
+                    "type": "string",
+                    "enum": [
+                      "confirmed",
+                      "contradicted",
+                      "unknown"
+                    ]
+                  }
+                }
+              }
+            ]
           }
         },
         "required": [

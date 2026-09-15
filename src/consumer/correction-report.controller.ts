@@ -35,7 +35,11 @@ import {
 
 class CorrectionReportContactDto {
   @ApiPropertyOptional({ format: "email", maxLength: 320 }) email?: string
-  @ApiPropertyOptional({ minLength: 7, maxLength: 32, pattern: "^\\+?[0-9 ()-]{7,32}$" })
+  @ApiPropertyOptional({
+    minLength: 7,
+    maxLength: 32,
+    pattern: "^(?=(?:[^0-9]*[0-9]){7})\\+?[0-9 ()-]{7,32}$",
+  })
   phone?: string
 }
 
@@ -74,7 +78,12 @@ function readCapabilityCookie(request: OptionalIdentifiedRequest): string | unde
     ?.split(";")
     .map((part) => part.trim().split("="))
     .find(([name]) => name === "correction_report_capability")?.[1]
-  return value === undefined ? undefined : decodeURIComponent(value)
+  if (value === undefined) return undefined
+  try {
+    return decodeURIComponent(value)
+  } catch {
+    return undefined
+  }
 }
 
 @ApiTags("events")

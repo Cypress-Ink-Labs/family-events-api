@@ -22,6 +22,30 @@ const JSON_VALUE_PROPERTY: ApiPropertyOptions = {
   nullable: true,
 }
 
+const FAMILY_NEED_STATES = ["confirmed", "contradicted", "unknown"]
+const FAMILY_NEEDS_PROPERTY: ApiPropertyOptions = {
+  oneOf: [
+    {
+      type: "object",
+      additionalProperties: false,
+      required: [
+        "indoor",
+        "outdoor",
+        "wheelchair_accessible",
+        "sensory_friendly",
+        "stroller_friendly",
+      ],
+      properties: {
+        indoor: { type: "string", enum: FAMILY_NEED_STATES },
+        outdoor: { type: "string", enum: FAMILY_NEED_STATES },
+        wheelchair_accessible: { type: "string", enum: FAMILY_NEED_STATES },
+        sensory_friendly: { type: "string", enum: FAMILY_NEED_STATES },
+        stroller_friendly: { type: "string", enum: FAMILY_NEED_STATES },
+      },
+    },
+  ],
+}
+
 export class EnrichedEventDto implements EnrichedEvent {
   @ApiProperty({ format: "uuid" })
   id!: string
@@ -140,10 +164,7 @@ export class EnrichedEventDto implements EnrichedEvent {
   })
   age_match!: "confirmed" | "unknown" | null
 
-  @ApiProperty({
-    type: "object",
-    additionalProperties: { type: "string", enum: ["confirmed", "contradicted", "unknown"] },
-  })
+  @ApiProperty(FAMILY_NEEDS_PROPERTY)
   family_needs!: EnrichedEvent["family_needs"]
 }
 
@@ -275,10 +296,7 @@ export class MapEventDto {
   })
   age_match!: "confirmed" | "unknown" | null
 
-  @ApiProperty({
-    type: "object",
-    additionalProperties: { type: "string", enum: ["confirmed", "contradicted", "unknown"] },
-  })
+  @ApiProperty(FAMILY_NEEDS_PROPERTY)
   family_needs!: EnrichedEvent["family_needs"]
 }
 

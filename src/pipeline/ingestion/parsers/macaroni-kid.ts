@@ -122,12 +122,12 @@ function explicitFamilyNeedStatements(text: string, sourceUrl: string) {
     {
       claim: "wheelchair_accessible",
       yes: /\b(?:wheelchair accessible|accessible to wheelchairs)\b/i,
-      no: /\bnot wheelchair accessible\b/i,
+      no: /\bnot (?:wheelchair accessible|accessible to wheelchairs)\b/i,
     },
     {
       claim: "sensory_friendly",
       yes: /\b(?:sensory[- ]friendly|sensory inclusive)\b/i,
-      no: /\bnot sensory[- ]friendly\b/i,
+      no: /\bnot (?:sensory[- ]friendly|sensory inclusive)\b/i,
     },
     {
       claim: "stroller_friendly",

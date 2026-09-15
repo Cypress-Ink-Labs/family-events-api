@@ -235,22 +235,25 @@ export class IngestionRepository implements ProcessSourceDb, SourceQueueDb {
     sourceId: string,
     events: Record<string, unknown>[]
   ): Promise<BulkImportResult | null> {
-    const rows = await this.db.query<{ result: BulkImportResult | null }>(
-      BULK_IMPORT_SCRAPE_EVENTS_SQL,
-      [runId, sourceId, JSON.stringify(events)]
-    )
-    if (
-      events.some(
-        (event) =>
-          Array.isArray(event.family_need_statements) && event.family_need_statements.length > 0
+    return this.db.withTransaction(async (client) => {
+      const serializedEvents = JSON.stringify(events)
+      const result = await client.query<{ result: BulkImportResult | null }>(
+        BULK_IMPORT_SCRAPE_EVENTS_SQL,
+        [runId, sourceId, serializedEvents]
       )
-    ) {
-      await this.db.query("SELECT private.import_family_need_statements($1::uuid, $2::jsonb)", [
-        sourceId,
-        JSON.stringify(events),
-      ])
-    }
-    return rows[0]?.result ?? null
+      if (
+        events.some(
+          (event) =>
+            Array.isArray(event.family_need_statements) && event.family_need_statements.length > 0
+        )
+      ) {
+        await client.query("SELECT private.import_family_need_statements($1::uuid, $2::jsonb)", [
+          sourceId,
+          serializedEvents,
+        ])
+      }
+      return result.rows[0]?.result ?? null
+    })
   }
 
   async finalizeSourceRun(runId: string, finalization: SourceRunFinalization): Promise<void> {

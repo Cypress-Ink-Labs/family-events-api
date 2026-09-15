@@ -140,6 +140,23 @@ describe("macaroni-kid parser", () => {
     expect(parsed?.familyNeedStatements).toEqual([])
   })
 
+  it("records negated accessibility phrases as unsupported evidence", () => {
+    const parsed = mapMacaroniKidEvent(
+      {
+        _id: "negated",
+        name: "Accessibility update",
+        start: "2026-06-01T14:00:00.000Z",
+        description:
+          "This event is not accessible to wheelchairs. This event is not sensory inclusive.",
+      },
+      "https://lafayettela.macaronikid.com/events"
+    )
+    expect(parsed?.familyNeedStatements).toEqual([
+      expect.objectContaining({ claim: "wheelchair_accessible", value: "unsupported" }),
+      expect.objectContaining({ claim: "sensory_friendly", value: "unsupported" }),
+    ])
+  })
+
   it("mapMacaroniKidEvent rejects nodes without title or start", () => {
     expect(mapMacaroniKidEvent({ start: "2026-06-01T14:00:00Z" }, "https://x.example/events")).toBe(
       null

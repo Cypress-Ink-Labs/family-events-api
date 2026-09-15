@@ -21,6 +21,9 @@ const schema = z
           .string()
           .trim()
           .regex(/^\+?[0-9 ()-]{7,32}$/)
+          .refine((value) => (value.match(/[0-9]/g)?.length ?? 0) >= 7, {
+            message: "Phone number must contain at least seven digits",
+          })
           .optional(),
       })
       .strict()

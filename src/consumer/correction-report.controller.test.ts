@@ -76,6 +76,30 @@ describe("correction report HTTP contract", () => {
     expect(JSON.stringify(result)).not.toContain("a@b.co")
   })
 
+  it("treats malformed capability cookie encoding as a missing capability", async () => {
+    const reports = {
+      submit: vi.fn().mockResolvedValue({
+        id: "report-1",
+        status: "new",
+        priority: 2,
+        created_at: "now",
+      }),
+    }
+    await new CorrectionReportController(reports as never).submit(
+      "event-1",
+      BODY,
+      { headers: { cookie: "correction_report_capability=%" } } as never,
+      { cookie: vi.fn() } as never
+    )
+    expect(reports.submit).toHaveBeenCalledWith(
+      "event-1",
+      BODY,
+      null,
+      undefined,
+      expect.any(String)
+    )
+  })
+
   it("mints the capability before setting a private cookie", async () => {
     const reports = { mintAnonymousCapability: vi.fn().mockResolvedValue(undefined) }
     const response = { cookie: vi.fn() }

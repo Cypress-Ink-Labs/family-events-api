@@ -48,6 +48,11 @@ BEGIN
       AND attname = 'invalidated_at'
   );
   ASSERT (
+    SELECT relrowsecurity
+    FROM pg_class
+    WHERE oid = 'public.event_family_need_evidence'::regclass
+  );
+  ASSERT (
     SELECT count(*) = 2
     FROM pg_constraint
     WHERE conrelid = 'public.event_family_need_evidence'::regclass

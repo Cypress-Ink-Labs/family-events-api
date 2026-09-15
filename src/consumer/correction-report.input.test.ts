@@ -64,6 +64,13 @@ describe("correction report input and anonymous privacy controls", () => {
         evidence_urls: ["file:///etc/passwd"],
       })
     ).toThrow()
+    expect(() =>
+      parseCorrectionReport({
+        category: "other",
+        details: "wrong",
+        contact: { phone: "-------" },
+      })
+    ).toThrow()
     expect(
       parseCorrectionReport({
         category: "other",

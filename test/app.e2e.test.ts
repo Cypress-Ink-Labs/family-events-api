@@ -910,15 +910,9 @@ describe("application bootstrap", () => {
       ])
     )
     const listFields = Object.keys(schemas.CorrectionReportRowDto!.properties!)
-    expect(listFields).not.toEqual(
-      expect.arrayContaining([
-        "details",
-        "reporter_user_id",
-        "contact",
-        "evidence",
-        "resolution_note",
-      ])
-    )
+    for (const field of ["details", "reporter_user_id", "contact", "evidence", "resolution_note"]) {
+      expect(listFields).not.toContain(field)
+    }
     expect(Object.keys(schemas.CorrectionReportPrivatePayloadDto!.properties!)).toEqual(
       expect.arrayContaining(["contact", "evidence"])
     )
