@@ -132,6 +132,9 @@ SET search_path = pg_catalog, public, private AS $$
 DECLARE r public.listing_corrections;
 BEGIN
   IF NOT private.is_admin() THEN RAISE EXCEPTION 'CORRECTION_REPORT_ADMIN_REQUIRED' USING ERRCODE = '42501'; END IF;
+  IF auth.uid() IS DISTINCT FROM p_operator_id THEN
+    RAISE EXCEPTION 'CORRECTION_REPORT_ACTOR_MISMATCH' USING ERRCODE = '42501';
+  END IF;
   IF char_length(btrim(p_note)) NOT BETWEEN 1 AND 2000 OR NOT EXISTS (
     SELECT 1 FROM public.admin_audit_log a
     WHERE a.id = p_audit_log_id
@@ -159,6 +162,9 @@ SET search_path = pg_catalog, public, private AS $$
 DECLARE r public.correction_reports;
 BEGIN
   IF NOT private.is_admin() THEN RAISE EXCEPTION 'CORRECTION_REPORT_ADMIN_REQUIRED' USING ERRCODE = '42501'; END IF;
+  IF auth.uid() IS DISTINCT FROM p_operator_id THEN
+    RAISE EXCEPTION 'CORRECTION_REPORT_ACTOR_MISMATCH' USING ERRCODE = '42501';
+  END IF;
   UPDATE public.correction_reports
      SET status = 'in_review', claimed_by = p_operator_id, claimed_at = now(),
          version = version + 1, updated_at = now()
@@ -176,6 +182,9 @@ SET search_path = pg_catalog, public, private AS $$
 DECLARE r public.correction_reports;
 BEGIN
   IF NOT private.is_admin() THEN RAISE EXCEPTION 'CORRECTION_REPORT_ADMIN_REQUIRED' USING ERRCODE = '42501'; END IF;
+  IF auth.uid() IS DISTINCT FROM p_operator_id THEN
+    RAISE EXCEPTION 'CORRECTION_REPORT_ACTOR_MISMATCH' USING ERRCODE = '42501';
+  END IF;
   IF p_outcome NOT IN ('resolved', 'dismissed') OR char_length(btrim(p_note)) NOT BETWEEN 1 AND 2000 THEN
     RAISE EXCEPTION 'CORRECTION_REPORT_INVALID_RESOLUTION' USING ERRCODE = '22023';
   END IF;

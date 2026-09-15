@@ -70,6 +70,20 @@ BEGIN
   VALUES (report_id, event_id, 'wrong_date_time', 'Starts later');
   SELECT to_jsonb(e) INTO before_event FROM public.events e WHERE id = event_id;
 
+  PERFORM set_config(
+    'request.jwt.claims',
+    jsonb_build_object('sub', operator_id, 'role', 'authenticated')::text,
+    true
+  );
+  BEGIN
+    PERFORM private.claim_correction_report(
+      report_id, '30000000-0000-4000-8000-000000000002', 1
+    );
+    ASSERT false, 'operator attribution must match the authenticated actor';
+  EXCEPTION WHEN insufficient_privilege THEN
+    NULL;
+  END;
+
   claimed := private.claim_correction_report(report_id, operator_id, 1);
   ASSERT claimed.status = 'in_review' AND claimed.version = 2;
   BEGIN
