@@ -33,6 +33,8 @@ export async function ensureCatalogSchema(db: DbService): Promise<void> {
   await db.query("CREATE SCHEMA IF NOT EXISTS extensions")
   await db.query("CREATE EXTENSION IF NOT EXISTS cube WITH SCHEMA extensions")
   await db.query("CREATE EXTENSION IF NOT EXISTS earthdistance WITH SCHEMA extensions")
+  await db.query("DROP VIEW IF EXISTS public.event_family_needs")
+  await db.query("DROP TABLE IF EXISTS public.event_family_need_evidence")
   // Drop-first (not IF NOT EXISTS): a stale local fixture must never survive
   // a definition change in this file. Safe because connections come from
   // createIntegrationDb(), which refuses non-disposable databases.
@@ -51,6 +53,9 @@ export async function ensureCatalogSchema(db: DbService): Promise<void> {
   await db.query("DROP TYPE IF EXISTS public.llm_event_review_status CASCADE")
   await db.query("DROP TYPE IF EXISTS public.event_status CASCADE")
   await db.query("DROP TYPE IF EXISTS public.admission_cost_state CASCADE")
+  await db.query("DROP TYPE IF EXISTS public.family_need_provenance CASCADE")
+  await db.query("DROP TYPE IF EXISTS public.family_need_value CASCADE")
+  await db.query("DROP TYPE IF EXISTS public.family_need_claim CASCADE")
   await db.query(
     "CREATE TYPE public.event_status AS ENUM ('draft', 'published', 'rejected', 'archived')"
   )
@@ -60,6 +65,15 @@ export async function ensureCatalogSchema(db: DbService): Promise<void> {
     )
   `)
   await db.query("CREATE TYPE public.admission_cost_state AS ENUM ('free', 'paid', 'unknown')")
+  await db.query(`
+    CREATE TYPE public.family_need_claim AS ENUM (
+      'indoor', 'outdoor', 'wheelchair_accessible', 'sensory_friendly', 'stroller_friendly'
+    )
+  `)
+  await db.query("CREATE TYPE public.family_need_value AS ENUM ('supported', 'unsupported')")
+  await db.query(
+    "CREATE TYPE public.family_need_provenance AS ENUM ('source_statement', 'human', 'organizer')"
+  )
   await db.query(`
     CREATE TABLE public.cities (
       id uuid PRIMARY KEY,
@@ -94,6 +108,8 @@ export async function ensureCatalogSchema(db: DbService): Promise<void> {
       admission_cost_state public.admission_cost_state NOT NULL DEFAULT 'unknown',
       admission_amount numeric,
       admission_cost_evidence text,
+      parking_details text,
+      reservation_details text,
       source_url text,
       source_name text,
       source_details_fetched_at timestamptz,
@@ -121,6 +137,56 @@ export async function ensureCatalogSchema(db: DbService): Promise<void> {
         OR (admission_cost_state = 'paid' AND (admission_amount IS NULL OR admission_amount >= 0) AND NULLIF(btrim(admission_cost_evidence), '') IS NOT NULL)
       )
     )
+  `)
+  await db.query(`
+    CREATE TABLE public.event_family_need_evidence (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      event_id uuid NOT NULL REFERENCES public.events(id) ON DELETE CASCADE,
+      claim public.family_need_claim NOT NULL,
+      value public.family_need_value NOT NULL,
+      provenance_type public.family_need_provenance NOT NULL,
+      observed_at timestamptz NOT NULL,
+      invalidated_at timestamptz
+    )
+  `)
+  await db.query(`
+    CREATE VIEW public.event_family_needs AS
+    WITH ranked AS (
+      SELECT evidence.*,
+        bool_or(value = 'supported') OVER (PARTITION BY event_id, claim) AS has_positive,
+        bool_or(value = 'unsupported') OVER (PARTITION BY event_id, claim) AS has_negative,
+        row_number() OVER (
+          PARTITION BY event_id, claim
+          ORDER BY
+            CASE provenance_type WHEN 'organizer' THEN 3 WHEN 'human' THEN 2 ELSE 1 END DESC,
+            observed_at DESC,
+            id DESC
+        ) AS precedence
+      FROM public.event_family_need_evidence evidence
+      WHERE invalidated_at IS NULL
+    ),
+    current_evidence AS (
+      SELECT event_id, claim,
+        CASE
+          WHEN has_positive AND has_negative THEN 'contradicted'
+          WHEN value = 'supported' THEN 'confirmed'
+          ELSE 'contradicted'
+        END AS state,
+        value,
+        has_positive AND has_negative AS has_conflict
+      FROM ranked
+      WHERE precedence = 1
+    )
+    SELECT event.id AS event_id, selected.claim,
+      COALESCE(current_evidence.state, 'unknown') AS state,
+      current_evidence.value,
+      COALESCE(current_evidence.has_conflict, false) AS has_conflict
+    FROM public.events event
+    CROSS JOIN unnest(enum_range(NULL::public.family_need_claim)) AS selected(claim)
+    LEFT JOIN current_evidence
+      ON current_evidence.event_id = event.id
+      AND current_evidence.claim = selected.claim
+    WHERE event.status = 'published'::public.event_status
   `)
   await db.query(`
     CREATE TABLE public.tags (

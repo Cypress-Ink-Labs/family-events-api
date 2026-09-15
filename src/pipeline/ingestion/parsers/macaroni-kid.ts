@@ -113,6 +113,67 @@ function pickImage(raw: unknown): string[] {
   return out.slice(0, 5)
 }
 
+function explicitFamilyNeedStatements(text: string, sourceUrl: string) {
+  const sentences = text
+    .split(/(?<=[.!?])\s+|\n+/)
+    .map((value) => value.trim())
+    .filter(Boolean)
+  const rules = [
+    {
+      claim: "wheelchair_accessible",
+      yes: /\b(?:wheelchair accessible|accessible to wheelchairs)\b/i,
+      no: /\bnot wheelchair accessible\b/i,
+    },
+    {
+      claim: "sensory_friendly",
+      yes: /\b(?:sensory[- ]friendly|sensory inclusive)\b/i,
+      no: /\bnot sensory[- ]friendly\b/i,
+    },
+    {
+      claim: "stroller_friendly",
+      yes: /\b(?:stroller[- ]friendly|strollers (?:are )?(?:welcome|allowed))\b/i,
+      no: /\bstrollers (?:are )?(?:not allowed|prohibited)\b/i,
+    },
+    {
+      claim: "outdoor",
+      yes: /\b(?:held|takes place|event is) (?:outside|outdoors)\b/i,
+      no: /\b(?:moved|held) indoors\b/i,
+    },
+    {
+      claim: "indoor",
+      yes: /\b(?:held|takes place|event is) indoors\b/i,
+      no: /\b(?:held|takes place) (?:outside|outdoors)\b/i,
+    },
+  ] as const
+  return rules.flatMap(({ claim, yes, no }) => {
+    const statement = sentences.find((sentence) => no.test(sentence) || yes.test(sentence))
+    return statement
+      ? [
+          {
+            claim,
+            value: no.test(statement) ? ("unsupported" as const) : ("supported" as const),
+            sourceUrl,
+            statement: statement.slice(0, 4000),
+          },
+        ]
+      : []
+  })
+}
+
+function practicalDetail(text: string, kind: "parking" | "reservation"): string | null {
+  const explicit =
+    kind === "parking"
+      ? /\b(?:parking is|parking:|park in|free parking|paid parking|street parking)\b/i
+      : /\b(?:reservations? (?:are )?(?:required|recommended)|registration (?:is )?required|reserve (?:a |your )?(?:spot|seat))\b/i
+  return (
+    text
+      .split(/(?<=[.!?])\s+|\n+/)
+      .map((part) => part.trim())
+      .find((part) => explicit.test(part))
+      ?.slice(0, 2000) ?? null
+  )
+}
+
 export function mapMacaroniKidEvent(raw: unknown, sourceBase: string): ParsedEvent | null {
   const node = asJson(raw)
   if (!node) return null
@@ -184,6 +245,7 @@ export function mapMacaroniKidEvent(raw: unknown, sourceBase: string): ParsedEve
       ? null
       : (extractedAdmission.evidence ??
         (costText.trim() || `Source cost field: ${admissionAmount}`))
+  const attributableText = descriptionParts.join("\n")
 
   return {
     title,
@@ -200,6 +262,11 @@ export function mapMacaroniKidEvent(raw: unknown, sourceBase: string): ParsedEve
     admissionCostState,
     admissionAmount: admissionCostState === "paid" ? admissionAmount : null,
     admissionCostEvidence,
+    parkingDetails: practicalDetail(attributableText, "parking"),
+    reservationDetails: practicalDetail(attributableText, "reservation"),
+    familyNeedStatements: sourceUrl
+      ? explicitFamilyNeedStatements(attributableText, sourceUrl)
+      : [],
   }
 }
 

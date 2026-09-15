@@ -103,6 +103,43 @@ describe("macaroni-kid parser", () => {
     })
   })
 
+  it("records only explicit attributable family-needs statements and practical details", () => {
+    const parsed = mapMacaroniKidEvent(
+      {
+        _id: "explicit",
+        name: "Accessible Storytime",
+        start: "2026-06-01T14:00:00.000Z",
+        description:
+          "This event is wheelchair accessible. Free parking is behind the library. Reservations are required.",
+      },
+      "https://lafayettela.macaronikid.com/events"
+    )
+    expect(parsed).toMatchObject({
+      parkingDetails: "Free parking is behind the library.",
+      reservationDetails: "Reservations are required.",
+      familyNeedStatements: [
+        {
+          claim: "wheelchair_accessible",
+          value: "supported",
+          statement: "This event is wheelchair accessible.",
+        },
+      ],
+    })
+  })
+
+  it("does not infer family needs from isolated keywords", () => {
+    const parsed = mapMacaroniKidEvent(
+      {
+        _id: "keywords",
+        name: "Family Event",
+        start: "2026-06-01T14:00:00.000Z",
+        description: "Wheelchairs, strollers, sensory activities, indoor and outdoor fun.",
+      },
+      "https://lafayettela.macaronikid.com/events"
+    )
+    expect(parsed?.familyNeedStatements).toEqual([])
+  })
+
   it("mapMacaroniKidEvent rejects nodes without title or start", () => {
     expect(mapMacaroniKidEvent({ start: "2026-06-01T14:00:00Z" }, "https://x.example/events")).toBe(
       null

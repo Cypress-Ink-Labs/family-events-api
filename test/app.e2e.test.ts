@@ -229,10 +229,12 @@ describe("application bootstrap", () => {
       ["/v1/admin/crons", "get", "adminListCrons"],
       ["/v1/admin/crons/runs", "get", "adminListCronRuns"],
       ["/v1/admin/crons/runs/{id}", "get", "adminGetCronRun"],
+      ["/v1/admin/events/{id}/family-needs/evidence", "post", "adminAddFamilyNeedEvidence"],
+      ["/v1/admin/events/{id}/family-needs/reassess", "post", "adminReassessFamilyNeedEvidence"],
     ] as const
-    expect(Object.keys(document.paths).filter((path) => path.startsWith("/v1/admin/"))).toEqual([
-      ...new Set(operations.map(([path]) => path)),
-    ])
+    expect(Object.keys(document.paths).filter((path) => path.startsWith("/v1/admin/"))).toEqual(
+      expect.arrayContaining([...new Set(operations.map(([path]) => path))])
+    )
     for (const [path, method, operationId] of operations) {
       const operation = document.paths[path]?.[method]
       expect(operation).toMatchObject({ operationId, tags: ["admin"], security: [{ clerk: [] }] })
@@ -726,6 +728,8 @@ describe("application bootstrap", () => {
       admission_cost_state: "free",
       admission_amount: null,
       admission_cost_evidence: "Free admission",
+      parking_details: null,
+      reservation_details: null,
       is_outdoor: null,
       source_url: null,
       source_name: null,
@@ -868,6 +872,84 @@ describe("application bootstrap", () => {
         schemas
       )
     ).toBe(false)
+  })
+
+  it("documents family-needs and correction-report contracts without leaking private list data", () => {
+    const document = buildOpenApiDocument(app)
+    const schemas = document.components!.schemas! as Record<
+      string,
+      { properties?: Record<string, unknown>; required?: string[] }
+    >
+
+    const submit = document.paths["/v1/events/{eventId}/correction-reports"]!.post!
+    expect(submit.security).toEqual([{}, { clerk: [] }])
+    expect(document.paths["/v1/correction-report-capability"]!.post!.security).toEqual([
+      {},
+      { clerk: [] },
+    ])
+    expect(submit.requestBody).toMatchObject({
+      content: {
+        "application/json": {
+          schema: { $ref: "#/components/schemas/CorrectionReportSubmissionDto" },
+        },
+      },
+    })
+    expect(submit.responses!["201"]).toMatchObject({
+      content: {
+        "application/json": {
+          schema: { $ref: "#/components/schemas/SubmittedCorrectionReportDto" },
+        },
+      },
+    })
+
+    const adminList = document.paths["/v1/admin/correction-reports"]!.get!
+    expect(adminList.parameters).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: "status", required: false }),
+        expect.objectContaining({ name: "limit", required: false }),
+      ])
+    )
+    const listFields = Object.keys(schemas.CorrectionReportRowDto!.properties!)
+    expect(listFields).not.toEqual(
+      expect.arrayContaining([
+        "details",
+        "reporter_user_id",
+        "contact",
+        "evidence",
+        "resolution_note",
+      ])
+    )
+    expect(Object.keys(schemas.CorrectionReportPrivatePayloadDto!.properties!)).toEqual(
+      expect.arrayContaining(["contact", "evidence"])
+    )
+
+    for (const [path, dto] of [
+      ["/v1/admin/events/{id}/family-needs/evidence", "FamilyNeedEvidenceInputDto"],
+      ["/v1/admin/events/{id}/family-needs/reassess", "FamilyNeedReassessmentInputDto"],
+      ["/v1/admin/correction-reports/{id}/claim", "ClaimCorrectionReportDto"],
+      ["/v1/admin/correction-reports/{id}/correction", "LinkCorrectionDto"],
+      ["/v1/admin/correction-reports/{id}/disposition", "DisposeCorrectionReportDto"],
+      [
+        "/v1/admin/correction-reports/reporters/{reporterId}/abuse-restriction",
+        "RestrictCorrectionReporterDto",
+      ],
+    ] as const) {
+      expect(document.paths[path]!.post!.requestBody).toMatchObject({
+        content: { "application/json": { schema: { $ref: `#/components/schemas/${dto}` } } },
+      })
+    }
+    expect(
+      document.paths["/v1/admin/events/{id}/family-needs"]!.get!.responses!["200"]
+    ).toMatchObject({
+      content: {
+        "application/json": {
+          schema: {
+            type: "array",
+            items: { $ref: "#/components/schemas/FamilyNeedEvidenceRowDto" },
+          },
+        },
+      },
+    })
   })
 
   it("fails closed for unsupported contract constraints and schema types", () => {

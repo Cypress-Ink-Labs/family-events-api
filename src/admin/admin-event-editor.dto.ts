@@ -98,6 +98,12 @@ export class AdminEditableEventDto {
   @ApiProperty({ type: String, nullable: true, maxLength: 2000 })
   admission_cost_evidence!: string | null
 
+  @ApiProperty({ type: String, nullable: true, maxLength: 2000 })
+  parking_details!: string | null
+
+  @ApiProperty({ type: String, nullable: true, maxLength: 2000 })
+  reservation_details!: string | null
+
   @ApiProperty({ type: Boolean, nullable: true })
   is_outdoor!: boolean | null
 
@@ -202,6 +208,8 @@ export const ADMIN_EVENT_UPDATE_BODY_SCHEMA: RequestBodySchema = {
           nullable: true,
         },
         admission_cost_evidence: NULLABLE_STRING(2_000),
+        parking_details: NULLABLE_STRING(2_000),
+        reservation_details: NULLABLE_STRING(2_000),
         is_outdoor: { type: "boolean", nullable: true },
         source_url: {
           type: "string",

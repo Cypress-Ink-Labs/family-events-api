@@ -61,6 +61,15 @@ export interface ParsedEvent {
   admissionCostState?: "free" | "paid" | "unknown"
   admissionAmount?: number | null
   admissionCostEvidence?: string | null
+  parkingDetails?: string | null
+  reservationDetails?: string | null
+  familyNeedStatements?: Array<{
+    claim: "indoor" | "outdoor" | "wheelchair_accessible" | "sensory_friendly" | "stroller_friendly"
+    value: "supported" | "unsupported"
+    sourceUrl: string
+    statement: string
+    observedAt?: string
+  }>
 }
 
 export interface SourceResult {

@@ -69,7 +69,17 @@ describe("EventsRepository.listMapEvents", () => {
     const [sql, params] = query.mock.calls[0]!
     expect(sql).toContain("AT TIME ZONE z.zone")
     expect(sql).toContain("e.end_datetime IS NULL AND e.start_datetime >= $3")
-    expect(params).toEqual(["city-1", "weekend", "2026-08-16T15:00:00Z", [], "all", false, "any"])
+    expect(params).toEqual([
+      "city-1",
+      "weekend",
+      "2026-08-16T15:00:00Z",
+      [],
+      "all",
+      false,
+      "any",
+      [],
+      false,
+    ])
   })
 
   it("applies the shared tri-state age predicate before map ordering", async () => {
@@ -88,7 +98,17 @@ describe("EventsRepository.listMapEvents", () => {
     expect(sql).toContain("age < age_min")
     expect(sql).toContain("age > age_max")
     expect(sql).toContain("AS age_match")
-    expect(params).toEqual([null, "weekend", "2026-08-16T15:00:00Z", [2, 7], "any", true, "any"])
+    expect(params).toEqual([
+      null,
+      "weekend",
+      "2026-08-16T15:00:00Z",
+      [2, 7],
+      "any",
+      true,
+      "any",
+      [],
+      false,
+    ])
   })
 
   it("counts every invalid coordinate before transferring at most 200 valid rows", async () => {
@@ -156,6 +176,8 @@ describe("EventsRepository.discoverEvents", () => {
       25,
       null,
       null,
+      [],
+      false,
     ])
   })
 })

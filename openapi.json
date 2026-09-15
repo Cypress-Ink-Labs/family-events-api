@@ -757,6 +757,16 @@
                         "nullable": true,
                         "maxLength": 2000
                       },
+                      "parking_details": {
+                        "type": "string",
+                        "nullable": true,
+                        "maxLength": 2000
+                      },
+                      "reservation_details": {
+                        "type": "string",
+                        "nullable": true,
+                        "maxLength": 2000
+                      },
                       "is_outdoor": {
                         "type": "boolean",
                         "nullable": true
@@ -3149,6 +3159,532 @@
         ]
       }
     },
+    "/v1/admin/events/{id}/family-needs": {
+      "get": {
+        "operationId": "adminListFamilyNeedEvidence",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Evidence history, including conflicts and invalidated rows",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/FamilyNeedEvidenceRowDto"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminValidationErrorDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "clerk": []
+          }
+        ],
+        "summary": "",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/v1/admin/events/{id}/family-needs/evidence": {
+      "post": {
+        "operationId": "adminAddFamilyNeedEvidence",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FamilyNeedEvidenceInputDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Evidence recorded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FamilyNeedEvidenceRowDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminValidationErrorDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "clerk": []
+          }
+        ],
+        "summary": "",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/v1/admin/events/{id}/family-needs/reassess": {
+      "post": {
+        "operationId": "adminReassessFamilyNeedEvidence",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FamilyNeedReassessmentInputDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Evidence invalidated pending reassessment",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FamilyNeedEvidenceRowDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminValidationErrorDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "clerk": []
+          }
+        ],
+        "summary": "",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/v1/admin/correction-reports": {
+      "get": {
+        "operationId": "adminListCorrectionReports",
+        "parameters": [
+          {
+            "name": "status",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "enum": [
+                "new",
+                "in_review",
+                "resolved",
+                "dismissed"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CorrectionReportRowDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "clerk": []
+          }
+        ],
+        "summary": "",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/v1/admin/correction-reports/{id}": {
+      "get": {
+        "operationId": "adminGetCorrectionReportPrivateDetail",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CorrectionReportPrivatePayloadDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "clerk": []
+          }
+        ],
+        "summary": "",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/v1/admin/correction-reports/{id}/claim": {
+      "post": {
+        "operationId": "adminClaimCorrectionReport",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClaimCorrectionReportDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CorrectionReportPrivateDetailDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "clerk": []
+          }
+        ],
+        "summary": "",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/v1/admin/correction-reports/{id}/correction": {
+      "post": {
+        "operationId": "adminLinkCorrectionReportEdit",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LinkCorrectionDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListingCorrectionDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "clerk": []
+          }
+        ],
+        "summary": "",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/v1/admin/correction-reports/{id}/disposition": {
+      "post": {
+        "operationId": "adminDisposeCorrectionReport",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DisposeCorrectionReportDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CorrectionReportPrivateDetailDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "clerk": []
+          }
+        ],
+        "summary": "",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/v1/admin/correction-reports/reporters/{reporterId}/abuse-restriction": {
+      "post": {
+        "operationId": "adminConfirmCorrectionReporterRestriction",
+        "parameters": [
+          {
+            "name": "reporterId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RestrictCorrectionReporterDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "clerk": []
+          }
+        ],
+        "summary": "",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/v1/cities": {
       "get": {
         "operationId": "ConsumerController_listCities",
@@ -3301,6 +3837,25 @@
             }
           },
           {
+            "description": "Comma-separated conjunctive family-needs criteria",
+            "required": false,
+            "name": "family_needs",
+            "in": "query",
+            "schema": {
+              "example": "indoor,wheelchair_accessible",
+              "type": "string"
+            }
+          },
+          {
+            "required": false,
+            "name": "include_unknown_family_needs",
+            "in": "query",
+            "schema": {
+              "default": "false",
+              "type": "string"
+            }
+          },
+          {
             "description": "Base64 keyset cursor returned by the previous page",
             "required": false,
             "name": "cursor",
@@ -3448,6 +4003,25 @@
             "in": "query",
             "schema": {
               "example": "2,7",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Comma-separated conjunctive family-needs criteria",
+            "required": false,
+            "name": "family_needs",
+            "in": "query",
+            "schema": {
+              "example": "indoor,wheelchair_accessible",
+              "type": "string"
+            }
+          },
+          {
+            "required": false,
+            "name": "include_unknown_family_needs",
+            "in": "query",
+            "schema": {
+              "default": "false",
               "type": "string"
             }
           },
@@ -4099,6 +4673,84 @@
         ]
       }
     },
+    "/v1/events/{eventId}/correction-reports": {
+      "post": {
+        "operationId": "submitCorrectionReport",
+        "parameters": [
+          {
+            "name": "eventId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CorrectionReportSubmissionDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Private fields are never echoed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubmittedCorrectionReportDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Duplicate or unavailable event"
+          },
+          "429": {
+            "description": "Short-lived submission control"
+          }
+        },
+        "security": [
+          {},
+          {
+            "clerk": []
+          }
+        ],
+        "summary": "Privately report incorrect event details, with or without an account",
+        "tags": [
+          "events"
+        ]
+      }
+    },
+    "/v1/correction-report-capability": {
+      "post": {
+        "operationId": "mintCorrectionReportCapability",
+        "parameters": [],
+        "responses": {
+          "204": {
+            "description": "Capability set in an HttpOnly cookie"
+          },
+          "429": {
+            "description": "Global short-lived issuance budget exhausted"
+          }
+        },
+        "security": [
+          {},
+          {
+            "clerk": []
+          }
+        ],
+        "summary": "Mint a short-lived anonymous correction-report capability",
+        "tags": [
+          "events"
+        ]
+      }
+    },
     "/healthz": {
       "get": {
         "operationId": "HealthController_healthz",
@@ -4606,6 +5258,16 @@
             "nullable": true,
             "maxLength": 2000
           },
+          "parking_details": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 2000
+          },
+          "reservation_details": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 2000
+          },
           "is_outdoor": {
             "type": "boolean",
             "nullable": true
@@ -4716,6 +5378,8 @@
           "admission_cost_state",
           "admission_amount",
           "admission_cost_evidence",
+          "parking_details",
+          "reservation_details",
           "is_outdoor",
           "source_url",
           "source_name",
@@ -5832,6 +6496,617 @@
           "logs"
         ]
       },
+      "FamilyNeedEvidenceRowDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "event_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "claim": {
+            "type": "string",
+            "enum": [
+              "indoor",
+              "outdoor",
+              "wheelchair_accessible",
+              "sensory_friendly",
+              "stroller_friendly"
+            ]
+          },
+          "value": {
+            "type": "string",
+            "enum": [
+              "supported",
+              "unsupported"
+            ]
+          },
+          "provenance_type": {
+            "type": "string",
+            "enum": [
+              "source_statement",
+              "human",
+              "organizer"
+            ]
+          },
+          "source_url": {
+            "type": "string",
+            "format": "uri",
+            "nullable": true
+          },
+          "statement": {
+            "type": "string"
+          },
+          "observed_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "recorded_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "recorded_by": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "applicable_venue_name": {
+            "type": "string",
+            "nullable": true
+          },
+          "applicable_address": {
+            "type": "string",
+            "nullable": true
+          },
+          "applicable_start_datetime": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "applicable_end_datetime": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "invalidated_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "invalidation_reason": {
+            "type": "string",
+            "nullable": true
+          },
+          "has_conflict": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "event_id",
+          "claim",
+          "value",
+          "provenance_type",
+          "source_url",
+          "statement",
+          "observed_at",
+          "recorded_at",
+          "recorded_by",
+          "applicable_venue_name",
+          "applicable_address",
+          "applicable_start_datetime",
+          "applicable_end_datetime",
+          "invalidated_at",
+          "invalidation_reason"
+        ]
+      },
+      "FamilyNeedEvidenceInputDto": {
+        "type": "object",
+        "properties": {
+          "claim": {
+            "type": "string",
+            "enum": [
+              "indoor",
+              "outdoor",
+              "wheelchair_accessible",
+              "sensory_friendly",
+              "stroller_friendly"
+            ]
+          },
+          "value": {
+            "type": "string",
+            "enum": [
+              "supported",
+              "unsupported"
+            ]
+          },
+          "provenance_type": {
+            "type": "string",
+            "enum": [
+              "source_statement",
+              "human",
+              "organizer"
+            ]
+          },
+          "source_url": {
+            "type": "string",
+            "format": "uri",
+            "nullable": true
+          },
+          "statement": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4000
+          },
+          "observed_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "claim",
+          "value",
+          "provenance_type",
+          "statement",
+          "observed_at"
+        ]
+      },
+      "FamilyNeedReassessmentInputDto": {
+        "type": "object",
+        "properties": {
+          "evidence_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          }
+        },
+        "required": [
+          "evidence_id",
+          "reason"
+        ]
+      },
+      "CorrectionReportRowDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "event_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "category": {
+            "type": "string"
+          },
+          "priority": {
+            "type": "integer"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "new",
+              "in_review",
+              "resolved",
+              "dismissed"
+            ]
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "claimed_by": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "claimed_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "resolved_by": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "resolved_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "correction_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "event_id",
+          "category",
+          "priority",
+          "status",
+          "version",
+          "claimed_by",
+          "claimed_at",
+          "resolved_by",
+          "resolved_at",
+          "correction_id",
+          "created_at",
+          "updated_at"
+        ]
+      },
+      "CorrectionReportContactDto": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email",
+            "maxLength": 320
+          },
+          "phone": {
+            "type": "string",
+            "minLength": 7,
+            "maxLength": 32,
+            "pattern": "^\\+?[0-9 ()-]{7,32}$"
+          }
+        }
+      },
+      "CorrectionReportPrivatePayloadDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "event_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "category": {
+            "type": "string"
+          },
+          "priority": {
+            "type": "integer"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "new",
+              "in_review",
+              "resolved",
+              "dismissed"
+            ]
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "claimed_by": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "claimed_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "resolved_by": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "resolved_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "correction_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "reporter_user_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "details": {
+            "type": "string"
+          },
+          "resolution_note": {
+            "type": "string",
+            "nullable": true
+          },
+          "contact": {
+            "nullable": true,
+            "description": "Private optional reporter contact",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CorrectionReportContactDto"
+              }
+            ]
+          },
+          "evidence": {
+            "nullable": true,
+            "description": "Private supporting HTTP(S) URLs",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "event_id",
+          "category",
+          "priority",
+          "status",
+          "version",
+          "claimed_by",
+          "claimed_at",
+          "resolved_by",
+          "resolved_at",
+          "correction_id",
+          "created_at",
+          "updated_at",
+          "reporter_user_id",
+          "details",
+          "resolution_note",
+          "contact",
+          "evidence"
+        ]
+      },
+      "ClaimCorrectionReportDto": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "version"
+        ]
+      },
+      "CorrectionReportPrivateDetailDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "event_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "category": {
+            "type": "string"
+          },
+          "priority": {
+            "type": "integer"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "new",
+              "in_review",
+              "resolved",
+              "dismissed"
+            ]
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "claimed_by": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "claimed_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "resolved_by": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "resolved_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "correction_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "reporter_user_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "details": {
+            "type": "string"
+          },
+          "resolution_note": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "event_id",
+          "category",
+          "priority",
+          "status",
+          "version",
+          "claimed_by",
+          "claimed_at",
+          "resolved_by",
+          "resolved_at",
+          "correction_id",
+          "created_at",
+          "updated_at",
+          "reporter_user_id",
+          "details",
+          "resolution_note"
+        ]
+      },
+      "LinkCorrectionDto": {
+        "type": "object",
+        "properties": {
+          "audit_log_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "note": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          }
+        },
+        "required": [
+          "audit_log_id",
+          "note"
+        ]
+      },
+      "ListingCorrectionDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "event_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "operator_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "audit_log_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "audit_note": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "event_id",
+          "operator_id",
+          "audit_log_id",
+          "audit_note",
+          "created_at"
+        ]
+      },
+      "DisposeCorrectionReportDto": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "resolved",
+              "dismissed"
+            ]
+          },
+          "note": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          },
+          "correction_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          }
+        },
+        "required": [
+          "version",
+          "outcome",
+          "note"
+        ]
+      },
+      "RestrictCorrectionReporterDto": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "reason",
+          "expires_at"
+        ]
+      },
+      "OkDto": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          }
+        },
+        "required": [
+          "ok"
+        ]
+      },
       "CityDto": {
         "type": "object",
         "properties": {
@@ -5948,6 +7223,14 @@
             "description": "Exact PostgreSQL numeric string"
           },
           "admission_cost_evidence": {
+            "type": "string",
+            "nullable": true
+          },
+          "parking_details": {
+            "type": "string",
+            "nullable": true
+          },
+          "reservation_details": {
             "type": "string",
             "nullable": true
           },
@@ -6068,6 +7351,17 @@
             ],
             "nullable": true,
             "description": "Age suitability for the selected ages; null when ages were not selected"
+          },
+          "family_needs": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string",
+              "enum": [
+                "confirmed",
+                "contradicted",
+                "unknown"
+              ]
+            }
           }
         },
         "required": [
@@ -6089,6 +7383,8 @@
           "admission_cost_state",
           "admission_amount",
           "admission_cost_evidence",
+          "parking_details",
+          "reservation_details",
           "source_url",
           "source_name",
           "source_details_fetched_at",
@@ -6104,7 +7400,8 @@
           "tags",
           "is_favorited",
           "is_in_calendar",
-          "age_match"
+          "age_match",
+          "family_needs"
         ]
       },
       "EventsPageDto": {
@@ -6179,6 +7476,17 @@
             ],
             "nullable": true,
             "description": "Age suitability for the selected ages; null when ages were not selected"
+          },
+          "family_needs": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string",
+              "enum": [
+                "confirmed",
+                "contradicted",
+                "unknown"
+              ]
+            }
           }
         },
         "required": [
@@ -6192,7 +7500,8 @@
           "is_free",
           "admission_cost_state",
           "admission_amount",
-          "age_match"
+          "age_match",
+          "family_needs"
         ]
       },
       "MapEventsDto": {
@@ -6727,6 +8036,75 @@
           "user_id",
           "city_id",
           "is_primary",
+          "created_at"
+        ]
+      },
+      "CorrectionReportSubmissionDto": {
+        "type": "object",
+        "properties": {
+          "category": {
+            "type": "string",
+            "enum": [
+              "cancellation",
+              "wrong_date_time",
+              "wrong_location",
+              "wrong_cost",
+              "accessibility",
+              "other"
+            ]
+          },
+          "details": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          },
+          "contact": {
+            "description": "Private",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CorrectionReportContactDto"
+              }
+            ]
+          },
+          "evidence_urls": {
+            "maxItems": 5,
+            "description": "Private; HTTP(S) URLs only",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "category",
+          "details"
+        ]
+      },
+      "SubmittedCorrectionReportDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "new"
+            ]
+          },
+          "priority": {
+            "type": "integer"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "priority",
           "created_at"
         ]
       },

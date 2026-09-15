@@ -612,6 +612,13 @@ describe("consumer read HTTP API", () => {
           admission_cost_state: "unknown",
           admission_amount: null,
           age_match: null,
+          family_needs: {
+            indoor: "unknown",
+            outdoor: "unknown",
+            wheelchair_accessible: "unknown",
+            sensory_friendly: "unknown",
+            stroller_friendly: "unknown",
+          },
         },
       ],
       omitted_without_coordinates: 1,

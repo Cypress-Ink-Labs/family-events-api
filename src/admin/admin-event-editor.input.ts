@@ -21,6 +21,8 @@ export const ADMIN_EDITABLE_EVENT_FIELDS = [
   "admission_cost_state",
   "admission_amount",
   "admission_cost_evidence",
+  "parking_details",
+  "reservation_details",
   "is_outdoor",
   "source_url",
   "source_name",
@@ -88,6 +90,8 @@ const eventPatch = z
     admission_cost_state: z.enum(["free", "paid", "unknown"]).optional(),
     admission_amount: z.number().finite().min(0).max(99_999_999.99).nullable().optional(),
     admission_cost_evidence: nullableText(2_000).optional(),
+    parking_details: nullableText(2_000).optional(),
+    reservation_details: nullableText(2_000).optional(),
     is_outdoor: z.boolean().nullable().optional(),
     source_url: httpUrl.nullable().optional(),
     source_name: nullableText(300).optional(),
@@ -163,6 +167,8 @@ export interface AdminEventPatch {
   admissionCostState?: "free" | "paid" | "unknown"
   admissionAmount?: number | null
   admissionCostEvidence?: string | null
+  parkingDetails?: string | null
+  reservationDetails?: string | null
   isOutdoor?: boolean | null
   sourceUrl?: string | null
   sourceName?: string | null
@@ -222,6 +228,10 @@ export function parseAdminUpdateEventBody(body: unknown): AdminUpdateEventInput 
       ...(patch.admission_amount !== undefined ? { admissionAmount: patch.admission_amount } : {}),
       ...(patch.admission_cost_evidence !== undefined
         ? { admissionCostEvidence: patch.admission_cost_evidence }
+        : {}),
+      ...(patch.parking_details !== undefined ? { parkingDetails: patch.parking_details } : {}),
+      ...(patch.reservation_details !== undefined
+        ? { reservationDetails: patch.reservation_details }
         : {}),
       ...(patch.is_outdoor !== undefined ? { isOutdoor: patch.is_outdoor } : {}),
       ...(patch.source_url !== undefined ? { sourceUrl: patch.source_url } : {}),

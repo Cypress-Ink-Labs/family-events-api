@@ -1,6 +1,7 @@
 import { Injectable } from "@nestjs/common"
 
 import { DbService } from "../db/db.service.js"
+import { familyNeedsPredicateSql } from "../evidence/family-needs.js"
 import type {
   DiscoverEventsInput,
   EnrichedEvent,
@@ -65,11 +66,20 @@ function agePredicateSql(ages: number, mode: number, includeUnknown: number): st
   )`
 }
 
+function familyNeedsProjectionSql(eventAlias: string): string {
+  return `jsonb_build_object(
+    'indoor', COALESCE((SELECT state FROM public.event_family_needs WHERE event_id = ${eventAlias}.id AND claim = 'indoor'), 'unknown'),
+    'outdoor', COALESCE((SELECT state FROM public.event_family_needs WHERE event_id = ${eventAlias}.id AND claim = 'outdoor'), 'unknown'),
+    'wheelchair_accessible', COALESCE((SELECT state FROM public.event_family_needs WHERE event_id = ${eventAlias}.id AND claim = 'wheelchair_accessible'), 'unknown'),
+    'sensory_friendly', COALESCE((SELECT state FROM public.event_family_needs WHERE event_id = ${eventAlias}.id AND claim = 'sensory_friendly'), 'unknown'),
+    'stroller_friendly', COALESCE((SELECT state FROM public.event_family_needs WHERE event_id = ${eventAlias}.id AND claim = 'stroller_friendly'), 'unknown')
+  ) AS family_needs`
+}
+
 // Consumer event reads (U23): a port of family-events-app src/server/events.ts.
-// The repositories call the same deployed RPCs with the same named parameters,
-// so RPC semantics remain specified by the SQL integration tests in
-// family-events-backend/supabase/tests/ (events_enriched_parity.sql etc.).
-// The RPC SQL is inlined into the API only after cutover (plan U24 note).
+// The repositories call the deployed RPCs with the same named parameters.
+// New schema and RPC behavior is owned by the API migration ledger and its
+// schema tests; the deprecated backend is only the frozen bootstrap snapshot.
 
 const LIST_SQL = `
 WITH candidate AS (
@@ -77,10 +87,11 @@ WITH candidate AS (
   id, title, description, start_datetime, end_datetime, timezone,
   venue_name, address, city_id, latitude, longitude, age_min, age_max,
   price, is_free, admission_cost_state, admission_amount, admission_cost_evidence,
+  parking_details, reservation_details,
   source_url, source_name, source_details_fetched_at,
   images, status, recurrence_info,
   is_featured, view_count, created_at, updated_at, avg_rating, rating_count,
-  tags, is_favorited, is_in_calendar
+  tags, is_favorited, is_in_calendar, ${familyNeedsProjectionSql("enriched")}
 FROM public.events_enriched(
   p_city_id              => $1::uuid,
   p_status               => $2::text,
@@ -91,7 +102,7 @@ FROM public.events_enriched(
   p_after_start_datetime => $7::timestamptz,
   p_after_id             => $8::uuid,
   p_limit                => $9::int
-)
+) AS enriched
 )
 SELECT candidate.*, NULL::text AS age_match
 FROM candidate
@@ -101,7 +112,7 @@ ORDER BY start_datetime ASC, id ASC
 
 const DISCOVERY_SQL = `
 WITH candidates AS (
-  SELECT e.id, e.start_datetime, ${ageProjectionSql(6, 7)}
+  SELECT e.id, e.start_datetime, ${ageProjectionSql(6, 7)}, ${familyNeedsProjectionSql("e")}
   FROM public.events e
   LEFT JOIN public.cities c ON c.id = e.city_id
   CROSS JOIN LATERAL (
@@ -154,6 +165,7 @@ WITH candidates AS (
     )
     AND ($15::boolean IS NULL OR e.is_free = $15::boolean)
     AND ${agePredicateSql(6, 7, 8)}
+    AND ${familyNeedsPredicateSql("e", { familyNeeds: 16, includeUnknown: 17 })}
     AND (
       $11::timestamptz IS NULL
       OR (e.start_datetime, e.id) > ($11::timestamptz, $12::uuid)
@@ -165,11 +177,12 @@ SELECT
   ee.id, ee.title, ee.description, ee.start_datetime, ee.end_datetime, ee.timezone,
   ee.venue_name, ee.address, ee.city_id, ee.latitude, ee.longitude, ee.age_min, ee.age_max,
   ee.price, ee.is_free, ee.admission_cost_state, ee.admission_amount,
-  ee.admission_cost_evidence, ee.source_url, ee.source_name, ee.source_details_fetched_at,
+  ee.admission_cost_evidence, ee.parking_details, ee.reservation_details,
+  ee.source_url, ee.source_name, ee.source_details_fetched_at,
   ee.images, ee.status,
   ee.recurrence_info, ee.is_featured, ee.view_count, ee.created_at, ee.updated_at,
   ee.avg_rating, ee.rating_count, ee.tags, ee.is_favorited, ee.is_in_calendar,
-  candidate.age_match
+  candidate.age_match, candidate.family_needs
 FROM candidates candidate
 JOIN public.events_enriched(
   p_user_id => $14::uuid,
@@ -183,7 +196,7 @@ WITH matching AS MATERIALIZED (
 SELECT
   e.id, e.title, e.latitude, e.longitude, e.start_datetime, e.timezone,
   e.venue_name, e.is_free, e.admission_cost_state, e.admission_amount,
-  ${ageProjectionSql(4, 5)}
+  ${ageProjectionSql(4, 5)}, ${familyNeedsProjectionSql("e")}
 FROM public.events e
 LEFT JOIN public.cities c ON c.id = e.city_id
 CROSS JOIN LATERAL (
@@ -217,6 +230,7 @@ WHERE e.status = 'published'::public.event_status
     )
   )
   AND ${agePredicateSql(4, 5, 6)}
+  AND ${familyNeedsPredicateSql("e", { familyNeeds: 8, includeUnknown: 9 })}
   AND (
     $7::text = 'any'
     OR e.admission_cost_state::text = $7::text
@@ -317,6 +331,8 @@ export class EventsRepository {
       input.limit ?? 24,
       input.userKey ?? null,
       input.isFree ?? null,
+      input.familyNeeds ?? [],
+      input.includeUnknownFamilyNeeds ?? false,
     ])
   }
 
@@ -331,6 +347,8 @@ export class EventsRepository {
         input.ageMode,
         input.includeUnknownAge,
         input.cost ?? "any",
+        input.familyNeeds ?? [],
+        input.includeUnknownFamilyNeeds ?? false,
       ]
     )
     return {

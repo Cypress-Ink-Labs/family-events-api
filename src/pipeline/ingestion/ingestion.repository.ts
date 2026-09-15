@@ -239,6 +239,17 @@ export class IngestionRepository implements ProcessSourceDb, SourceQueueDb {
       BULK_IMPORT_SCRAPE_EVENTS_SQL,
       [runId, sourceId, JSON.stringify(events)]
     )
+    if (
+      events.some(
+        (event) =>
+          Array.isArray(event.family_need_statements) && event.family_need_statements.length > 0
+      )
+    ) {
+      await this.db.query("SELECT private.import_family_need_statements($1::uuid, $2::jsonb)", [
+        sourceId,
+        JSON.stringify(events),
+      ])
+    }
     return rows[0]?.result ?? null
   }
 
