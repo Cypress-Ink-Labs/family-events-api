@@ -267,6 +267,22 @@ function prepEventPayload(parsed: ParsedEvent, ctx: EventPayloadContext): Record
     admission_cost_state: admissionCostState,
     admission_amount: admissionAmount,
     admission_cost_evidence: admissionCostEvidence,
+    parking_details: parsed.parkingDetails ?? null,
+    reservation_details: parsed.reservationDetails ?? null,
+    family_need_statements: isManualSource
+      ? []
+      : (parsed.familyNeedStatements ?? [])
+          .filter(
+            (statement) =>
+              statement.sourceUrl.trim().length > 0 && statement.statement.trim().length > 0
+          )
+          .map((statement) => ({
+            claim: statement.claim,
+            value: statement.value,
+            source_url: statement.sourceUrl,
+            statement: statement.statement,
+            observed_at: statement.observedAt ?? ctx.detailsFetchedAt,
+          })),
     is_outdoor: isOutdoor,
     latitude: ctx.cityCentroid?.latitude ?? null,
     longitude: ctx.cityCentroid?.longitude ?? null,

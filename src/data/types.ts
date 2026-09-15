@@ -7,11 +7,13 @@
 // app's driver) and timestamptz as microsecond-precision text (db.service.ts).
 
 import type { Json } from "../db/json.js"
+import type { FamilyNeedClaim, FamilyNeedState } from "../evidence/family-needs.js"
 
 export type AgeMatch = "confirmed" | "unknown"
 export type AgeMode = "all" | "any"
 export type AdmissionCostState = "free" | "paid" | "unknown"
 export type AdmissionCostFilter = "any" | AdmissionCostState
+export type FamilyNeeds = Record<FamilyNeedClaim, FamilyNeedState>
 
 export interface EnrichedEvent {
   id: string
@@ -32,6 +34,8 @@ export interface EnrichedEvent {
   admission_cost_state: AdmissionCostState
   admission_amount: string | null
   admission_cost_evidence: string | null
+  parking_details: string | null
+  reservation_details: string | null
   source_url: string | null
   source_name: string | null
   source_details_fetched_at: string | null
@@ -49,6 +53,7 @@ export interface EnrichedEvent {
   is_in_calendar: boolean
   /** Present only when child ages were selected for this discovery result. */
   age_match: AgeMatch | null
+  family_needs: FamilyNeeds
 }
 
 export interface EventCursor {
@@ -71,6 +76,8 @@ export interface DiscoverEventsInput {
   ages: number[]
   ageMode: AgeMode
   includeUnknownAge: boolean
+  familyNeeds?: FamilyNeedClaim[]
+  includeUnknownFamilyNeeds?: boolean
   limit?: number
   after?: EventCursor | null
   userKey?: string | null
@@ -97,6 +104,8 @@ export interface ListMapEventsInput {
   ageMode: AgeMode
   includeUnknownAge: boolean
   cost?: AdmissionCostFilter
+  familyNeeds?: FamilyNeedClaim[]
+  includeUnknownFamilyNeeds?: boolean
 }
 
 export interface MappableEvent {
@@ -111,6 +120,7 @@ export interface MappableEvent {
   admission_cost_state: AdmissionCostState
   admission_amount: string | null
   age_match: AgeMatch | null
+  family_needs: FamilyNeeds
 }
 
 export interface MapEventsResult {

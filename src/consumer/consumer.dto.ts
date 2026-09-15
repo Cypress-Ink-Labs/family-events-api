@@ -22,6 +22,30 @@ const JSON_VALUE_PROPERTY: ApiPropertyOptions = {
   nullable: true,
 }
 
+const FAMILY_NEED_STATES = ["confirmed", "contradicted", "unknown"]
+const FAMILY_NEEDS_PROPERTY: ApiPropertyOptions = {
+  oneOf: [
+    {
+      type: "object",
+      additionalProperties: false,
+      required: [
+        "indoor",
+        "outdoor",
+        "wheelchair_accessible",
+        "sensory_friendly",
+        "stroller_friendly",
+      ],
+      properties: {
+        indoor: { type: "string", enum: FAMILY_NEED_STATES },
+        outdoor: { type: "string", enum: FAMILY_NEED_STATES },
+        wheelchair_accessible: { type: "string", enum: FAMILY_NEED_STATES },
+        sensory_friendly: { type: "string", enum: FAMILY_NEED_STATES },
+        stroller_friendly: { type: "string", enum: FAMILY_NEED_STATES },
+      },
+    },
+  ],
+}
+
 export class EnrichedEventDto implements EnrichedEvent {
   @ApiProperty({ format: "uuid" })
   id!: string
@@ -76,6 +100,12 @@ export class EnrichedEventDto implements EnrichedEvent {
 
   @ApiProperty({ type: String, nullable: true })
   admission_cost_evidence!: string | null
+
+  @ApiProperty({ type: String, nullable: true })
+  parking_details!: string | null
+
+  @ApiProperty({ type: String, nullable: true })
+  reservation_details!: string | null
 
   @ApiProperty({ type: String, nullable: true })
   source_url!: string | null
@@ -133,6 +163,9 @@ export class EnrichedEventDto implements EnrichedEvent {
     description: "Age suitability for the selected ages; null when ages were not selected",
   })
   age_match!: "confirmed" | "unknown" | null
+
+  @ApiProperty(FAMILY_NEEDS_PROPERTY)
+  family_needs!: EnrichedEvent["family_needs"]
 }
 
 export class CityDto implements City {
@@ -262,6 +295,9 @@ export class MapEventDto {
     description: "Age suitability for the selected ages; null when ages were not selected",
   })
   age_match!: "confirmed" | "unknown" | null
+
+  @ApiProperty(FAMILY_NEEDS_PROPERTY)
+  family_needs!: EnrichedEvent["family_needs"]
 }
 
 export class MapEventsDto {
@@ -294,6 +330,15 @@ export class MapQueryDto {
     example: "2,7",
   })
   ages?: string
+
+  @ApiPropertyOptional({
+    description: "Comma-separated conjunctive family-needs criteria",
+    example: "indoor,wheelchair_accessible",
+  })
+  family_needs?: string
+
+  @ApiPropertyOptional({ enum: ["true", "false"], default: "false" })
+  include_unknown_family_needs?: "true" | "false"
 
   @ApiPropertyOptional({ enum: ["all", "any"], default: "all" })
   age_mode?: "all" | "any"
@@ -437,6 +482,15 @@ export class EventsQueryDto {
 
   @ApiPropertyOptional({ default: false })
   include_unknown_age?: boolean
+
+  @ApiPropertyOptional({
+    description: "Comma-separated conjunctive family-needs criteria",
+    example: "indoor,wheelchair_accessible",
+  })
+  family_needs?: string
+
+  @ApiPropertyOptional({ enum: ["true", "false"], default: "false" })
+  include_unknown_family_needs?: "true" | "false"
 
   @ApiPropertyOptional({ description: "Base64 keyset cursor returned by the previous page" })
   cursor?: string

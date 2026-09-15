@@ -4,6 +4,7 @@ import { z } from "zod"
 import type { EventCursor } from "../data/types.js"
 import type { DiscoveryRange } from "../data/types.js"
 import type { AdmissionCostFilter } from "../data/types.js"
+import { FAMILY_NEED_CLAIMS, type FamilyNeedClaim } from "../evidence/family-needs.js"
 import { decodeCursor } from "./cursor.js"
 
 export const MAX_CHILD_AGE = 17
@@ -27,6 +28,8 @@ const querySchema = z.strictObject({
     .optional(),
   age_mode: z.enum(["all", "any"]).optional(),
   include_unknown_age: z.enum(["true", "false"]).optional(),
+  family_needs: z.string().min(1).optional(),
+  include_unknown_family_needs: z.enum(["true", "false"]).optional(),
   cursor: z.string().min(1).optional(),
   limit: integerString.optional(),
 })
@@ -51,6 +54,8 @@ export interface ExploreQuery {
   ages: number[]
   ageMode: AgeMode
   includeUnknownAge: boolean
+  familyNeeds?: FamilyNeedClaim[]
+  includeUnknownFamilyNeeds?: boolean
 }
 
 export function parseExploreQuery(query: unknown): ExploreQuery {
@@ -86,6 +91,7 @@ export function parseExploreQuery(query: unknown): ExploreQuery {
     after: result.data.cursor === undefined ? null : decodeCursor(result.data.cursor),
     limit,
     ...ageQuery,
+    ...parseFamilyNeeds(result.data),
   }
 }
 
@@ -103,6 +109,8 @@ const mapQuerySchema = z.strictObject({
     .optional(),
   age_mode: z.enum(["all", "any"]).optional(),
   include_unknown_age: z.enum(["true", "false"]).optional(),
+  family_needs: z.string().min(1).optional(),
+  include_unknown_family_needs: z.enum(["true", "false"]).optional(),
   cost: z.enum(["any", "free", "paid", "unknown"]).optional(),
 })
 
@@ -110,6 +118,8 @@ export interface MapQuery extends AgeQuery {
   cityId: string | null
   range: DiscoveryRange
   cost?: AdmissionCostFilter
+  familyNeeds?: FamilyNeedClaim[]
+  includeUnknownFamilyNeeds?: boolean
 }
 
 export function parseMapQuery(query: unknown): MapQuery {
@@ -122,6 +132,7 @@ export function parseMapQuery(query: unknown): MapQuery {
     range: result.data.range ?? "weekend",
     cost: result.data.cost ?? "any",
     ...parseAgeQuery(result.data),
+    ...parseFamilyNeeds(result.data),
   }
 }
 
@@ -185,5 +196,26 @@ function parseAgeQuery(input: {
     ages,
     ageMode: input.age_mode ?? "all",
     includeUnknownAge: input.include_unknown_age === "true",
+  }
+}
+
+function parseFamilyNeeds(input: {
+  family_needs?: string
+  include_unknown_family_needs?: "true" | "false"
+}): { familyNeeds: FamilyNeedClaim[]; includeUnknownFamilyNeeds: boolean } {
+  const values = input.family_needs?.split(",") ?? []
+  if (
+    values.some((value) => !(FAMILY_NEED_CLAIMS as readonly string[]).includes(value)) ||
+    new Set(values).size !== values.length ||
+    (values.length === 0 && input.include_unknown_family_needs !== undefined)
+  ) {
+    throw new BadRequestException("invalid query parameters")
+  }
+  if (input.family_needs === undefined) {
+    return {} as { familyNeeds: FamilyNeedClaim[]; includeUnknownFamilyNeeds: boolean }
+  }
+  return {
+    familyNeeds: values as FamilyNeedClaim[],
+    includeUnknownFamilyNeeds: input.include_unknown_family_needs === "true",
   }
 }

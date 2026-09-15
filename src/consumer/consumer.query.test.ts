@@ -4,6 +4,24 @@ import { describe, expect, it } from "vitest"
 import { parseExploreQuery, parseMapQuery, parsePlanQuery } from "./consumer.query.js"
 
 describe("parseMapQuery", () => {
+  it("parses conjunctive family needs with an explicit unknown opt-in", () => {
+    expect(
+      parseMapQuery({
+        family_needs: "indoor,outdoor,wheelchair_accessible",
+        include_unknown_family_needs: "true",
+      })
+    ).toMatchObject({
+      familyNeeds: ["indoor", "outdoor", "wheelchair_accessible"],
+      includeUnknownFamilyNeeds: true,
+    })
+  })
+
+  it("rejects duplicate, unsupported, and unscoped unknown family-needs choices", () => {
+    expect(() => parseMapQuery({ family_needs: "indoor,indoor" })).toThrow()
+    expect(() => parseMapQuery({ family_needs: "parking" })).toThrow()
+    expect(() => parseMapQuery({ include_unknown_family_needs: "true" })).toThrow()
+  })
+
   it("defaults to weekend and accepts city/date/age choices", () => {
     expect(parseMapQuery({})).toEqual({
       cityId: null,

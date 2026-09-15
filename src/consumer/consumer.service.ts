@@ -59,6 +59,7 @@ export interface MapEvent {
   admission_cost_state: "free" | "paid" | "unknown"
   admission_amount: string | null
   age_match: "confirmed" | "unknown" | null
+  family_needs: EnrichedEvent["family_needs"]
 }
 
 function toPublicEventComment(comment: EventComment): PublicEventComment {
@@ -110,6 +111,12 @@ export class ConsumerService {
       ages: input.ages,
       ageMode: input.ageMode,
       includeUnknownAge: input.includeUnknownAge,
+      ...(input.familyNeeds
+        ? {
+            familyNeeds: input.familyNeeds,
+            includeUnknownFamilyNeeds: input.includeUnknownFamilyNeeds ?? false,
+          }
+        : {}),
       userKey,
       limit: probeLimit,
       after: input.after,
@@ -175,6 +182,12 @@ export class ConsumerService {
       ages: input.ages,
       ageMode: input.ageMode,
       includeUnknownAge: input.includeUnknownAge,
+      ...(input.familyNeeds
+        ? {
+            familyNeeds: input.familyNeeds,
+            includeUnknownFamilyNeeds: input.includeUnknownFamilyNeeds ?? false,
+          }
+        : {}),
       cost: input.cost ?? "any",
     })
     const mapped: MapEvent[] = []
@@ -193,6 +206,7 @@ export class ConsumerService {
         admission_cost_state: event.admission_cost_state,
         admission_amount: event.admission_amount,
         age_match: event.age_match,
+        family_needs: event.family_needs,
       })
     }
     return {

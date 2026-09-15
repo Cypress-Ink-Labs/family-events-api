@@ -237,6 +237,8 @@ describe("U23 data layer (integration, real RPCs)", () => {
       "admission_cost_state",
       "admission_amount",
       "admission_cost_evidence",
+      "parking_details",
+      "reservation_details",
       "source_url",
       "source_name",
       "source_details_fetched_at",
@@ -253,6 +255,7 @@ describe("U23 data layer (integration, real RPCs)", () => {
       "is_favorited",
       "is_in_calendar",
       "age_match",
+      "family_needs",
     ].toSorted()
 
     const SEARCHED_KEYS = [

@@ -2,7 +2,13 @@ import { readFile } from "node:fs/promises"
 import path from "node:path"
 import { Client } from "pg"
 
-const TEST_FILES = ["source_details_freshness.sql", "admission_cost.sql"] as const
+const TEST_FILES = [
+  "source_details_freshness.sql",
+  "admission_cost.sql",
+  "family_needs_evidence.sql",
+  "family_needs_behavior.sql",
+  "correction_reports.sql",
+] as const
 
 export function validateSchemaTestDatabaseUrl(databaseUrl: string, allowSharedPort = false): void {
   const parsed = new URL(databaseUrl)
