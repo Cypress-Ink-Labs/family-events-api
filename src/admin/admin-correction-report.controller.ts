@@ -1,5 +1,6 @@
 import {
   Body,
+  BadRequestException,
   ConflictException,
   Controller,
   Get,
@@ -30,6 +31,12 @@ import {
   AdminCorrectionReportRepository,
   type CorrectionReportListRow,
 } from "./admin-correction-report.repository.js"
+
+function parse<T>(schema: z.ZodType<T>, value: unknown): T {
+  const result = schema.safeParse(value)
+  if (!result.success) throw new BadRequestException("invalid correction report request")
+  return result.data
+}
 
 const uuid = z.string().uuid()
 const claim = z.object({ version: z.number().int().positive() }).strict()
@@ -63,7 +70,17 @@ const restriction = z
 class CorrectionReportRowDto {
   @ApiProperty({ format: "uuid" }) id!: string
   @ApiProperty({ format: "uuid" }) event_id!: string
-  @ApiProperty() category!: string
+  @ApiProperty({
+    enum: [
+      "cancellation",
+      "wrong_date_time",
+      "wrong_location",
+      "wrong_cost",
+      "accessibility",
+      "other",
+    ],
+  })
+  category!: string
   @ApiProperty({ type: "integer" }) priority!: number
   @ApiProperty({ enum: ["new", "in_review", "resolved", "dismissed"] }) status!: string
   @ApiProperty({ type: "integer", minimum: 1 }) version!: number
@@ -74,6 +91,10 @@ class CorrectionReportRowDto {
   @ApiProperty({ type: String, format: "uuid", nullable: true }) correction_id!: string | null
   @ApiProperty({ format: "date-time" }) created_at!: string
   @ApiProperty({ format: "date-time" }) updated_at!: string
+}
+
+class CorrectionReportQueueRowDto extends CorrectionReportRowDto {
+  @ApiProperty() event_title!: string
 }
 
 class CorrectionReportPrivateDetailDto extends CorrectionReportRowDto {
@@ -89,6 +110,8 @@ class CorrectionReportContactDto {
 }
 
 class CorrectionReportPrivatePayloadDto extends CorrectionReportPrivateDetailDto {
+  @ApiProperty() event_title!: string
+
   @ApiProperty({
     type: CorrectionReportContactDto,
     nullable: true,
@@ -149,18 +172,18 @@ export class AdminCorrectionReportController {
     required: false,
     enum: ["new", "in_review", "resolved", "dismissed"],
   })
-  @ApiQuery({ name: "limit", required: false, type: Number, minimum: 1, maximum: 100 })
-  @ApiOkResponse({ type: [CorrectionReportRowDto] })
+  @ApiQuery({ name: "limit", required: false, type: Number, minimum: 1, maximum: 200 })
+  @ApiOkResponse({ type: [CorrectionReportQueueRowDto] })
   list(
     @Req() request: IdentifiedRequest,
     @Query("status") status?: string,
     @Query("limit") rawLimit?: string
   ): Promise<CorrectionReportListRow[]> {
-    const parsedStatus = z
-      .enum(["new", "in_review", "resolved", "dismissed"])
-      .optional()
-      .parse(status)
-    const limit = z.coerce.number().int().min(1).max(100).default(50).parse(rawLimit)
+    const parsedStatus = parse(
+      z.enum(["new", "in_review", "resolved", "dismissed"]).optional(),
+      status
+    )
+    const limit = parse(z.coerce.number().int().min(1).max(200).default(50), rawLimit)
     return this.reports.list(request.identity.supabaseUuid, parsedStatus, limit)
   }
 
@@ -168,7 +191,7 @@ export class AdminCorrectionReportController {
   @ApiOperation({ operationId: "adminGetCorrectionReportPrivateDetail" })
   @ApiOkResponse({ type: CorrectionReportPrivatePayloadDto })
   async detail(@Req() request: IdentifiedRequest, @Param("id") rawId: string) {
-    const row = await this.reports.detail(request.identity.supabaseUuid, uuid.parse(rawId))
+    const row = await this.reports.detail(request.identity.supabaseUuid, parse(uuid, rawId))
     if (row === null) throw new NotFoundException()
     return row
   }
@@ -182,11 +205,11 @@ export class AdminCorrectionReportController {
     @Param("id") rawId: string,
     @Body() body: unknown
   ) {
-    const input = claim.parse(body)
+    const input = parse(claim, body)
     try {
       return await this.reports.claim(
         request.identity.supabaseUuid,
-        uuid.parse(rawId),
+        parse(uuid, rawId),
         input.version
       )
     } catch (error) {
@@ -205,10 +228,10 @@ export class AdminCorrectionReportController {
     @Param("id") rawId: string,
     @Body() body: unknown
   ) {
-    const input = correctionLink.parse(body)
+    const input = parse(correctionLink, body)
     const result = await this.reports.linkCorrection(
       request.identity.supabaseUuid,
-      uuid.parse(rawId),
+      parse(uuid, rawId),
       input.audit_log_id,
       input.note
     )
@@ -225,11 +248,11 @@ export class AdminCorrectionReportController {
     @Param("id") rawId: string,
     @Body() body: unknown
   ) {
-    const input = disposition.parse(body)
+    const input = parse(disposition, body)
     try {
       return await this.reports.resolve(
         request.identity.supabaseUuid,
-        uuid.parse(rawId),
+        parse(uuid, rawId),
         input.version,
         input.outcome,
         input.note,
@@ -251,10 +274,10 @@ export class AdminCorrectionReportController {
     @Param("reporterId") reporterId: string,
     @Body() body: unknown
   ): Promise<{ ok: true }> {
-    const input = restriction.parse(body)
+    const input = parse(restriction, body)
     await this.reports.restrict(
       request.identity.supabaseUuid,
-      uuid.parse(reporterId),
+      parse(uuid, reporterId),
       input.reason,
       input.expires_at
     )

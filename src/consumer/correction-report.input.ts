@@ -1,3 +1,4 @@
+import { BadRequestException } from "@nestjs/common"
 import { createHash, randomBytes } from "node:crypto"
 import { z } from "zod"
 
@@ -45,7 +46,9 @@ const schema = z
 export type CorrectionReportInput = z.infer<typeof schema>
 
 export function parseCorrectionReport(body: unknown): CorrectionReportInput {
-  return schema.parse(body)
+  const result = schema.safeParse(body)
+  if (!result.success) throw new BadRequestException("invalid correction report")
+  return result.data
 }
 
 export function newAnonymousCapability(): string {
