@@ -1575,6 +1575,306 @@
         ]
       }
     },
+    "/v1/admin/sources/runs": {
+      "get": {
+        "operationId": "adminSourceRuns",
+        "parameters": [
+          {
+            "name": "after_id",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "after_started_at",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 200,
+              "type": "number"
+            }
+          },
+          {
+            "name": "status",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "enum": [
+                "running",
+                "success",
+                "error",
+                "partial"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "name": "source_id",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminSourceRunsPageDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid path, query parameters, request body, or source state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminValidationErrorDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "A valid Clerk bearer token is required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The Clerk user is not provisioned, or database admin access is not provisioned. Database denial returns the stable message: admin access is not provisioned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The mapped user is not an operator, or the source does not exist",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "clerk": []
+          }
+        ],
+        "summary": "List protected source runs",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/v1/admin/sources/runs/{runId}": {
+      "get": {
+        "operationId": "adminSourceRunDetail",
+        "parameters": [
+          {
+            "name": "runId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminSourceRunDetailDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid path, query parameters, request body, or source state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminValidationErrorDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "A valid Clerk bearer token is required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The Clerk user is not provisioned, or database admin access is not provisioned. Database denial returns the stable message: admin access is not provisioned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The mapped user is not an operator, or the source does not exist",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "clerk": []
+          }
+        ],
+        "summary": "Read a source run and extraction logs",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/v1/admin/sources/queues": {
+      "get": {
+        "operationId": "adminActiveSourceQueues",
+        "parameters": [
+          {
+            "name": "after_id",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "pattern": "^[1-9]\\d{0,18}$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 200,
+              "type": "number"
+            }
+          },
+          {
+            "name": "source_id",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "kind",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "enum": [
+                "source",
+                "tag"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminActiveQueuePageDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid path, query parameters, request body, or source state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminValidationErrorDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "A valid Clerk bearer token is required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The Clerk user is not provisioned, or database admin access is not provisioned. Database denial returns the stable message: admin access is not provisioned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The mapped user is not an operator, or the source does not exist",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "clerk": []
+          }
+        ],
+        "summary": "Read active source or tag queue diagnostics and complete status summaries",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/v1/admin/sources/choices": {
       "get": {
         "operationId": "adminSourceChoices",
@@ -8142,6 +8442,342 @@
           "available_tags",
           "cities",
           "sources"
+        ]
+      },
+      "AdminSourceRunDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "source_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "source_name": {
+            "type": "string",
+            "nullable": true
+          },
+          "started_at": {
+            "type": "string"
+          },
+          "completed_at": {
+            "type": "string",
+            "nullable": true
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "running",
+              "success",
+              "error",
+              "partial"
+            ]
+          },
+          "events_found": {
+            "type": "integer"
+          },
+          "events_imported": {
+            "type": "integer"
+          },
+          "events_skipped": {
+            "type": "integer"
+          },
+          "error_log": {
+            "type": "string",
+            "nullable": true
+          },
+          "created_at": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "source_id",
+          "source_name",
+          "started_at",
+          "completed_at",
+          "status",
+          "events_found",
+          "events_imported",
+          "events_skipped",
+          "error_log",
+          "created_at"
+        ]
+      },
+      "AdminSourceRunCursorDto": {
+        "type": "object",
+        "properties": {
+          "after_started_at": {
+            "type": "string",
+            "description": "Raw PostgreSQL timestamp; pass unchanged to preserve microseconds"
+          },
+          "after_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "after_started_at",
+          "after_id"
+        ]
+      },
+      "AdminSourceRunsPageDto": {
+        "type": "object",
+        "properties": {
+          "runs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminSourceRunDto"
+            }
+          },
+          "total_count": {
+            "type": "integer"
+          },
+          "next_cursor": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AdminSourceRunCursorDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "runs",
+          "total_count",
+          "next_cursor"
+        ]
+      },
+      "AdminSourceExtractionTraceDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Exact PostgreSQL bigint string"
+          },
+          "source_queue_id": {
+            "type": "string",
+            "nullable": true
+          },
+          "extraction_mode": {
+            "type": "string"
+          },
+          "extractor": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string",
+            "nullable": true
+          },
+          "model": {
+            "type": "string",
+            "nullable": true
+          },
+          "status": {
+            "type": "string"
+          },
+          "input_bytes": {
+            "type": "integer",
+            "nullable": true
+          },
+          "parsed_event_count": {
+            "type": "integer"
+          },
+          "fallback_reason": {
+            "type": "string",
+            "nullable": true
+          },
+          "latency_ms": {
+            "type": "integer",
+            "nullable": true
+          },
+          "reasoning_summary": {
+            "type": "string",
+            "nullable": true
+          },
+          "error": {
+            "type": "string",
+            "nullable": true
+          },
+          "created_at": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "source_queue_id",
+          "extraction_mode",
+          "extractor",
+          "provider",
+          "model",
+          "status",
+          "input_bytes",
+          "parsed_event_count",
+          "fallback_reason",
+          "latency_ms",
+          "reasoning_summary",
+          "error",
+          "created_at"
+        ]
+      },
+      "AdminSourceRunDetailDto": {
+        "type": "object",
+        "properties": {
+          "run": {
+            "$ref": "#/components/schemas/AdminSourceRunDto"
+          },
+          "traces": {
+            "description": "Latest 200 extraction traces, newest first",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminSourceExtractionTraceDto"
+            }
+          }
+        },
+        "required": [
+          "run",
+          "traces"
+        ]
+      },
+      "AdminActiveQueueDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Exact PostgreSQL bigint string"
+          },
+          "entity_id": {
+            "type": "string",
+            "nullable": true
+          },
+          "entity_name": {
+            "type": "string",
+            "nullable": true
+          },
+          "source_id": {
+            "type": "string",
+            "nullable": true
+          },
+          "source_run_id": {
+            "type": "string",
+            "nullable": true
+          },
+          "status": {
+            "type": "string"
+          },
+          "trigger_type": {
+            "type": "string"
+          },
+          "attempt_count": {
+            "type": "integer"
+          },
+          "enqueued_at": {
+            "type": "string"
+          },
+          "next_attempt_at": {
+            "type": "string"
+          },
+          "started_at": {
+            "type": "string",
+            "nullable": true
+          },
+          "last_error": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "entity_id",
+          "entity_name",
+          "source_id",
+          "source_run_id",
+          "status",
+          "trigger_type",
+          "attempt_count",
+          "enqueued_at",
+          "next_attempt_at",
+          "started_at",
+          "last_error"
+        ]
+      },
+      "AdminQueueSummaryDto": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string"
+          },
+          "row_count": {
+            "type": "integer"
+          },
+          "oldest_enqueued_at": {
+            "type": "string",
+            "nullable": true
+          },
+          "newest_enqueued_at": {
+            "type": "string",
+            "nullable": true
+          },
+          "oldest_processing_started_at": {
+            "type": "string",
+            "nullable": true
+          },
+          "newest_finished_at": {
+            "type": "string",
+            "nullable": true
+          },
+          "last_dead_letter_at": {
+            "type": "string",
+            "nullable": true
+          },
+          "avg_attempts": {
+            "type": "string",
+            "description": "Exact PostgreSQL numeric string"
+          }
+        },
+        "required": [
+          "status",
+          "row_count",
+          "oldest_enqueued_at",
+          "newest_enqueued_at",
+          "oldest_processing_started_at",
+          "newest_finished_at",
+          "last_dead_letter_at",
+          "avg_attempts"
+        ]
+      },
+      "AdminActiveQueuePageDto": {
+        "type": "object",
+        "properties": {
+          "rows": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminActiveQueueDto"
+            }
+          },
+          "summary": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminQueueSummaryDto"
+            }
+          },
+          "total_count": {
+            "type": "integer"
+          },
+          "next_cursor": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "rows",
+          "summary",
+          "total_count",
+          "next_cursor"
         ]
       },
       "AdminSourceCityDto": {
