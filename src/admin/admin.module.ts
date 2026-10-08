@@ -38,6 +38,9 @@ import { AdminCityRepository } from "./admin-city.repository.js"
 import { AdminContributionController } from "./admin-contribution.controller.js"
 import { AdminContributionRepository } from "./admin-contribution.repository.js"
 
+import { AdminAiController } from "./admin-ai.controller.js"
+import { AdminAiRepository } from "./admin-ai.repository.js"
+
 @Module({
   imports: [AuthModule, DbModule, JobsModule],
   controllers: [
@@ -53,6 +56,7 @@ import { AdminContributionRepository } from "./admin-contribution.repository.js"
     AdminCorrectionReportController,
     AdminCityController,
     AdminContributionController,
+    AdminAiController,
   ],
   providers: [
     AdminReviewService,
@@ -76,6 +80,7 @@ import { AdminContributionRepository } from "./admin-contribution.repository.js"
     AdminCorrectionReportRepository,
     AdminCityRepository,
     AdminContributionRepository,
+    AdminAiRepository,
   ],
 })
 export class AdminModule {}
