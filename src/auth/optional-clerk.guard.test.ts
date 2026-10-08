@@ -91,10 +91,13 @@ describe("OptionalClerkAuthGuard", () => {
     }
   )
 
-  it("fails closed for a bearer token when Clerk is not configured", async () => {
-    const { guard } = makeGuard(MAPPED_IDENTITY, null)
-    const { context } = makeContext("Bearer valid-token")
+  it.each([null, "", "   "])(
+    "fails closed for a bearer token when Clerk is absent or blank",
+    async (secretKey) => {
+      const { guard } = makeGuard(MAPPED_IDENTITY, secretKey)
+      const { context } = makeContext("Bearer valid-token")
 
-    await expect(guard.canActivate(context)).rejects.toThrow(/not configured/)
-  })
+      await expect(guard.canActivate(context)).rejects.toThrow(/not configured/)
+    }
+  )
 })
