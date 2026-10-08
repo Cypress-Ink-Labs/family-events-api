@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common"
+import { Injectable, NotFoundException } from "@nestjs/common"
 import type { PoolClient } from "pg"
 
 import { DbService } from "../db/db.service.js"
@@ -8,6 +8,11 @@ import type {
   LlmReviewDecision,
   LlmReviewStatus,
 } from "./admin-review.input.js"
+import type {
+  AdminEventDiagnosticsDto,
+  AdminReviewDetailsDto,
+  AdminAiTraceDto,
+} from "./admin-review-diagnostics.dto.js"
 import { requireDatabaseAdmin, withAdminActor } from "./admin-database.js"
 
 export interface AdminEventRow {
@@ -95,6 +100,32 @@ export class AdminReviewRepository {
         [keyword]
       )
       return result.rows
+    })
+  }
+
+  diagnostics(actor: string, id: string): Promise<AdminEventDiagnosticsDto> {
+    return this.withActor(actor, async (client) => {
+      await requireDatabaseAdmin(client)
+      const events = await client.query<AdminReviewDetailsDto>(
+        `
+        SELECT id,title,status,start_datetime,venue_name,city_id,source_id,source_name,is_free,age_min,age_max,
+          ai_confidence,ai_tag_provider,ai_tag_model,ai_tag_status,
+          llm_review_status,llm_review_decision,llm_review_confidence,llm_review_reason,llm_review_flags,
+          llm_review_provider,llm_review_model,llm_review_prompt_version,llm_reviewed_at,llm_review_error,
+          admin_locked_fields,admin_last_edited_at,admin_last_edited_by,created_at
+        FROM public.events WHERE id=$1::uuid`,
+        [id]
+      )
+      const review = events.rows[0]
+      if (!review) throw new NotFoundException()
+      const traces = await client.query<AdminAiTraceDto>(
+        `
+        SELECT id,event_id,source_run_id,trigger_type,provider,model,status,input_title,input_description,
+          available_tag_slugs,predicted_tags,predicted_fields,reasoning_summary,fallback_reason,processing_ms,prompt_version,created_at
+        FROM public.event_ai_traces WHERE event_id=$1::uuid ORDER BY created_at DESC,id DESC LIMIT 1`,
+        [id]
+      )
+      return { review, trace: traces.rows[0] ?? null }
     })
   }
 

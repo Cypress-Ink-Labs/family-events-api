@@ -8,6 +8,8 @@ import { ConsumerWriteService } from "./consumer-write.service.js"
 import { ConsumerController } from "./consumer.controller.js"
 import { ConsumerService } from "./consumer.service.js"
 import { PlanController } from "./plan.controller.js"
+import { NextPlanController } from "./next-plan.controller.js"
+import { NextPlanService } from "./next-plan.service.js"
 import { ProfileController } from "./profile.controller.js"
 import { NotificationController } from "./notification.controller.js"
 import { NotificationPreferencesController } from "./notification-preferences.controller.js"
@@ -26,6 +28,7 @@ const CONSUMER_CONTROLLERS = [
   ConsumerController,
   ConsumerAccountReadController,
   PlanController,
+  NextPlanController,
   ProfileController,
   NotificationController,
   NotificationPreferencesController,
@@ -35,6 +38,7 @@ const CONSUMER_CONTROLLERS = [
   CorrectionReportCapabilityController,
 ]
 const CONSUMER_PROVIDERS = [
+  NextPlanService,
   SavedEventsService,
   NotificationPreferencesService,
   PushRepository,

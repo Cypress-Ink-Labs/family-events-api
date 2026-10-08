@@ -208,6 +208,7 @@ WITH candidates AS (
     )
     ${extraDiscoveryPredicate(18, 19, 20, 21, 22, 23)}
     AND ($15::boolean IS NULL OR e.is_free = $15::boolean)
+    AND (NOT $28::boolean OR (e.end_datetime IS NOT NULL AND e.end_datetime > $2::timestamptz) OR (e.end_datetime IS NULL AND e.start_datetime >= $2::timestamptz))
     AND ${agePredicateSql(6, 7, 8)}
     AND ${familyNeedsPredicateSql("e", { familyNeeds: 16, includeUnknown: 17 })}
     AND (
@@ -398,6 +399,7 @@ export class EventsRepository {
       input.after?.price ?? null,
       input.after?.rating ?? null,
       input.after?.ratingCount ?? null,
+      input.hidePast ?? false,
     ])
   }
 

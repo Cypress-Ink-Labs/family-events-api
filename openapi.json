@@ -754,6 +754,83 @@
         ]
       }
     },
+    "/v1/admin/events/{id}/diagnostics": {
+      "get": {
+        "operationId": "adminEventDiagnostics",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminEventDiagnosticsDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid path, query parameters, or request body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminValidationErrorDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "A valid Clerk bearer token is required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The Clerk user is not provisioned, or database admin access is not provisioned. Database denial returns the stable message: admin access is not provisioned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The mapped user is not an operator, or the event does not exist",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "clerk": []
+          }
+        ],
+        "summary": "Inspect the event review summary, latest AI trace and audit identity",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/v1/admin/events/{id}/status": {
       "put": {
         "operationId": "adminSetEventStatus",
@@ -1493,6 +1570,306 @@
           }
         ],
         "summary": "Unlock every admin-managed field on one event",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/v1/admin/sources/runs": {
+      "get": {
+        "operationId": "adminSourceRuns",
+        "parameters": [
+          {
+            "name": "after_id",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "after_started_at",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 200,
+              "type": "number"
+            }
+          },
+          {
+            "name": "status",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "enum": [
+                "running",
+                "success",
+                "error",
+                "partial"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "name": "source_id",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminSourceRunsPageDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid path, query parameters, request body, or source state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminValidationErrorDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "A valid Clerk bearer token is required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The Clerk user is not provisioned, or database admin access is not provisioned. Database denial returns the stable message: admin access is not provisioned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The mapped user is not an operator, or the source does not exist",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "clerk": []
+          }
+        ],
+        "summary": "List protected source runs",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/v1/admin/sources/runs/{runId}": {
+      "get": {
+        "operationId": "adminSourceRunDetail",
+        "parameters": [
+          {
+            "name": "runId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminSourceRunDetailDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid path, query parameters, request body, or source state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminValidationErrorDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "A valid Clerk bearer token is required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The Clerk user is not provisioned, or database admin access is not provisioned. Database denial returns the stable message: admin access is not provisioned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The mapped user is not an operator, or the source does not exist",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "clerk": []
+          }
+        ],
+        "summary": "Read a source run and extraction logs",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/v1/admin/sources/queues": {
+      "get": {
+        "operationId": "adminActiveSourceQueues",
+        "parameters": [
+          {
+            "name": "after_id",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "pattern": "^[1-9]\\d{0,18}$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 200,
+              "type": "number"
+            }
+          },
+          {
+            "name": "source_id",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "kind",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "enum": [
+                "source",
+                "tag"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminActiveQueuePageDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid path, query parameters, request body, or source state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminValidationErrorDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "A valid Clerk bearer token is required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The Clerk user is not provisioned, or database admin access is not provisioned. Database denial returns the stable message: admin access is not provisioned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The mapped user is not an operator, or the source does not exist",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "clerk": []
+          }
+        ],
+        "summary": "Read active source or tag queue diagnostics and complete status summaries",
         "tags": [
           "admin"
         ]
@@ -4516,6 +4893,433 @@
         ]
       }
     },
+    "/v1/admin/comments": {
+      "get": {
+        "operationId": "AdminContributionController_comments",
+        "parameters": [
+          {
+            "name": "filter",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "enum": [
+                "all",
+                "pending",
+                "flagged",
+                "approved"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 0,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminCommentPageDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid contribution request"
+          },
+          "401": {
+            "description": "Verified Clerk session required"
+          },
+          "403": {
+            "description": "Database admin access required"
+          },
+          "404": {
+            "description": "Non-operator or missing contribution"
+          }
+        },
+        "security": [
+          {
+            "clerk": []
+          }
+        ],
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/v1/admin/ratings": {
+      "get": {
+        "operationId": "AdminContributionController_ratings",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 0,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminRatingPageDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid contribution request"
+          },
+          "401": {
+            "description": "Verified Clerk session required"
+          },
+          "403": {
+            "description": "Database admin access required"
+          },
+          "404": {
+            "description": "Non-operator or missing contribution"
+          }
+        },
+        "security": [
+          {
+            "clerk": []
+          }
+        ],
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/v1/admin/comments/{id}": {
+      "put": {
+        "operationId": "AdminContributionController_update",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminCommentUpdateDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "updated"
+                  ],
+                  "properties": {
+                    "updated": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid contribution request"
+          },
+          "401": {
+            "description": "Verified Clerk session required"
+          },
+          "403": {
+            "description": "Database admin access required"
+          },
+          "404": {
+            "description": "Non-operator or missing contribution"
+          }
+        },
+        "security": [
+          {
+            "clerk": []
+          }
+        ],
+        "tags": [
+          "admin"
+        ]
+      },
+      "delete": {
+        "operationId": "AdminContributionController_removeComment",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "removed"
+                  ],
+                  "properties": {
+                    "removed": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid contribution request"
+          },
+          "401": {
+            "description": "Verified Clerk session required"
+          },
+          "403": {
+            "description": "Database admin access required"
+          },
+          "404": {
+            "description": "Non-operator or missing contribution"
+          }
+        },
+        "security": [
+          {
+            "clerk": []
+          }
+        ],
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/v1/admin/ratings/{id}": {
+      "delete": {
+        "operationId": "AdminContributionController_removeRating",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "removed"
+                  ],
+                  "properties": {
+                    "removed": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid contribution request"
+          },
+          "401": {
+            "description": "Verified Clerk session required"
+          },
+          "403": {
+            "description": "Database admin access required"
+          },
+          "404": {
+            "description": "Non-operator or missing contribution"
+          }
+        },
+        "security": [
+          {
+            "clerk": []
+          }
+        ],
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/v1/admin/ai": {
+      "get": {
+        "operationId": "AdminAiController_settings",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminAiSettingsDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid AI setting request"
+          },
+          "401": {
+            "description": "Verified session required"
+          },
+          "403": {
+            "description": "Database admin access required"
+          },
+          "404": {
+            "description": "Operator access required"
+          }
+        },
+        "security": [
+          {
+            "clerk": []
+          }
+        ],
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/v1/admin/ai/features/{feature}": {
+      "put": {
+        "operationId": "AdminAiController_update",
+        "parameters": [
+          {
+            "name": "feature",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "enum": [
+                "tagging",
+                "event-review",
+                "parent-tips",
+                "tag-memory",
+                "review-memory",
+                "source-auto-reject"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminAiUpdateDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminAiFeatureDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid AI setting request"
+          },
+          "401": {
+            "description": "Verified session required"
+          },
+          "403": {
+            "description": "Database admin access required"
+          },
+          "404": {
+            "description": "Operator access required"
+          }
+        },
+        "security": [
+          {
+            "clerk": []
+          }
+        ],
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/v1/admin/dashboard/health": {
+      "get": {
+        "operationId": "AdminAiController_health",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminDashboardHealthDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid AI setting request"
+          },
+          "401": {
+            "description": "Verified session required"
+          },
+          "403": {
+            "description": "Database admin access required"
+          },
+          "404": {
+            "description": "Operator access required"
+          }
+        },
+        "security": [
+          {
+            "clerk": []
+          }
+        ],
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/v1/cities": {
       "get": {
         "operationId": "ConsumerController_listCities",
@@ -4656,6 +5460,16 @@
             "schema": {
               "default": "soonest",
               "type": "string"
+            }
+          },
+          {
+            "description": "Hide finished events inside an explicit calendar date span",
+            "required": false,
+            "name": "hide_past",
+            "in": "query",
+            "schema": {
+              "default": false,
+              "type": "boolean"
             }
           },
           {
@@ -5321,6 +6135,82 @@
           }
         ],
         "summary": "Plan events for today",
+        "tags": [
+          "consumer"
+        ]
+      }
+    },
+    "/v1/plan/next": {
+      "get": {
+        "operationId": "getMyNextPlan",
+        "parameters": [
+          {
+            "required": false,
+            "name": "city_id",
+            "in": "query",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "required": false,
+            "name": "kid_age",
+            "in": "query",
+            "schema": {
+              "minimum": 0,
+              "maximum": 18,
+              "type": "integer"
+            }
+          },
+          {
+            "required": false,
+            "name": "lat",
+            "in": "query",
+            "schema": {
+              "minimum": -90,
+              "maximum": 90,
+              "type": "number"
+            }
+          },
+          {
+            "required": false,
+            "name": "lng",
+            "in": "query",
+            "schema": {
+              "minimum": -180,
+              "maximum": 180,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NextPlanDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid planner preferences or coordinates"
+          },
+          "401": {
+            "description": "A valid Clerk session is required"
+          },
+          "403": {
+            "description": "Enabled account access is required"
+          }
+        },
+        "security": [
+          {
+            "clerk": []
+          }
+        ],
+        "summary": "Find the first nonempty personal plan from today through day seven",
         "tags": [
           "consumer"
         ]
@@ -6939,6 +7829,366 @@
           "count"
         ]
       },
+      "AdminReviewDetailsDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "title": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "published",
+              "rejected",
+              "archived"
+            ]
+          },
+          "start_datetime": {
+            "type": "string",
+            "description": "Raw timestamp string, preserving up to six fractional digits. Accepts PostgreSQL and ISO representations: a space or T separates date and time; the required timezone is Z or a signed HH, HHMM, or HH:MM offset. Example: 2026-09-07 12:34:56.123456+00."
+          },
+          "venue_name": {
+            "type": "string",
+            "nullable": true
+          },
+          "city_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "source_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "source_name": {
+            "type": "string",
+            "nullable": true
+          },
+          "is_free": {
+            "type": "boolean"
+          },
+          "age_min": {
+            "type": "integer",
+            "nullable": true
+          },
+          "age_max": {
+            "type": "integer",
+            "nullable": true
+          },
+          "ai_confidence": {
+            "type": "string",
+            "nullable": true,
+            "description": "Exact PostgreSQL numeric string, preserving decimal precision"
+          },
+          "llm_review_status": {
+            "type": "string",
+            "enum": [
+              "not_required",
+              "pending",
+              "succeeded",
+              "failed",
+              "skipped"
+            ]
+          },
+          "llm_review_decision": {
+            "type": "string",
+            "enum": [
+              "approve",
+              "reject",
+              "needs_admin_review",
+              null
+            ],
+            "nullable": true
+          },
+          "llm_review_reason": {
+            "type": "string",
+            "nullable": true
+          },
+          "llm_review_error": {
+            "type": "string",
+            "nullable": true
+          },
+          "created_at": {
+            "type": "string",
+            "description": "Raw timestamp string, preserving up to six fractional digits. Accepts PostgreSQL and ISO representations: a space or T separates date and time; the required timezone is Z or a signed HH, HHMM, or HH:MM offset. Example: 2026-09-07 12:34:56.123456+00."
+          },
+          "ai_tag_provider": {
+            "type": "string",
+            "nullable": true
+          },
+          "ai_tag_model": {
+            "type": "string",
+            "nullable": true
+          },
+          "ai_tag_status": {
+            "type": "string",
+            "nullable": true
+          },
+          "llm_review_confidence": {
+            "type": "string",
+            "nullable": true,
+            "description": "Exact PostgreSQL numeric string"
+          },
+          "llm_review_flags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "llm_review_provider": {
+            "type": "string",
+            "nullable": true
+          },
+          "llm_review_model": {
+            "type": "string",
+            "nullable": true
+          },
+          "llm_review_prompt_version": {
+            "type": "string",
+            "nullable": true
+          },
+          "llm_reviewed_at": {
+            "type": "string",
+            "nullable": true,
+            "description": "Raw PostgreSQL timestamp preserving microseconds"
+          },
+          "admin_locked_fields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "admin_last_edited_at": {
+            "type": "string",
+            "nullable": true
+          },
+          "admin_last_edited_by": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "status",
+          "start_datetime",
+          "venue_name",
+          "city_id",
+          "source_id",
+          "source_name",
+          "is_free",
+          "age_min",
+          "age_max",
+          "ai_confidence",
+          "llm_review_status",
+          "llm_review_decision",
+          "llm_review_reason",
+          "llm_review_error",
+          "created_at",
+          "ai_tag_provider",
+          "ai_tag_model",
+          "ai_tag_status",
+          "llm_review_confidence",
+          "llm_review_flags",
+          "llm_review_provider",
+          "llm_review_model",
+          "llm_review_prompt_version",
+          "llm_reviewed_at",
+          "admin_locked_fields",
+          "admin_last_edited_at",
+          "admin_last_edited_by"
+        ]
+      },
+      "AdminAiTraceDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "event_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "source_run_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "trigger_type": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string",
+            "nullable": true
+          },
+          "model": {
+            "type": "string",
+            "nullable": true
+          },
+          "status": {
+            "type": "string"
+          },
+          "input_title": {
+            "type": "string"
+          },
+          "input_description": {
+            "type": "string",
+            "nullable": true
+          },
+          "available_tag_slugs": {
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": true
+              },
+              {
+                "type": "array",
+                "items": {}
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "object",
+                "nullable": true,
+                "enum": [
+                  null
+                ]
+              }
+            ]
+          },
+          "predicted_tags": {
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": true
+              },
+              {
+                "type": "array",
+                "items": {}
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "object",
+                "nullable": true,
+                "enum": [
+                  null
+                ]
+              }
+            ]
+          },
+          "predicted_fields": {
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": true
+              },
+              {
+                "type": "array",
+                "items": {}
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "object",
+                "nullable": true,
+                "enum": [
+                  null
+                ]
+              }
+            ]
+          },
+          "reasoning_summary": {
+            "type": "string",
+            "nullable": true
+          },
+          "fallback_reason": {
+            "type": "string",
+            "nullable": true
+          },
+          "processing_ms": {
+            "type": "integer",
+            "nullable": true
+          },
+          "prompt_version": {
+            "type": "string",
+            "nullable": true
+          },
+          "created_at": {
+            "type": "string",
+            "description": "Raw PostgreSQL timestamp preserving microseconds"
+          }
+        },
+        "required": [
+          "id",
+          "event_id",
+          "source_run_id",
+          "trigger_type",
+          "provider",
+          "model",
+          "status",
+          "input_title",
+          "input_description",
+          "available_tag_slugs",
+          "predicted_tags",
+          "predicted_fields",
+          "reasoning_summary",
+          "fallback_reason",
+          "processing_ms",
+          "prompt_version",
+          "created_at"
+        ]
+      },
+      "AdminEventDiagnosticsDto": {
+        "type": "object",
+        "properties": {
+          "review": {
+            "$ref": "#/components/schemas/AdminReviewDetailsDto"
+          },
+          "trace": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AdminAiTraceDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "review",
+          "trace"
+        ]
+      },
       "AdminStatusResultDto": {
         "type": "object",
         "properties": {
@@ -7322,6 +8572,342 @@
           "available_tags",
           "cities",
           "sources"
+        ]
+      },
+      "AdminSourceRunDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "source_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "source_name": {
+            "type": "string",
+            "nullable": true
+          },
+          "started_at": {
+            "type": "string"
+          },
+          "completed_at": {
+            "type": "string",
+            "nullable": true
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "running",
+              "success",
+              "error",
+              "partial"
+            ]
+          },
+          "events_found": {
+            "type": "integer"
+          },
+          "events_imported": {
+            "type": "integer"
+          },
+          "events_skipped": {
+            "type": "integer"
+          },
+          "error_log": {
+            "type": "string",
+            "nullable": true
+          },
+          "created_at": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "source_id",
+          "source_name",
+          "started_at",
+          "completed_at",
+          "status",
+          "events_found",
+          "events_imported",
+          "events_skipped",
+          "error_log",
+          "created_at"
+        ]
+      },
+      "AdminSourceRunCursorDto": {
+        "type": "object",
+        "properties": {
+          "after_started_at": {
+            "type": "string",
+            "description": "Raw PostgreSQL timestamp; pass unchanged to preserve microseconds"
+          },
+          "after_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "after_started_at",
+          "after_id"
+        ]
+      },
+      "AdminSourceRunsPageDto": {
+        "type": "object",
+        "properties": {
+          "runs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminSourceRunDto"
+            }
+          },
+          "total_count": {
+            "type": "integer"
+          },
+          "next_cursor": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AdminSourceRunCursorDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "runs",
+          "total_count",
+          "next_cursor"
+        ]
+      },
+      "AdminSourceExtractionTraceDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Exact PostgreSQL bigint string"
+          },
+          "source_queue_id": {
+            "type": "string",
+            "nullable": true
+          },
+          "extraction_mode": {
+            "type": "string"
+          },
+          "extractor": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string",
+            "nullable": true
+          },
+          "model": {
+            "type": "string",
+            "nullable": true
+          },
+          "status": {
+            "type": "string"
+          },
+          "input_bytes": {
+            "type": "integer",
+            "nullable": true
+          },
+          "parsed_event_count": {
+            "type": "integer"
+          },
+          "fallback_reason": {
+            "type": "string",
+            "nullable": true
+          },
+          "latency_ms": {
+            "type": "integer",
+            "nullable": true
+          },
+          "reasoning_summary": {
+            "type": "string",
+            "nullable": true
+          },
+          "error": {
+            "type": "string",
+            "nullable": true
+          },
+          "created_at": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "source_queue_id",
+          "extraction_mode",
+          "extractor",
+          "provider",
+          "model",
+          "status",
+          "input_bytes",
+          "parsed_event_count",
+          "fallback_reason",
+          "latency_ms",
+          "reasoning_summary",
+          "error",
+          "created_at"
+        ]
+      },
+      "AdminSourceRunDetailDto": {
+        "type": "object",
+        "properties": {
+          "run": {
+            "$ref": "#/components/schemas/AdminSourceRunDto"
+          },
+          "traces": {
+            "description": "Latest 200 extraction traces, newest first",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminSourceExtractionTraceDto"
+            }
+          }
+        },
+        "required": [
+          "run",
+          "traces"
+        ]
+      },
+      "AdminActiveQueueDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Exact PostgreSQL bigint string"
+          },
+          "entity_id": {
+            "type": "string",
+            "nullable": true
+          },
+          "entity_name": {
+            "type": "string",
+            "nullable": true
+          },
+          "source_id": {
+            "type": "string",
+            "nullable": true
+          },
+          "source_run_id": {
+            "type": "string",
+            "nullable": true
+          },
+          "status": {
+            "type": "string"
+          },
+          "trigger_type": {
+            "type": "string"
+          },
+          "attempt_count": {
+            "type": "integer"
+          },
+          "enqueued_at": {
+            "type": "string"
+          },
+          "next_attempt_at": {
+            "type": "string"
+          },
+          "started_at": {
+            "type": "string",
+            "nullable": true
+          },
+          "last_error": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "entity_id",
+          "entity_name",
+          "source_id",
+          "source_run_id",
+          "status",
+          "trigger_type",
+          "attempt_count",
+          "enqueued_at",
+          "next_attempt_at",
+          "started_at",
+          "last_error"
+        ]
+      },
+      "AdminQueueSummaryDto": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string"
+          },
+          "row_count": {
+            "type": "integer"
+          },
+          "oldest_enqueued_at": {
+            "type": "string",
+            "nullable": true
+          },
+          "newest_enqueued_at": {
+            "type": "string",
+            "nullable": true
+          },
+          "oldest_processing_started_at": {
+            "type": "string",
+            "nullable": true
+          },
+          "newest_finished_at": {
+            "type": "string",
+            "nullable": true
+          },
+          "last_dead_letter_at": {
+            "type": "string",
+            "nullable": true
+          },
+          "avg_attempts": {
+            "type": "string",
+            "description": "Exact PostgreSQL numeric string"
+          }
+        },
+        "required": [
+          "status",
+          "row_count",
+          "oldest_enqueued_at",
+          "newest_enqueued_at",
+          "oldest_processing_started_at",
+          "newest_finished_at",
+          "last_dead_letter_at",
+          "avg_attempts"
+        ]
+      },
+      "AdminActiveQueuePageDto": {
+        "type": "object",
+        "properties": {
+          "rows": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminActiveQueueDto"
+            }
+          },
+          "summary": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminQueueSummaryDto"
+            }
+          },
+          "total_count": {
+            "type": "integer"
+          },
+          "next_cursor": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "rows",
+          "summary",
+          "total_count",
+          "next_cursor"
         ]
       },
       "AdminSourceCityDto": {
@@ -9235,6 +10821,407 @@
           "is_active"
         ]
       },
+      "AdminCommentDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "user_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "event_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "display_name": {
+            "type": "string",
+            "nullable": true
+          },
+          "event_title": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "body": {
+            "type": "string"
+          },
+          "is_approved": {
+            "type": "boolean"
+          },
+          "is_flagged": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "user_id",
+          "event_id",
+          "display_name",
+          "event_title",
+          "created_at",
+          "updated_at",
+          "body",
+          "is_approved",
+          "is_flagged"
+        ]
+      },
+      "AdminCommentPageDto": {
+        "type": "object",
+        "properties": {
+          "rows": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminCommentDto"
+            }
+          },
+          "totalCount": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "rows",
+          "totalCount"
+        ]
+      },
+      "AdminRatingDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "user_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "event_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "display_name": {
+            "type": "string",
+            "nullable": true
+          },
+          "event_title": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "score": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "user_id",
+          "event_id",
+          "display_name",
+          "event_title",
+          "created_at",
+          "score"
+        ]
+      },
+      "AdminRatingPageDto": {
+        "type": "object",
+        "properties": {
+          "rows": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminRatingDto"
+            }
+          },
+          "totalCount": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "rows",
+          "totalCount"
+        ]
+      },
+      "AdminCommentUpdateDto": {
+        "type": "object",
+        "properties": {
+          "body": {
+            "type": "string",
+            "maxLength": 4000,
+            "minLength": 1
+          },
+          "is_approved": {
+            "type": "boolean"
+          },
+          "is_flagged": {
+            "type": "boolean"
+          }
+        }
+      },
+      "AdminAiModelDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string",
+            "enum": [
+              "openai",
+              "ollama",
+              "localai"
+            ]
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "cost_tier": {
+            "type": "string",
+            "enum": [
+              "low",
+              "medium",
+              "high"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "provider",
+          "display_name",
+          "description",
+          "cost_tier"
+        ]
+      },
+      "AdminAiFeatureDto": {
+        "type": "object",
+        "properties": {
+          "feature": {
+            "type": "string"
+          },
+          "model_id": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_by": {
+            "type": "string",
+            "nullable": true,
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "feature",
+          "model_id",
+          "enabled",
+          "updated_at",
+          "updated_by"
+        ]
+      },
+      "AdminAiSettingsDto": {
+        "type": "object",
+        "properties": {
+          "models": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminAiModelDto"
+            }
+          },
+          "features": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminAiFeatureDto"
+            }
+          }
+        },
+        "required": [
+          "models",
+          "features"
+        ]
+      },
+      "AdminAiUpdateDto": {
+        "type": "object",
+        "properties": {
+          "model_id": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "model_id",
+          "enabled"
+        ]
+      },
+      "AdminPresenceDto": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "display_name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id",
+          "display_name"
+        ]
+      },
+      "AdminIngestionDayDto": {
+        "type": "object",
+        "properties": {
+          "day": {
+            "type": "string"
+          },
+          "imported": {
+            "type": "number"
+          },
+          "skipped": {
+            "type": "number"
+          },
+          "errors": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "day",
+          "imported",
+          "skipped",
+          "errors"
+        ]
+      },
+      "AdminRecentRunDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "source_name": {
+            "type": "string",
+            "nullable": true
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "status": {
+            "type": "string"
+          },
+          "events_imported": {
+            "type": "number"
+          },
+          "events_skipped": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "source_name",
+          "started_at",
+          "status",
+          "events_imported",
+          "events_skipped"
+        ]
+      },
+      "AdminScheduleHealthDto": {
+        "type": "object",
+        "properties": {
+          "family": {
+            "type": "string"
+          },
+          "task": {
+            "type": "string"
+          },
+          "replaces": {
+            "type": "string",
+            "nullable": true
+          },
+          "legacy_enabled": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "nest_enabled": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "owner": {
+            "type": "string",
+            "enum": [
+              "legacy",
+              "api",
+              "paused",
+              "internal"
+            ]
+          }
+        },
+        "required": [
+          "family",
+          "task",
+          "replaces",
+          "legacy_enabled",
+          "nest_enabled",
+          "owner"
+        ]
+      },
+      "AdminDashboardHealthDto": {
+        "type": "object",
+        "properties": {
+          "generated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "presence": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminPresenceDto"
+            }
+          },
+          "ingestion": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminIngestionDayDto"
+            }
+          },
+          "recent_runs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminRecentRunDto"
+            }
+          },
+          "schedules": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminScheduleHealthDto"
+            }
+          }
+        },
+        "required": [
+          "generated_at",
+          "presence",
+          "ingestion",
+          "recent_runs",
+          "schedules"
+        ]
+      },
       "CityDto": {
         "type": "object",
         "properties": {
@@ -10068,6 +12055,146 @@
         },
         "required": [
           "available",
+          "planned"
+        ]
+      },
+      "NextPlanContextDto": {
+        "type": "object",
+        "properties": {
+          "child_age": {
+            "type": "number",
+            "nullable": true
+          },
+          "city_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "location_source": {
+            "type": "string",
+            "enum": [
+              "device",
+              "city",
+              "none"
+            ]
+          }
+        },
+        "required": [
+          "child_age",
+          "city_ids",
+          "location_source"
+        ]
+      },
+      "PlanWeatherDto": {
+        "type": "object",
+        "properties": {
+          "available": {
+            "type": "boolean"
+          },
+          "weatherFit": {
+            "type": "string",
+            "enum": [
+              "outdoor",
+              "indoor",
+              "any",
+              "neutral"
+            ]
+          },
+          "temperatureC": {
+            "type": "number",
+            "nullable": true
+          },
+          "condition": {
+            "type": "string",
+            "nullable": true
+          },
+          "observedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        },
+        "required": [
+          "available",
+          "weatherFit",
+          "temperatureC",
+          "condition",
+          "observedAt"
+        ]
+      },
+      "NextPlannedEventDto": {
+        "type": "object",
+        "properties": {
+          "event": {
+            "$ref": "#/components/schemas/EnrichedEventDto"
+          },
+          "score": {
+            "type": "string"
+          },
+          "reasons": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "distance_km": {
+            "type": "number",
+            "nullable": true
+          }
+        },
+        "required": [
+          "event",
+          "score",
+          "reasons",
+          "distance_km"
+        ]
+      },
+      "NextPlanDto": {
+        "type": "object",
+        "properties": {
+          "available": {
+            "type": "boolean"
+          },
+          "date": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "day_offset": {
+            "type": "number",
+            "nullable": true,
+            "minimum": 0,
+            "maximum": 7
+          },
+          "timezone": {
+            "type": "string"
+          },
+          "context": {
+            "$ref": "#/components/schemas/NextPlanContextDto"
+          },
+          "weather": {
+            "description": "Current observed weather, not a forecast for future plan dates",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PlanWeatherDto"
+              }
+            ]
+          },
+          "planned": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NextPlannedEventDto"
+            }
+          }
+        },
+        "required": [
+          "available",
+          "date",
+          "day_offset",
+          "timezone",
+          "context",
+          "weather",
           "planned"
         ]
       },

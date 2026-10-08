@@ -126,6 +126,36 @@ describe("saved-event management HTTP ownership", () => {
     expect(result.body.events[0]).not.toHaveProperty("attended")
     expect(JSON.stringify(result.body)).not.toContain("Other parent note")
   })
+  it("personalizes public calendar discovery without exposing owner notes or another person's saves", async () => {
+    const query = { date_start: "2030-01-01", date_end: "2030-01-02", hide_past: "true" }
+    const mine = await request(app.getHttpServer())
+      .get("/v1/events")
+      .query(query)
+      .set("Authorization", "Bearer mine")
+      .expect(200)
+    expect(mine.body.events.find((row: { id: string }) => row.id === planned)).toMatchObject({
+      is_favorited: false,
+      is_in_calendar: true,
+    })
+    const other = await request(app.getHttpServer())
+      .get("/v1/events")
+      .query(query)
+      .set("Authorization", "Bearer other")
+      .expect(200)
+    expect(other.body.events.find((row: { id: string }) => row.id === planned)).toMatchObject({
+      is_favorited: false,
+      is_in_calendar: false,
+    })
+    const anonymous = await request(app.getHttpServer()).get("/v1/events").query(query).expect(200)
+    expect(
+      anonymous.body.events.every(
+        (row: { is_favorited: boolean; is_in_calendar: boolean }) =>
+          !row.is_favorited && !row.is_in_calendar
+      )
+    ).toBe(true)
+    for (const page of [mine, other, anonymous])
+      expect(JSON.stringify(page.body)).not.toContain("Keep my notes")
+  })
 
   it("removes both save types together and leaves another parent's records intact", async () => {
     await request(app.getHttpServer())

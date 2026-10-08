@@ -182,6 +182,13 @@ beforeAll(async () => {
       "utf8"
     )
   )
+  await db.query("DROP TABLE IF EXISTS private.operator_presence")
+  await db.query(
+    readFileSync(
+      join(process.cwd(), "schema/migrations/20261008007000_operator_presence.sql"),
+      "utf8"
+    )
+  )
   await db.query(`CREATE TRIGGER on_auth_user_created AFTER INSERT ON auth.users
     FOR EACH ROW EXECUTE FUNCTION public.handle_new_user()`)
 })
@@ -573,6 +580,25 @@ describe("Coordinated account deletion HTTP", () => {
       randomUUID(),
       mapping!.supabaseUuid,
     ])
+    const operatorMapping = await identity.resolve("user_operator")
+    const eventId = randomUUID()
+    await db.query(
+      "INSERT INTO public.events(id,title,start_datetime) VALUES($1,'Account cleanup fixture',now())",
+      [eventId]
+    )
+    await db.query("INSERT INTO public.favorites(user_id,event_id) VALUES($1,$3),($2,$3)", [
+      mapping!.supabaseUuid,
+      operatorMapping!.supabaseUuid,
+      eventId,
+    ])
+    await db.query(
+      "INSERT INTO public.comments(user_id,event_id,body) VALUES($1,$3,'Parent comment'),($2,$3,'Operator comment')",
+      [mapping!.supabaseUuid, operatorMapping!.supabaseUuid, eventId]
+    )
+    await db.query("INSERT INTO private.operator_presence(user_id) VALUES($1),($2)", [
+      mapping!.supabaseUuid,
+      operatorMapping!.supabaseUuid,
+    ])
     await db.query(
       "UPDATE public.user_profiles SET child_name='Child',child_age=4,avatar_url='https://example.com/avatar' WHERE id=$1",
       [mapping!.supabaseUuid]
@@ -609,6 +635,16 @@ describe("Coordinated account deletion HTTP", () => {
         { email: null, display_name: null, child_name: null, child_age: null, avatar_url: null },
       ])
       expect(await db.query("SELECT * FROM private.account_owned_fixture")).toEqual([])
+      expect(
+        await db.query("SELECT user_id FROM public.favorites WHERE event_id=$1", [eventId])
+      ).toEqual([{ user_id: operatorMapping!.supabaseUuid }])
+      expect(
+        await db.query("SELECT user_id,body FROM public.comments WHERE event_id=$1", [eventId])
+      ).toEqual([{ user_id: operatorMapping!.supabaseUuid, body: "Operator comment" }])
+      expect(await db.query("SELECT user_id FROM private.operator_presence")).toEqual([
+        { user_id: operatorMapping!.supabaseUuid },
+      ])
+
       expect(await identity.resolve("user_parent")).toBeNull()
       expect((await deliver("user.created")).status).toBe(200)
     } finally {

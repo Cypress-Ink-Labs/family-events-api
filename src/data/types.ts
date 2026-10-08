@@ -78,6 +78,7 @@ export interface DiscoveryControls {
   radiusKm?: number
 }
 export interface DiscoverEventsInput extends DiscoveryControls {
+  hidePast?: boolean
   range: DiscoveryRange | null
   now: string
   cityId?: string | null

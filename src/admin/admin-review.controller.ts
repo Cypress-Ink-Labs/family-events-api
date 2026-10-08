@@ -49,6 +49,7 @@ import {
   parseAdminFacetsQuery,
   parseAdminStatusBody,
 } from "./admin-review.input.js"
+import { AdminEventDiagnosticsDto } from "./admin-review-diagnostics.dto.js"
 import { AdminReviewService } from "./admin-review.service.js"
 
 type AdminRequest = Pick<IdentifiedRequest, "identity">
@@ -134,6 +135,20 @@ export class AdminReviewController {
       status: row.status,
       count: row.count,
     }))
+  }
+
+  @Get("events/:id/diagnostics")
+  @ApiOperation({
+    operationId: "adminEventDiagnostics",
+    summary: "Inspect the event review summary, latest AI trace and audit identity",
+  })
+  @ApiParam({ name: "id", format: "uuid" })
+  @ApiOkResponse({ type: AdminEventDiagnosticsDto })
+  diagnostics(
+    @Param("id") id: string,
+    @Req() request: AdminRequest
+  ): Promise<AdminEventDiagnosticsDto> {
+    return this.admin.diagnostics(request.identity.supabaseUuid, parseAdminEventId(id))
   }
 
   @Put("events/:id/status")

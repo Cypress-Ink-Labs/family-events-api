@@ -86,6 +86,7 @@ const querySchema = z.strictObject({
   date_from: z.iso.datetime({ offset: true }).optional(),
   date_to: z.iso.datetime({ offset: true }).optional(),
   is_free: z.enum(["true", "false"]).optional(),
+  hide_past: z.enum(["true", "false"]).optional(),
   cost: z.enum(["any", "free", "paid", "unknown"]).optional(),
   kid_age: integerString.optional(),
   ages: z
@@ -114,6 +115,7 @@ export interface ExploreQuery extends DiscoveryControls {
   dateFrom: string | null
   dateTo: string | null
   isFree: boolean | null
+  hidePast?: boolean
   cost?: AdmissionCostFilter
   after: EventCursor | null
   limit: number
@@ -161,6 +163,7 @@ export function parseExploreQuery(query: unknown): ExploreQuery {
     dateFrom: result.data.date_from ?? null,
     dateTo: result.data.date_to ?? null,
     isFree: result.data.is_free === undefined ? null : result.data.is_free === "true",
+    ...(result.data.hide_past === undefined ? {} : { hidePast: result.data.hide_past === "true" }),
     cost: result.data.cost ?? "any",
     after,
     limit,

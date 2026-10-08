@@ -208,6 +208,7 @@ describe("EventsRepository.discoverEvents", () => {
       null,
       null,
       null,
+      false,
     ])
   })
 })
