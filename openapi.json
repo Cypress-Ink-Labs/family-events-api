@@ -2586,9 +2586,9 @@
         ]
       }
     },
-    "/v1/admin/users": {
+    "/v1/admin/users/deletions": {
       "get": {
-        "operationId": "adminListUsers",
+        "operationId": "adminListAccountDeletions",
         "parameters": [],
         "responses": {
           "200": {
@@ -2598,7 +2598,7 @@
                 "schema": {
                   "type": "array",
                   "items": {
-                    "$ref": "#/components/schemas/AdminUserAccessDto"
+                    "$ref": "#/components/schemas/AccountDeletionDto"
                   }
                 }
               }
@@ -2636,6 +2636,96 @@
           },
           "404": {
             "description": "The mapped user is not an operator, or the user does not exist",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "clerk": []
+          }
+        ],
+        "summary": "List the latest 100 coordinated account deletion outcomes",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/v1/admin/users": {
+      "get": {
+        "operationId": "adminListUsers",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AdminManagedUserDto"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid path, query parameters, request body, or protected account operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminValidationErrorDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "A valid Clerk bearer token is required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The Clerk user is not provisioned, or database admin access is not provisioned. Database denial returns the stable message: admin access is not provisioned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The mapped user is not an operator, or the user does not exist",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
             "content": {
               "application/json": {
                 "schema": {
@@ -2745,6 +2835,16 @@
                 }
               }
             }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -2822,6 +2922,26 @@
                 }
               }
             }
+          },
+          "409": {
+            "description": "Deletion is already processing or protected attribution requires retained UUID storage.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -2829,7 +2949,7 @@
             "clerk": []
           }
         ],
-        "summary": "Delete a non-admin user account",
+        "summary": "Revoke and delete a permitted account across Clerk and retained UUID storage",
         "tags": [
           "admin"
         ]
@@ -9215,6 +9335,147 @@
         },
         "required": [
           "ok"
+        ]
+      },
+      "AccountDeletionDto": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending_provider",
+              "pending_cleanup",
+              "cleanup_deferred",
+              "completed"
+            ]
+          },
+          "attempts": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "requested_at": {
+            "type": "string"
+          },
+          "provider_confirmed_at": {
+            "type": "string",
+            "nullable": true
+          },
+          "completed_at": {
+            "type": "string",
+            "nullable": true
+          },
+          "last_error": {
+            "type": "string",
+            "nullable": true
+          },
+          "updated_at": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id",
+          "status",
+          "attempts",
+          "requested_at",
+          "provider_confirmed_at",
+          "completed_at",
+          "last_error",
+          "updated_at"
+        ]
+      },
+      "AdminManagedUserDto": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "is_enabled": {
+            "type": "boolean"
+          },
+          "access_expires_at": {
+            "type": "string",
+            "nullable": true,
+            "description": "Raw timestamp string preserving PostgreSQL microsecond precision; pass it unchanged."
+          },
+          "enabled_at": {
+            "type": "string",
+            "nullable": true,
+            "description": "Raw timestamp string preserving PostgreSQL microsecond precision; pass it unchanged."
+          },
+          "disabled_at": {
+            "type": "string",
+            "nullable": true,
+            "description": "Raw timestamp string preserving PostgreSQL microsecond precision; pass it unchanged."
+          },
+          "disabled_reason": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 1000
+          },
+          "display_name": {
+            "type": "string",
+            "nullable": true
+          },
+          "email": {
+            "type": "string",
+            "nullable": true
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "user",
+              "admin"
+            ],
+            "nullable": true
+          },
+          "profile_created_at": {
+            "type": "string",
+            "nullable": true,
+            "description": "Raw timestamp string preserving PostgreSQL microsecond precision; pass it unchanged."
+          },
+          "created_at": {
+            "type": "string",
+            "description": "Raw timestamp string preserving PostgreSQL microsecond precision; pass it unchanged."
+          },
+          "updated_at": {
+            "type": "string",
+            "description": "Raw timestamp string preserving PostgreSQL microsecond precision; pass it unchanged."
+          },
+          "is_self": {
+            "type": "boolean"
+          },
+          "can_disable": {
+            "type": "boolean"
+          },
+          "can_enable": {
+            "type": "boolean"
+          },
+          "can_delete": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "user_id",
+          "is_enabled",
+          "access_expires_at",
+          "enabled_at",
+          "disabled_at",
+          "disabled_reason",
+          "display_name",
+          "email",
+          "role",
+          "profile_created_at",
+          "created_at",
+          "updated_at",
+          "is_self",
+          "can_disable",
+          "can_enable",
+          "can_delete"
         ]
       },
       "AdminUserAccessDto": {
