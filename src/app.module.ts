@@ -14,6 +14,7 @@ import { JobsModule } from "./jobs/jobs.module.js"
 import { NotificationsModule } from "./notifications/notifications.module.js"
 import { ObservabilityModule } from "./observability/observability.module.js"
 import { PipelineModule } from "./pipeline/pipeline.module.js"
+import { PublicExportsModule } from "./public-exports/public-exports.module.js"
 
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { PipelineModule } from "./pipeline/pipeline.module.js"
     TransactionalEmailModule,
     AdminModule,
     ConsumerModule,
+    PublicExportsModule,
     PipelineModule,
     NotificationsModule,
     HealthModule,

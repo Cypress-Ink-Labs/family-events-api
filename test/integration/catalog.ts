@@ -76,7 +76,7 @@ export async function ensureCatalogSchema(db: DbService): Promise<void> {
   )
   await db.query(`
     CREATE TABLE public.cities (
-      id uuid PRIMARY KEY,
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
       name text NOT NULL,
       state text,
       slug text NOT NULL UNIQUE,

@@ -911,7 +911,7 @@ describe("application bootstrap", () => {
         expect.objectContaining({ name: "limit", required: false }),
       ])
     )
-    const listFields = Object.keys(schemas.CorrectionReportRowDto!.properties!)
+    const listFields = Object.keys(schemas.CorrectionReportQueueRowDto!.properties!)
     for (const field of ["details", "reporter_user_id", "contact", "evidence", "resolution_note"]) {
       expect(listFields).not.toContain(field)
     }

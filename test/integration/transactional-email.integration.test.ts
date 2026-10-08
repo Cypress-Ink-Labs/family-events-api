@@ -190,10 +190,8 @@ async function operator() {
   expect((await deliver("user.created", "user_operator")).status).toBe(200)
 }
 function admin(method: "get" | "post", path: string, body = {}) {
-  return request(app.getHttpServer())
-    [method](path)
-    .set("Authorization", "Bearer operator-token")
-    .send(body)
+  const agent = request(app.getHttpServer())
+  return agent[method](path).set("Authorization", "Bearer operator-token").send(body)
 }
 describe("Transactional invitation email HTTP", () => {
   it("rolls back email ownership without retyping or deleting invitation outcomes and audit evidence", async () => {
@@ -345,7 +343,7 @@ describe("Transactional invitation email HTTP", () => {
       admin("post", `/v1/admin/invite-requests/${rows.body[0].id}/approve`),
       admin("post", `/v1/admin/invite-requests/${rows.body[0].id}/approve`),
     ])
-    expect(responses.map((response) => response.status).sort()).toEqual([200, 404])
+    expect(responses.map((response) => response.status).toSorted()).toEqual([200, 404])
     expect((await admin("get", "/v1/admin/invite-codes")).body).toHaveLength(1)
     expect(
       (await admin("get", "/v1/admin/invite-deliveries")).body.filter(
@@ -756,7 +754,7 @@ describe("Transactional invitation email HTTP", () => {
     expect(approval.status).toBe(200)
     const deliveries = await admin("get", "/v1/admin/invite-deliveries")
     expect(deliveries.status).toBe(200)
-    expect(deliveries.body.map((row: { kind: string }) => row.kind).sort()).toEqual([
+    expect(deliveries.body.map((row: { kind: string }) => row.kind).toSorted()).toEqual([
       "admin_request",
       "request_approved",
     ])
