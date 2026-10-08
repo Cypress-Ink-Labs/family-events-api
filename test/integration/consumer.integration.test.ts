@@ -895,6 +895,37 @@ describe("consumer read HTTP API", () => {
       .expect(200, { removed: true })
   })
 
+  it("persists nullable submission end times and age bounds without changing moderation state", async () => {
+    for (const values of [
+      { endDatetime: null, ageMin: null, ageMax: null },
+      { endDatetime: "2026-08-19T16:00:00Z", ageMin: 0, ageMax: 8 },
+    ]) {
+      const response = await request(app.getHttpServer())
+        .post("/v1/events")
+        .set("Authorization", "Bearer mapped-token")
+        .send({
+          title: "Submission fields",
+          startDatetime: "2026-08-19T15:00:00Z",
+          cityId: CITY,
+          ...values,
+        })
+        .expect(201)
+      const [row] = await db.query(
+        "SELECT end_datetime::text, age_min, age_max, status::text, submitted_by::text FROM public.events WHERE id = $1",
+        [response.body.id]
+      )
+      expect(row).toMatchObject({
+        age_min: values.ageMin,
+        age_max: values.ageMax,
+        status: "draft",
+        submitted_by: USER_READER,
+      })
+      expect(
+        row?.end_datetime === null ? null : new Date(row?.end_datetime as string).toISOString()
+      ).toBe(values.endDatetime === null ? null : "2026-08-19T16:00:00.000Z")
+    }
+  })
+
   it("inserts draft submissions and rejects the sixth in 24 hours", async () => {
     const server = request(app.getHttpServer())
     const submit = (number: number) =>
