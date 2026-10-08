@@ -105,7 +105,9 @@ export class ScrapeQueueService implements OnModuleInit {
       case "cleanup-stale-runs":
         return this.cleanupStaleRuns()
       case "drain-source-queue":
-        return this.drainSourceQueue()
+        return this.gate.runGated(this.schedule("scrape-due-sources"), () =>
+          this.drainSourceQueue()
+        )
       default: {
         const exhaustive: never = task
         throw new Error(`unhandled scrape task: ${String(exhaustive)}`)

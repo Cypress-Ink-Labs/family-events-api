@@ -30,6 +30,7 @@ import { ReviewRepository } from "./review/review.repository.js"
     TagQueueService,
   ],
   exports: [
+    CronGateService,
     ClassificationRepository,
     CronGateService,
     EnrichmentRepository,

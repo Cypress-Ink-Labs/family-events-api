@@ -183,6 +183,17 @@ describe("ScrapeQueueService task dispatch", () => {
     expect(repo.cleanupRuns).toBe(1)
   })
 
+  it("a paused scheduled owner cannot be bypassed by a queued drain", async () => {
+    const gate = new FakeGate()
+    gate.enabled = false
+    const repo = new FakeRepository()
+    repo.claimable = [{ id: 1 } as SourceQueueRow]
+    const { service, jobs } = makeService({ gate, repo })
+    await service.handleJob({ task: "drain-source-queue" })
+    expect(repo.claimable).toHaveLength(1)
+    expect(jobs.sent).toHaveLength(0)
+  })
+
   it("drain stops without chaining when the queue is empty", async () => {
     const { service, jobs } = makeService()
 

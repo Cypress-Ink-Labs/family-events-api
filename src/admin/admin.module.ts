@@ -28,6 +28,8 @@ import { AdminDeadLetterService } from "./admin-dead-letter.service.js"
 import { AdminCronController } from "./admin-cron.controller.js"
 import { AdminCronRepository } from "./admin-cron.repository.js"
 import { AdminCronService } from "./admin-cron.service.js"
+import { AdminCronControlsService } from "./admin-cron-controls.service.js"
+import { AdminCronControlsRepository } from "./admin-cron-controls.repository.js"
 import { AdminFamilyNeedsController } from "../evidence/admin-family-needs.controller.js"
 import { AdminFamilyNeedsRepository } from "../evidence/admin-family-needs.repository.js"
 import { AdminFamilyNeedsService } from "../evidence/admin-family-needs.service.js"
@@ -60,6 +62,8 @@ import { AdminAiRepository } from "./admin-ai.repository.js"
     AdminAiController,
   ],
   providers: [
+    AdminCronControlsService,
+    AdminCronControlsRepository,
     AdminReviewService,
     AdminReviewRepository,
     AdminEventEditorService,
