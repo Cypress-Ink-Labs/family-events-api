@@ -6,6 +6,8 @@ import { EventsRepository } from "./events.repository.js"
 import { FavoritesRepository } from "./favorites.repository.js"
 import { PlanRepository } from "./plan.repository.js"
 import { ProfileRepository } from "./profile.repository.js"
+import { NotificationInboxRepository } from "./notification-inbox.repository.js"
+import { NotificationPreferencesRepository } from "./notification-preferences.repository.js"
 import { PreferredCitiesRepository } from "./preferred-cities.repository.js"
 import { RatingsRepository } from "./ratings.repository.js"
 import { ReferenceRepository } from "./reference.repository.js"
@@ -22,6 +24,8 @@ const REPOSITORIES = [
   PreferredCitiesRepository,
   PlanRepository,
   ProfileRepository,
+  NotificationInboxRepository,
+  NotificationPreferencesRepository,
 ]
 
 @Module({
