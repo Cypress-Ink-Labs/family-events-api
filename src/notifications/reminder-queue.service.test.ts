@@ -50,6 +50,21 @@ afterEach(() => {
 })
 
 describe("ReminderQueueService dispatch", () => {
+  it.each([undefined, "false", "TRUE"])(
+    "installs no queues or schedules in production with CUTOVER_REMINDERS=%s",
+    (flag) => {
+      vi.stubEnv("NODE_ENV", "production")
+      vi.stubEnv("CUTOVER_REMINDERS", flag)
+      const { queue, jobs, gate, reminders } = makeQueueService()
+
+      queue.onModuleInit()
+
+      expect(jobs.registerQueue).not.toHaveBeenCalled()
+      expect(gate.runGated).not.toHaveBeenCalled()
+      expect(reminders.processRun).not.toHaveBeenCalled()
+    }
+  )
+
   it("registers a no-retry queue with the scheduled notification expiration budget", () => {
     vi.stubEnv("CUTOVER_REMINDERS", "true")
     const { queue, jobs } = makeQueueService()
