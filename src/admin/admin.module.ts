@@ -32,6 +32,8 @@ import { AdminFamilyNeedsRepository } from "../evidence/admin-family-needs.repos
 import { AdminFamilyNeedsService } from "../evidence/admin-family-needs.service.js"
 import { AdminCorrectionReportController } from "./admin-correction-report.controller.js"
 import { AdminCorrectionReportRepository } from "./admin-correction-report.repository.js"
+import { AdminCityController } from "./admin-city.controller.js"
+import { AdminCityRepository } from "./admin-city.repository.js"
 
 @Module({
   imports: [AuthModule, DbModule, JobsModule],
@@ -46,6 +48,7 @@ import { AdminCorrectionReportRepository } from "./admin-correction-report.repos
     AdminCronController,
     AdminFamilyNeedsController,
     AdminCorrectionReportController,
+    AdminCityController,
   ],
   providers: [
     AdminReviewService,
@@ -67,6 +70,7 @@ import { AdminCorrectionReportRepository } from "./admin-correction-report.repos
     AdminFamilyNeedsService,
     AdminFamilyNeedsRepository,
     AdminCorrectionReportRepository,
+    AdminCityRepository,
   ],
 })
 export class AdminModule {}
