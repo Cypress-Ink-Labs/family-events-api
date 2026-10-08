@@ -236,6 +236,7 @@ describe("ConsumerService.getEventDetail", () => {
           updated_at: "2026-08-16T17:00:00Z",
           display_name: "A parent",
           avatar_url: null,
+          can_delete: false,
         },
       ],
       my_rating: 5,
@@ -246,6 +247,28 @@ describe("ConsumerService.getEventDetail", () => {
     expect(listEventComments).toHaveBeenCalledWith(event.id)
     expect(getUserEventRating).toHaveBeenCalledWith("user-1", event.id)
   })
+
+  it.each([null, "other-user", "owner-user"])(
+    "exposes only the caller's deletion capability: %s",
+    async (userKey) => {
+      const { service, listEvents, listEventComments } = makeService()
+      listEvents.mockResolvedValueOnce([event])
+      listEventComments.mockResolvedValueOnce([
+        {
+          id: "owned-comment",
+          user_id: "owner-user",
+          body: "Owned",
+          created_at: "raw",
+          updated_at: "raw",
+          display_name: null,
+          avatar_url: null,
+        },
+      ])
+      const detail = await service.getEventDetail(event.id, userKey)
+      expect(detail.comments[0]).toMatchObject({ can_delete: userKey === "owner-user" })
+      expect(detail.comments[0]).not.toHaveProperty("user_id")
+    }
+  )
 
   it("does not hydrate related data when the published event is not visible", async () => {
     const { service, findSimilarEventsById, listEventComments, getUserEventRating } = makeService()

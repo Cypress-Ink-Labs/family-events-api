@@ -242,6 +242,7 @@ export interface EventComment {
 
 /** Public detail-page projection; moderation and ownership fields stay server-side. */
 export interface PublicEventComment {
+  can_delete: boolean
   id: string
   body: string
   created_at: string

@@ -222,6 +222,9 @@ export class SimilarEventDto implements SimilarEvent {
 }
 
 export class EventCommentDto implements PublicEventComment {
+  @ApiProperty({ description: "Whether the verified caller owns this comment" })
+  can_delete!: boolean
+
   @ApiProperty({ format: "uuid" })
   id!: string
 
