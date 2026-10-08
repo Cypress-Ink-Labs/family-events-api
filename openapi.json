@@ -5347,6 +5347,88 @@
         ]
       }
     },
+    "/v1/me/saved-events": {
+      "get": {
+        "operationId": "getMySavedEvents",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SavedEventsDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid saved-event request"
+          },
+          "401": {
+            "description": "A valid Clerk bearer token is required"
+          },
+          "403": {
+            "description": "Enabled account access is required"
+          }
+        },
+        "security": [
+          {
+            "clerk": []
+          }
+        ],
+        "summary": "List the current user's saved ideas and calendar plans, including past saves",
+        "tags": [
+          "consumer"
+        ]
+      }
+    },
+    "/v1/me/saved-events/{id}": {
+      "delete": {
+        "operationId": "removeMySavedEvent",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkResponseDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid saved-event request"
+          },
+          "401": {
+            "description": "A valid Clerk bearer token is required"
+          },
+          "403": {
+            "description": "Enabled account access is required"
+          }
+        },
+        "security": [
+          {
+            "clerk": []
+          }
+        ],
+        "summary": "Remove the current user's favorite and calendar save together",
+        "tags": [
+          "consumer"
+        ]
+      }
+    },
     "/v1/events/{id}/favorite": {
       "put": {
         "operationId": "ConsumerWriteController_setFavorite",
@@ -9687,15 +9769,340 @@
           "auth_key"
         ]
       },
-      "ToggleInputDto": {
+      "SavedEventDto": {
         "type": "object",
         "properties": {
-          "on": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "start_datetime": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "end_datetime": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "timezone": {
+            "type": "string",
+            "nullable": true
+          },
+          "venue_name": {
+            "type": "string",
+            "nullable": true
+          },
+          "address": {
+            "type": "string",
+            "nullable": true
+          },
+          "city_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "latitude": {
+            "type": "string",
+            "nullable": true
+          },
+          "longitude": {
+            "type": "string",
+            "nullable": true
+          },
+          "age_min": {
+            "type": "integer",
+            "nullable": true
+          },
+          "age_max": {
+            "type": "integer",
+            "nullable": true
+          },
+          "price": {
+            "type": "string",
+            "nullable": true
+          },
+          "is_free": {
             "type": "boolean"
+          },
+          "admission_cost_state": {
+            "type": "string",
+            "enum": [
+              "free",
+              "paid",
+              "unknown"
+            ]
+          },
+          "admission_amount": {
+            "type": "string",
+            "nullable": true,
+            "description": "Exact PostgreSQL numeric string"
+          },
+          "admission_cost_evidence": {
+            "type": "string",
+            "nullable": true
+          },
+          "parking_details": {
+            "type": "string",
+            "nullable": true
+          },
+          "reservation_details": {
+            "type": "string",
+            "nullable": true
+          },
+          "source_url": {
+            "type": "string",
+            "nullable": true
+          },
+          "source_name": {
+            "type": "string",
+            "nullable": true
+          },
+          "source_details_fetched_at": {
+            "type": "string",
+            "nullable": true,
+            "description": "Raw PostgreSQL timestamp of the last successful retrieval of this listing's source details; null when unavailable"
+          },
+          "images": {
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": true
+              },
+              {
+                "type": "array",
+                "items": {}
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              }
+            ],
+            "nullable": true
+          },
+          "status": {
+            "type": "string"
+          },
+          "recurrence_info": {
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": true
+              },
+              {
+                "type": "array",
+                "items": {}
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              }
+            ],
+            "nullable": true
+          },
+          "is_featured": {
+            "type": "boolean"
+          },
+          "view_count": {
+            "type": "integer"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "avg_rating": {
+            "type": "string",
+            "nullable": true
+          },
+          "rating_count": {
+            "type": "integer"
+          },
+          "tags": {
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": true
+              },
+              {
+                "type": "array",
+                "items": {}
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              }
+            ],
+            "nullable": true
+          },
+          "is_favorited": {
+            "type": "boolean"
+          },
+          "is_in_calendar": {
+            "type": "boolean"
+          },
+          "age_match": {
+            "type": "string",
+            "enum": [
+              "confirmed",
+              "unknown"
+            ],
+            "nullable": true,
+            "description": "Age suitability for the selected ages; null when ages were not selected"
+          },
+          "family_needs": {
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "indoor",
+                  "outdoor",
+                  "wheelchair_accessible",
+                  "sensory_friendly",
+                  "stroller_friendly"
+                ],
+                "properties": {
+                  "indoor": {
+                    "type": "string",
+                    "enum": [
+                      "confirmed",
+                      "contradicted",
+                      "unknown"
+                    ]
+                  },
+                  "outdoor": {
+                    "type": "string",
+                    "enum": [
+                      "confirmed",
+                      "contradicted",
+                      "unknown"
+                    ]
+                  },
+                  "wheelchair_accessible": {
+                    "type": "string",
+                    "enum": [
+                      "confirmed",
+                      "contradicted",
+                      "unknown"
+                    ]
+                  },
+                  "sensory_friendly": {
+                    "type": "string",
+                    "enum": [
+                      "confirmed",
+                      "contradicted",
+                      "unknown"
+                    ]
+                  },
+                  "stroller_friendly": {
+                    "type": "string",
+                    "enum": [
+                      "confirmed",
+                      "contradicted",
+                      "unknown"
+                    ]
+                  }
+                }
+              }
+            ]
+          },
+          "my_rating": {
+            "type": "number",
+            "nullable": true,
+            "minimum": 1,
+            "maximum": 5
+          },
+          "calendar_notes": {
+            "type": "string",
+            "nullable": true
+          },
+          "calendar_added_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
           }
         },
         "required": [
-          "on"
+          "id",
+          "title",
+          "description",
+          "start_datetime",
+          "end_datetime",
+          "timezone",
+          "venue_name",
+          "address",
+          "city_id",
+          "latitude",
+          "longitude",
+          "age_min",
+          "age_max",
+          "price",
+          "is_free",
+          "admission_cost_state",
+          "admission_amount",
+          "admission_cost_evidence",
+          "parking_details",
+          "reservation_details",
+          "source_url",
+          "source_name",
+          "source_details_fetched_at",
+          "images",
+          "status",
+          "recurrence_info",
+          "is_featured",
+          "view_count",
+          "created_at",
+          "updated_at",
+          "avg_rating",
+          "rating_count",
+          "tags",
+          "is_favorited",
+          "is_in_calendar",
+          "age_match",
+          "family_needs",
+          "my_rating",
+          "calendar_notes",
+          "calendar_added_at"
+        ]
+      },
+      "SavedEventsDto": {
+        "type": "object",
+        "properties": {
+          "events": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SavedEventDto"
+            }
+          }
+        },
+        "required": [
+          "events"
         ]
       },
       "OkResponseDto": {
@@ -9710,6 +10117,17 @@
         },
         "required": [
           "ok"
+        ]
+      },
+      "ToggleInputDto": {
+        "type": "object",
+        "properties": {
+          "on": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "on"
         ]
       },
       "RatingInputDto": {

@@ -13,6 +13,8 @@ import { NotificationController } from "./notification.controller.js"
 import { NotificationPreferencesController } from "./notification-preferences.controller.js"
 import { NotificationPreferencesService } from "./notification-preferences.service.js"
 import { PushRepository } from "../notifications/push.repository.js"
+import { SavedEventsController } from "./saved-events.controller.js"
+import { SavedEventsService } from "./saved-events.service.js"
 import { WeatherService } from "./weather.service.js"
 import {
   CorrectionReportCapabilityController,
@@ -27,11 +29,13 @@ const CONSUMER_CONTROLLERS = [
   ProfileController,
   NotificationController,
   NotificationPreferencesController,
+  SavedEventsController,
   ConsumerWriteController,
   CorrectionReportController,
   CorrectionReportCapabilityController,
 ]
 const CONSUMER_PROVIDERS = [
+  SavedEventsService,
   NotificationPreferencesService,
   PushRepository,
   ConsumerService,
