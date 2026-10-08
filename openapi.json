@@ -4563,6 +4563,124 @@
         ]
       }
     },
+    "/v1/me/notifications": {
+      "get": {
+        "operationId": "getMyNotifications",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationInboxDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid notification request"
+          },
+          "401": {
+            "description": "A valid Clerk bearer token is required"
+          },
+          "403": {
+            "description": "Enabled account access is required"
+          }
+        },
+        "security": [
+          {
+            "clerk": []
+          }
+        ],
+        "summary": "List the latest 20 notifications and all unread count",
+        "tags": [
+          "consumer"
+        ]
+      }
+    },
+    "/v1/me/notifications/read": {
+      "put": {
+        "operationId": "markAllMyNotificationsRead",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationInboxDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid notification request"
+          },
+          "401": {
+            "description": "A valid Clerk bearer token is required"
+          },
+          "403": {
+            "description": "Enabled account access is required"
+          }
+        },
+        "security": [
+          {
+            "clerk": []
+          }
+        ],
+        "summary": "Mark all of the current user's notifications read",
+        "tags": [
+          "consumer"
+        ]
+      }
+    },
+    "/v1/me/notifications/{id}/read": {
+      "put": {
+        "operationId": "markMyNotificationRead",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationInboxDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid notification request"
+          },
+          "401": {
+            "description": "A valid Clerk bearer token is required"
+          },
+          "403": {
+            "description": "Enabled account access is required"
+          }
+        },
+        "security": [
+          {
+            "clerk": []
+          }
+        ],
+        "summary": "Mark one owned notification read",
+        "tags": [
+          "consumer"
+        ]
+      }
+    },
     "/v1/events/{id}/favorite": {
       "put": {
         "operationId": "ConsumerWriteController_setFavorite",
@@ -8315,6 +8433,73 @@
             ]
           }
         }
+      },
+      "UserNotificationDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "reminder",
+              "change",
+              "digest",
+              "system"
+            ]
+          },
+          "title": {
+            "type": "string"
+          },
+          "body": {
+            "type": "string"
+          },
+          "event_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "read_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "title",
+          "body",
+          "event_id",
+          "read_at",
+          "created_at"
+        ]
+      },
+      "NotificationInboxDto": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "maxItems": 20,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UserNotificationDto"
+            }
+          },
+          "unread_count": {
+            "type": "number",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "items",
+          "unread_count"
+        ]
       },
       "ToggleInputDto": {
         "type": "object",
