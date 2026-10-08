@@ -3591,7 +3591,7 @@
             "in": "query",
             "schema": {
               "minimum": 1,
-              "maximum": 100,
+              "maximum": 200,
               "type": "number"
             }
           }
@@ -3604,7 +3604,7 @@
                 "schema": {
                   "type": "array",
                   "items": {
-                    "$ref": "#/components/schemas/CorrectionReportRowDto"
+                    "$ref": "#/components/schemas/CorrectionReportQueueRowDto"
                   }
                 }
               }
@@ -7175,7 +7175,7 @@
           "reason"
         ]
       },
-      "CorrectionReportRowDto": {
+      "CorrectionReportQueueRowDto": {
         "type": "object",
         "properties": {
           "id": {
@@ -7187,7 +7187,15 @@
             "format": "uuid"
           },
           "category": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "cancellation",
+              "wrong_date_time",
+              "wrong_location",
+              "wrong_cost",
+              "accessibility",
+              "other"
+            ]
           },
           "priority": {
             "type": "integer"
@@ -7237,6 +7245,9 @@
           "updated_at": {
             "type": "string",
             "format": "date-time"
+          },
+          "event_title": {
+            "type": "string"
           }
         },
         "required": [
@@ -7252,7 +7263,8 @@
           "resolved_at",
           "correction_id",
           "created_at",
-          "updated_at"
+          "updated_at",
+          "event_title"
         ]
       },
       "CorrectionReportContactDto": {
@@ -7283,7 +7295,15 @@
             "format": "uuid"
           },
           "category": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "cancellation",
+              "wrong_date_time",
+              "wrong_location",
+              "wrong_cost",
+              "accessibility",
+              "other"
+            ]
           },
           "priority": {
             "type": "integer"
@@ -7346,6 +7366,9 @@
             "type": "string",
             "nullable": true
           },
+          "event_title": {
+            "type": "string"
+          },
           "contact": {
             "nullable": true,
             "description": "Private optional reporter contact",
@@ -7382,6 +7405,7 @@
           "reporter_user_id",
           "details",
           "resolution_note",
+          "event_title",
           "contact",
           "evidence"
         ]
@@ -7410,7 +7434,15 @@
             "format": "uuid"
           },
           "category": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "cancellation",
+              "wrong_date_time",
+              "wrong_location",
+              "wrong_cost",
+              "accessibility",
+              "other"
+            ]
           },
           "priority": {
             "type": "integer"

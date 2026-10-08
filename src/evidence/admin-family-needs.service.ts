@@ -1,4 +1,6 @@
-import { Injectable, NotFoundException } from "@nestjs/common"
+import { ForbiddenException, Injectable, NotFoundException } from "@nestjs/common"
+
+import { isDatabaseAdminDenial } from "../admin/admin-database.js"
 
 import type {
   FamilyNeedEvidenceInput,
@@ -21,6 +23,8 @@ export class AdminFamilyNeedsService {
     try {
       return await this.evidence.add(eventId, operatorId, input)
     } catch (error) {
+      if (isDatabaseAdminDenial(error))
+        throw new ForbiddenException("admin access is not provisioned")
       if (error instanceof Error && error.message === "EVENT_NOT_FOUND") {
         throw new NotFoundException("event not found")
       }
@@ -36,6 +40,8 @@ export class AdminFamilyNeedsService {
     try {
       return await this.evidence.invalidate(eventId, operatorId, input)
     } catch (error) {
+      if (isDatabaseAdminDenial(error))
+        throw new ForbiddenException("admin access is not provisioned")
       if (error instanceof Error && error.message === "EVIDENCE_NOT_FOUND") {
         throw new NotFoundException("evidence not found")
       }
@@ -47,6 +53,8 @@ export class AdminFamilyNeedsService {
     try {
       return await this.evidence.list(eventId, operatorId)
     } catch (error) {
+      if (isDatabaseAdminDenial(error))
+        throw new ForbiddenException("admin access is not provisioned")
       if (error instanceof Error && error.message === "EVENT_NOT_FOUND") {
         throw new NotFoundException("event not found")
       }
