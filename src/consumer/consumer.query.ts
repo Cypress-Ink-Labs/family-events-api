@@ -1,7 +1,7 @@
 import { BadRequestException } from "@nestjs/common"
 import { z } from "zod"
 
-import type { EventCursor } from "../data/types.js"
+import type { DiscoverySort, EventCursor } from "../data/types.js"
 import type { DiscoveryRange } from "../data/types.js"
 import type { AdmissionCostFilter } from "../data/types.js"
 import { FAMILY_NEED_CLAIMS, type FamilyNeedClaim } from "../evidence/family-needs.js"
@@ -12,8 +12,74 @@ export const MAX_CHILDREN = 10
 export type AgeMode = "all" | "any"
 
 const integerString = z.string().regex(/^\d+$/)
-const discoveryRange = z.enum(["today", "weekend", "upcoming"])
+const discoveryRange = z.enum(["today", "weekend", "upcoming", "week", "month", "past"])
+const localDate = z.iso.date()
+const controlsSchema = {
+  sort: z.enum(["soonest", "latest", "price-asc", "rating-desc"]).optional(),
+  date_start: localDate.optional(),
+  date_end: localDate.optional(),
+  tags: z
+    .string()
+    .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*(,[a-z0-9]+(?:-[a-z0-9]+)*)*$/)
+    .max(1000)
+    .optional(),
+  lat: z.string().min(1).transform(Number).pipe(z.number().min(-90).max(90)).optional(),
+  lng: z.string().min(1).transform(Number).pipe(z.number().min(-180).max(180)).optional(),
+  radius_km: z.string().min(1).transform(Number).pipe(z.number().positive().max(50)).optional(),
+}
+export interface DiscoveryControls {
+  sort?: DiscoverySort
+  dateStart?: string
+  dateEnd?: string
+  tagSlugs?: string[]
+  lat?: number
+  lng?: number
+  radiusKm?: number
+}
+function parseControls(input: {
+  sort?: DiscoverySort
+  date_start?: string
+  date_end?: string
+  tags?: string
+  lat?: number
+  lng?: number
+  radius_km?: number
+  range?: string
+  date_from?: string
+  date_to?: string
+}): DiscoveryControls {
+  const dates = input.date_start !== undefined || input.date_end !== undefined
+  if (
+    dates &&
+    (input.range !== undefined || input.date_from !== undefined || input.date_to !== undefined)
+  )
+    throw new BadRequestException("custom dates cannot be combined with range or timestamp bounds")
+  if (input.range && (input.date_from || input.date_to))
+    throw new BadRequestException("range cannot be combined with timestamp bounds")
+  if (input.date_from && input.date_to && Date.parse(input.date_from) > Date.parse(input.date_to))
+    throw new BadRequestException("invalid date range")
+  if (input.date_start && input.date_end && input.date_start > input.date_end)
+    throw new BadRequestException("invalid date range")
+  const coordinates = [input.lat, input.lng, input.radius_km].filter(
+    (value) => value !== undefined
+  ).length
+  if (coordinates > 0 && coordinates !== 3)
+    throw new BadRequestException("location requires latitude, longitude and radius")
+  const tags = input.tags?.split(",")
+  if (tags && (tags.length > 20 || new Set(tags).size !== tags.length))
+    throw new BadRequestException("invalid tags")
+  return {
+    ...(input.sort === undefined ? {} : { sort: input.sort }),
+    ...(input.date_start === undefined ? {} : { dateStart: input.date_start }),
+    ...(input.date_end === undefined ? {} : { dateEnd: input.date_end }),
+    ...(tags === undefined ? {} : { tagSlugs: tags }),
+    ...(input.lat === undefined
+      ? {}
+      : { lat: input.lat, lng: input.lng, radiusKm: input.radius_km }),
+  }
+}
 const querySchema = z.strictObject({
+  ...controlsSchema,
   city_id: z.uuid().optional(),
   keyword: z.string().trim().min(1).max(100).optional(), // legacy events-api capped keyword at 100
   range: discoveryRange.optional(),
@@ -41,7 +107,7 @@ export interface AgeQuery {
   includeUnknownAge: boolean
 }
 
-export interface ExploreQuery {
+export interface ExploreQuery extends DiscoveryControls {
   cityId: string | null
   keyword: string | null
   range: DiscoveryRange | null
@@ -78,7 +144,15 @@ export function parseExploreQuery(query: unknown): ExploreQuery {
   ) {
     throw new BadRequestException("range cannot be combined with date_from or date_to")
   }
-  const usesExplicitDates = result.data.date_from !== undefined || result.data.date_to !== undefined
+  const usesExplicitDates =
+    result.data.date_from !== undefined ||
+    result.data.date_to !== undefined ||
+    result.data.date_start !== undefined ||
+    result.data.date_end !== undefined
+  const controls = parseControls(result.data)
+  const after = result.data.cursor === undefined ? null : decodeCursor(result.data.cursor)
+  if (after && (after.sort ?? "soonest") !== (result.data.sort ?? "soonest"))
+    throw new BadRequestException("cursor sort does not match query")
 
   return {
     cityId: result.data.city_id ?? null,
@@ -88,8 +162,9 @@ export function parseExploreQuery(query: unknown): ExploreQuery {
     dateTo: result.data.date_to ?? null,
     isFree: result.data.is_free === undefined ? null : result.data.is_free === "true",
     cost: result.data.cost ?? "any",
-    after: result.data.cursor === undefined ? null : decodeCursor(result.data.cursor),
+    after,
     limit,
+    ...controls,
     ...ageQuery,
     ...parseFamilyNeeds(result.data),
   }
@@ -101,6 +176,10 @@ const planQuerySchema = z.strictObject({
 })
 
 const mapQuerySchema = z.strictObject({
+  ...controlsSchema,
+  keyword: z.string().trim().min(1).max(100).optional(),
+  date_from: z.iso.datetime({ offset: true }).optional(),
+  date_to: z.iso.datetime({ offset: true }).optional(),
   city_id: z.uuid().optional(),
   range: discoveryRange.optional(),
   ages: z
@@ -114,9 +193,12 @@ const mapQuerySchema = z.strictObject({
   cost: z.enum(["any", "free", "paid", "unknown"]).optional(),
 })
 
-export interface MapQuery extends AgeQuery {
+export interface MapQuery extends AgeQuery, DiscoveryControls {
+  keyword?: string
+  dateFrom?: string
+  dateTo?: string
   cityId: string | null
-  range: DiscoveryRange
+  range: DiscoveryRange | null
   cost?: AdmissionCostFilter
   familyNeeds?: FamilyNeedClaim[]
   includeUnknownFamilyNeeds?: boolean
@@ -129,7 +211,17 @@ export function parseMapQuery(query: unknown): MapQuery {
   }
   return {
     cityId: result.data.city_id ?? null,
-    range: result.data.range ?? "weekend",
+    range:
+      result.data.date_start !== undefined ||
+      result.data.date_end !== undefined ||
+      result.data.date_from !== undefined ||
+      result.data.date_to !== undefined
+        ? null
+        : (result.data.range ?? "weekend"),
+    ...parseControls(result.data),
+    ...(result.data.keyword === undefined ? {} : { keyword: result.data.keyword }),
+    ...(result.data.date_from === undefined ? {} : { dateFrom: result.data.date_from }),
+    ...(result.data.date_to === undefined ? {} : { dateTo: result.data.date_to }),
     cost: result.data.cost ?? "any",
     ...parseAgeQuery(result.data),
     ...parseFamilyNeeds(result.data),

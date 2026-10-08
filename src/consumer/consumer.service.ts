@@ -101,6 +101,7 @@ export class ConsumerService {
     // empty one). Same pattern as the legacy events-api edge function.
     const probeLimit = input.limit + 1
     let events = await this.eventsRepository.discoverEvents({
+      ...discoveryControls(input),
       range: input.range,
       now: new Date().toISOString(),
       cityId: input.cityId,
@@ -132,7 +133,15 @@ export class ConsumerService {
       events,
       next_cursor:
         hasMore && last !== undefined
-          ? encodeCursor({ startDatetime: last.start_datetime, id: last.id })
+          ? encodeCursor({
+              startDatetime: last.start_datetime,
+              id: last.id,
+              ...(input.sort && input.sort !== "soonest" ? { sort: input.sort } : {}),
+              ...(input.sort === "price-asc" ? { price: last.price } : {}),
+              ...(input.sort === "rating-desc"
+                ? { rating: last.avg_rating ?? "0", ratingCount: last.rating_count }
+                : {}),
+            })
           : null,
     }
   }
@@ -178,6 +187,10 @@ export class ConsumerService {
   }> {
     const result = await this.eventsRepository.listMapEvents({
       cityId: input.cityId,
+      keyword: input.keyword,
+      dateFrom: input.dateFrom,
+      dateTo: input.dateTo,
+      ...discoveryControls(input),
       range: input.range,
       now: new Date().toISOString(),
       ages: input.ages,
@@ -286,4 +299,18 @@ function parseCoord(value: string | null): number | null {
   if (value === null) return null
   const parsed = Number(value)
   return Number.isFinite(parsed) ? parsed : null
+}
+
+function discoveryControls(input: ExploreQuery | MapQuery) {
+  return Object.fromEntries(
+    Object.entries({
+      sort: input.sort,
+      dateStart: input.dateStart,
+      dateEnd: input.dateEnd,
+      tagSlugs: input.tagSlugs,
+      lat: input.lat,
+      lng: input.lng,
+      radiusKm: input.radiusKm,
+    }).filter(([, value]) => value !== undefined)
+  )
 }

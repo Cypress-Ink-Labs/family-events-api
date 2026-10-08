@@ -4010,6 +4010,157 @@
         ]
       }
     },
+    "/v1/admin/cities": {
+      "get": {
+        "operationId": "AdminCityController_list",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AdminCityDto"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid city request"
+          },
+          "401": {
+            "description": "Verified Clerk session required"
+          },
+          "403": {
+            "description": "Mapped account/database admin access required"
+          },
+          "404": {
+            "description": "Non-operator or missing city"
+          }
+        },
+        "security": [
+          {
+            "clerk": []
+          }
+        ],
+        "summary": "List all cities, including inactive cities",
+        "tags": [
+          "admin"
+        ]
+      },
+      "post": {
+        "operationId": "AdminCityController_create",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminCreateCityDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminCityDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid city request"
+          },
+          "401": {
+            "description": "Verified Clerk session required"
+          },
+          "403": {
+            "description": "Mapped account/database admin access required"
+          },
+          "404": {
+            "description": "Non-operator or missing city"
+          },
+          "409": {
+            "description": "record already exists"
+          }
+        },
+        "security": [
+          {
+            "clerk": []
+          }
+        ],
+        "summary": "Create an active city with legacy location fields",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/v1/admin/cities/{id}/active": {
+      "put": {
+        "operationId": "AdminCityController_active",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminCityActiveDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminCityDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid city request"
+          },
+          "401": {
+            "description": "Verified Clerk session required"
+          },
+          "403": {
+            "description": "Mapped account/database admin access required"
+          },
+          "404": {
+            "description": "Non-operator or missing city"
+          }
+        },
+        "security": [
+          {
+            "clerk": []
+          }
+        ],
+        "summary": "Set city active state and audit the mapped actor",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/v1/cities": {
       "get": {
         "operationId": "ConsumerController_listCities",
@@ -4073,8 +4224,82 @@
               "enum": [
                 "today",
                 "weekend",
-                "upcoming"
+                "upcoming",
+                "week",
+                "month",
+                "past"
               ],
+              "type": "string"
+            }
+          },
+          {
+            "description": "Inclusive event-local first calendar date; cannot be combined with range or timestamp bounds",
+            "required": false,
+            "name": "date_start",
+            "in": "query",
+            "schema": {
+              "format": "date",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Inclusive event-local last calendar date",
+            "required": false,
+            "name": "date_end",
+            "in": "query",
+            "schema": {
+              "format": "date",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Comma-separated unique tag slugs, all required (maximum 20)",
+            "required": false,
+            "name": "tags",
+            "in": "query",
+            "schema": {
+              "maxLength": 1000,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Location latitude; requires longitude and radius",
+            "required": false,
+            "name": "lat",
+            "in": "query",
+            "schema": {
+              "minimum": -90,
+              "maximum": 90,
+              "type": "number"
+            }
+          },
+          {
+            "required": false,
+            "name": "lng",
+            "in": "query",
+            "schema": {
+              "minimum": -180,
+              "maximum": 180,
+              "type": "number"
+            }
+          },
+          {
+            "description": "Positive radius in kilometres; requires latitude and longitude",
+            "required": false,
+            "name": "radius_km",
+            "in": "query",
+            "schema": {
+              "minimum": 0,
+              "maximum": 50,
+              "type": "number"
+            }
+          },
+          {
+            "required": false,
+            "name": "sort",
+            "in": "query",
+            "schema": {
+              "default": "soonest",
               "type": "string"
             }
           },
@@ -4307,8 +4532,109 @@
               "enum": [
                 "today",
                 "weekend",
-                "upcoming"
+                "upcoming",
+                "week",
+                "month",
+                "past"
               ],
+              "type": "string"
+            }
+          },
+          {
+            "description": "Inclusive event-local first calendar date; cannot be combined with range or timestamp bounds",
+            "required": false,
+            "name": "date_start",
+            "in": "query",
+            "schema": {
+              "format": "date",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Inclusive event-local last calendar date",
+            "required": false,
+            "name": "date_end",
+            "in": "query",
+            "schema": {
+              "format": "date",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Comma-separated unique tag slugs, all required (maximum 20)",
+            "required": false,
+            "name": "tags",
+            "in": "query",
+            "schema": {
+              "maxLength": 1000,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Location latitude; requires longitude and radius",
+            "required": false,
+            "name": "lat",
+            "in": "query",
+            "schema": {
+              "minimum": -90,
+              "maximum": 90,
+              "type": "number"
+            }
+          },
+          {
+            "required": false,
+            "name": "lng",
+            "in": "query",
+            "schema": {
+              "minimum": -180,
+              "maximum": 180,
+              "type": "number"
+            }
+          },
+          {
+            "description": "Positive radius in kilometres; requires latitude and longitude",
+            "required": false,
+            "name": "radius_km",
+            "in": "query",
+            "schema": {
+              "minimum": 0,
+              "maximum": 50,
+              "type": "number"
+            }
+          },
+          {
+            "required": false,
+            "name": "sort",
+            "in": "query",
+            "schema": {
+              "default": "soonest",
+              "type": "string"
+            }
+          },
+          {
+            "required": false,
+            "name": "keyword",
+            "in": "query",
+            "schema": {
+              "maxLength": 100,
+              "type": "string"
+            }
+          },
+          {
+            "required": false,
+            "name": "date_from",
+            "in": "query",
+            "schema": {
+              "format": "date-time",
+              "type": "string"
+            }
+          },
+          {
+            "required": false,
+            "name": "date_to",
+            "in": "query",
+            "schema": {
+              "format": "date-time",
               "type": "string"
             }
           },
@@ -8223,6 +8549,97 @@
         },
         "required": [
           "ok"
+        ]
+      },
+      "AdminCityDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string",
+            "nullable": true
+          },
+          "country": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "timezone": {
+            "type": "string"
+          },
+          "latitude": {
+            "type": "string",
+            "nullable": true
+          },
+          "longitude": {
+            "type": "string",
+            "nullable": true
+          },
+          "is_active": {
+            "type": "boolean"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "state",
+          "country",
+          "slug",
+          "timezone",
+          "latitude",
+          "longitude",
+          "is_active",
+          "created_at"
+        ]
+      },
+      "AdminCreateCityDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string",
+            "nullable": true
+          },
+          "country": {
+            "type": "string",
+            "default": "US"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "timezone": {
+            "type": "string",
+            "example": "America/New_York"
+          }
+        },
+        "required": [
+          "name",
+          "slug",
+          "timezone"
+        ]
+      },
+      "AdminCityActiveDto": {
+        "type": "object",
+        "properties": {
+          "is_active": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "is_active"
         ]
       },
       "CityDto": {
