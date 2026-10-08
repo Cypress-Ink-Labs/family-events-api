@@ -735,6 +735,21 @@ describe("consumer read HTTP API", () => {
         (await server.get(`/v1/events/${eventId}`).set("Authorization", "Bearer mapped-token"))
           .status
       ).toBe(403)
+      expect(
+        (
+          await server
+            .post("/v1/correction-report-capability")
+            .set("Authorization", "Bearer mapped-token")
+        ).status
+      ).toBe(403)
+      expect(
+        (
+          await server
+            .post(`/v1/events/${eventId}/correction-reports`)
+            .set("Authorization", "Bearer mapped-token")
+            .send({ category: "wrong_location", details: "A correction" })
+        ).status
+      ).toBe(403)
       expect((await server.get(`/v1/events/${eventId}`)).status).toBe(200)
       expect(
         await db.query("SELECT event_id FROM public.favorites WHERE user_id=$1", [USER_READER])
