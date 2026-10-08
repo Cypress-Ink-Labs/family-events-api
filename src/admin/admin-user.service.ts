@@ -10,6 +10,10 @@ import type { AdminSetUserAccessInput } from "./admin-user.input.js"
 import { AdminUserRepository, type AdminUserAccessRow } from "./admin-user.repository.js"
 
 const USER_STATE_ERRORS: Record<string, { path: string; message: string }> = {
+  ADMIN_USER_ACCESS_DELETED_ACCOUNT: {
+    path: "is_enabled",
+    message: "account deletion has started; access cannot be restored",
+  },
   ADMIN_USER_ACCESS_SELF_DISABLE: { path: "is_enabled", message: "cannot disable your own access" },
   ADMIN_USER_ACCESS_SELF_DELETE: { path: "id", message: "cannot delete your own account" },
   ADMIN_USER_ACCESS_CANNOT_DELETE_ADMIN: {

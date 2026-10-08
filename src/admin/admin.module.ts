@@ -1,3 +1,4 @@
+import { UserAccessModule } from "../user-access/user-access.module.js"
 import { Module } from "@nestjs/common"
 
 import { AuthModule } from "../auth/auth.module.js"
@@ -36,7 +37,7 @@ import { AdminCityController } from "./admin-city.controller.js"
 import { AdminCityRepository } from "./admin-city.repository.js"
 
 @Module({
-  imports: [AuthModule, DbModule, JobsModule],
+  imports: [AuthModule, DbModule, JobsModule, UserAccessModule],
   controllers: [
     AdminReviewController,
     AdminEventEditorController,

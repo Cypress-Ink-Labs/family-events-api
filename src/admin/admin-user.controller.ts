@@ -1,4 +1,7 @@
+import { AccountDeletionDto, AdminManagedUserDto } from "../user-access/account-deletion.dto.js"
 import {
+  HttpException,
+  ServiceUnavailableException,
   Body,
   Controller,
   Delete,
@@ -12,6 +15,8 @@ import {
   UseGuards,
 } from "@nestjs/common"
 import {
+  ApiServiceUnavailableResponse,
+  ApiConflictResponse,
   ApiBadRequestResponse,
   ApiBearerAuth,
   ApiBody,
@@ -39,10 +44,12 @@ import {
   parseAdminUserId,
   parseAdminUsersQuery,
 } from "./admin-user.input.js"
+import { AccountDeletionService } from "../user-access/account-deletion.service.js"
 import { AdminUserService } from "./admin-user.service.js"
 
 type AdminRequest = Pick<IdentifiedRequest, "identity">
 
+@ApiServiceUnavailableResponse({ type: AdminErrorDto })
 @ApiTags("admin")
 @ApiBearerAuth("clerk")
 @ApiUnauthorizedResponse({
@@ -65,17 +72,44 @@ type AdminRequest = Pick<IdentifiedRequest, "identity">
 @UseGuards(ClerkAuthGuard, MappedIdentityGuard, OperatorGuard)
 @Controller("v1/admin/users")
 export class AdminUserController {
-  constructor(private readonly admin: AdminUserService) {}
+  constructor(
+    private readonly admin: AdminUserService,
+    private readonly deletion: AccountDeletionService
+  ) {}
+  private async available<T>(action: () => Promise<T>): Promise<T> {
+    try {
+      return await action()
+    } catch (error) {
+      if (error instanceof HttpException) throw error
+      throw new ServiceUnavailableException(
+        "Account access is unavailable. Check deletion status before retrying."
+      )
+    }
+  }
+  @Get("deletions")
+  @ApiOperation({
+    operationId: "adminListAccountDeletions",
+    summary: "List the latest 100 coordinated account deletion outcomes",
+  })
+  @ApiOkResponse({ type: [AccountDeletionDto] })
+  deletions(@Req() request: AdminRequest) {
+    return this.available(() => this.deletion.list(request.identity.supabaseUuid))
+  }
 
   @Get()
   @ApiOperation({ operationId: "adminListUsers", summary: "List user access records" })
-  @ApiOkResponse({ type: [AdminUserAccessDto] })
+  @ApiOkResponse({ type: [AdminManagedUserDto] })
   list(
     @Query() query: Record<string, unknown>,
     @Req() request: AdminRequest
-  ): Promise<AdminUserAccessDto[]> {
+  ): Promise<AdminManagedUserDto[]> {
     parseAdminUsersQuery(query)
-    return this.admin.list(request.identity.supabaseUuid)
+    return this.available(async () =>
+      this.deletion.managed(
+        request.identity.supabaseUuid,
+        await this.admin.list(request.identity.supabaseUuid)
+      )
+    )
   }
 
   @Put(":id/access")
@@ -89,16 +123,21 @@ export class AdminUserController {
     @Req() request: AdminRequest
   ): Promise<AdminUserAccessDto> {
     const id = parseAdminUserId(rawId)
-    return this.admin.setAccess(
-      request.identity.supabaseUuid,
-      id,
-      parseAdminSetUserAccessBody(body)
-    )
+    const input = parseAdminSetUserAccessBody(body)
+    return this.available(() => this.admin.setAccess(request.identity.supabaseUuid, id, input))
   }
 
   @Delete(":id")
+  @ApiConflictResponse({
+    type: AdminErrorDto,
+    description:
+      "Deletion is already processing or protected attribution requires retained UUID storage.",
+  })
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ operationId: "adminDeleteUser", summary: "Delete a non-admin user account" })
+  @ApiOperation({
+    operationId: "adminDeleteUser",
+    summary: "Revoke and delete a permitted account across Clerk and retained UUID storage",
+  })
   @ApiParam({ name: "id", format: "uuid" })
   @ApiOkResponse({ type: AdminUserMutationResultDto })
   async delete(
@@ -108,7 +147,7 @@ export class AdminUserController {
   ): Promise<AdminUserMutationResultDto> {
     const id = parseAdminUserId(rawId)
     parseAdminDeleteUserBody(body)
-    await this.admin.delete(request.identity.supabaseUuid, id)
+    await this.available(() => this.deletion.delete(request.identity.supabaseUuid, id))
     return { ok: true }
   }
 }

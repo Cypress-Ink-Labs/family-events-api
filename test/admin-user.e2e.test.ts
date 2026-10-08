@@ -1,3 +1,4 @@
+import { AccountDeletionService } from "../src/user-access/account-deletion.service.js"
 import type { INestApplication } from "@nestjs/common"
 import { ConfigModule } from "@nestjs/config"
 import { Test } from "@nestjs/testing"
@@ -77,6 +78,12 @@ describe("admin user HTTP with real guards", () => {
         AdminModule,
       ],
     })
+      .overrideProvider(AccountDeletionService)
+      .useValue({
+        delete: repository.delete,
+        list: async () => [],
+        managed: async (_actor: string, rows: unknown[]) => rows,
+      })
       .overrideProvider(IdentityService)
       .useValue(identity)
       .overrideProvider(DbService)
