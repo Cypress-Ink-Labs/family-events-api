@@ -8,7 +8,7 @@ import { FAMILIES, JOB_FAMILIES, deadLetterName, isLegacyReplacementSchedule } f
  *    (this file is a verbatim port; drift means one side changed deliberately).
  * 2. Against the legacy Railway cron services every schedule replaces
  *    (family-events-backend infra/railway-cron-drift/cron-services.json) —
- *    db-maintenance intentionally absent (stays on the old pipeline until U18).
+ *    including the dedicated daily-maintenance owner.
  */
 const LEGACY_REPLACEMENTS: ReadonlyArray<[service: string, cron: string]> = [
   ["cron-scrape-sources", "0 * * * *"],
@@ -18,6 +18,7 @@ const LEGACY_REPLACEMENTS: ReadonlyArray<[service: string, cron: string]> = [
   ["cron-review-events", "*/5 * * * *"],
   ["cron-weekly-digest", "0 13 * * 1"],
   ["cron-send-reminders", "0 11 * * *"],
+  ["cron-db-maintenance", "15 3 * * *"],
 ]
 
 const allSchedules = JOB_FAMILIES.flatMap((family) => FAMILIES[family].schedules)
@@ -31,11 +32,11 @@ describe("FAMILIES", () => {
     }
   })
 
-  it("replaces every legacy cron service except db-maintenance, exactly once", () => {
+  it("replaces every legacy cron service exactly once", () => {
     expect(legacySchedules.map((schedule) => schedule.replaces).toSorted()).toEqual(
       LEGACY_REPLACEMENTS.map(([service]) => service).toSorted()
     )
-    expect(legacySchedules).toHaveLength(7)
+    expect(legacySchedules).toHaveLength(8)
   })
 
   it("preserves each legacy cron expression", () => {

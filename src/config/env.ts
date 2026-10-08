@@ -23,6 +23,7 @@ export const envSchema = z.object({
   CUTOVER_DIGEST: cutoverFlag,
   CUTOVER_REMINDERS: cutoverFlag,
   CUTOVER_NOTIFY: cutoverFlag,
+  CUTOVER_MAINTENANCE: cutoverFlag,
   /** Shared by user digest delivery and operator failure pings. Vault wins for digests. */
   TELEGRAM_BOT_TOKEN: z.string().optional(),
   /** Operator chat/channel for pipeline failure pings (U3). */

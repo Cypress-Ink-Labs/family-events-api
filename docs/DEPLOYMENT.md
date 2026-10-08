@@ -52,7 +52,14 @@ U33 has transferred the scrape, tag, and review families:
 `CUTOVER_DIGEST`, `CUTOVER_REMINDERS`, and `CUTOVER_NOTIFY` remain disabled.
 They require delivery credentials and identified controlled recipients before
 their first production sends. The former Railway cron services have zero
-running replicas. Database maintenance remains outside the Nest job families.
+running replicas. These production records have not been refreshed during the
+local migration completion work.
+
+Daily database maintenance is now implemented locally behind
+`CUTOVER_MAINTENANCE`, with its retained `15 3 * * *` UTC schedule and existing
+SQL function. Its production flag and owner have not been verified or changed.
+See [daily maintenance operations](operations/daily-maintenance.md) for the
+single-writer checks and rollback procedure.
 
 ## Service variables
 
@@ -67,7 +74,7 @@ running replicas. Database maintenance remains outside the Nest job families.
 | `SENTRY_DSN` | no | Enables Sentry error reporting when non-empty. Empty or absent disables SDK initialization and all sending. Do not commit the DSN. |
 | `SENTRY_ENVIRONMENT` / `SENTRY_RELEASE` | no | Optional event labels used only when Sentry is enabled. |
 | `SENTRY_TRACES_SAMPLE_RATE` | no | Trace sampling from 0 through 1; defaults to 0 (tracing disabled). Has no effect when `SENTRY_DSN` is unset. |
-| `CUTOVER_SCRAPE` / `CUTOVER_TAG` / `CUTOVER_REVIEW` / `CUTOVER_DIGEST` / `CUTOVER_REMINDERS` / `CUTOVER_NOTIFY` | no | Per-job-family cutover flags; all default off (nothing installed). Set to exact `"true"` per family only during the U33 migration window. |
+| `CUTOVER_SCRAPE` / `CUTOVER_TAG` / `CUTOVER_REVIEW` / `CUTOVER_DIGEST` / `CUTOVER_REMINDERS` / `CUTOVER_NOTIFY` / `CUTOVER_MAINTENANCE` | no | Per-job-family cutover flags; all default off in production (nothing installed). Set to exact `"true"` only after the relevant ownership and readiness checks. |
 | `TELEGRAM_BOT_TOKEN` | required for Telegram digest | Environment fallback for digest delivery; Vault name `telegram_bot_token` takes precedence. Also shared with operator failure pings. |
 | `TELEGRAM_FAILURE_CHAT_ID` | no | Operator destination for pipeline failure pings (U3). Never used for user digests. |
 | `OPENWEATHER_API_KEY` | no | `GET /v1/plan` weather ranking. Unset degrades to a neutral snapshot. |

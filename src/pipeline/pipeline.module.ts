@@ -3,6 +3,7 @@ import { Module } from "@nestjs/common"
 import { ClassificationRepository } from "./classification/classification.repository.js"
 import { TagQueueService } from "./classification/tag-queue.service.js"
 import { CronGateService } from "./cron-gate.service.js"
+import { MaintenanceQueueService } from "./maintenance-queue.service.js"
 import { EnrichmentRepository } from "./enrichment/enrichment.repository.js"
 import { FailurePingService } from "./failure-ping.service.js"
 import { IngestionRepository } from "./ingestion/ingestion.repository.js"
@@ -19,6 +20,7 @@ import { ReviewRepository } from "./review/review.repository.js"
  */
 @Module({
   providers: [
+    MaintenanceQueueService,
     ClassificationRepository,
     CronGateService,
     EnrichmentRepository,

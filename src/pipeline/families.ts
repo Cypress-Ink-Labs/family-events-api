@@ -1,7 +1,7 @@
-// Queue registry, ported verbatim from family-events-app src/worker/families.ts
-// (U12) — the topology the API inherits when it absorbs the worker. One queue
+// Queue registry, inherited from family-events-app src/worker/families.ts
+// (U12), with daily database maintenance added during completion. One queue
 // per job family plus one dead-letter queue per family (U13's alerting and
-// KTD10's triage consume the DLQs). Seven schedules replace Railway cron
+// KTD10's triage consume the DLQs). Eight schedules replace Railway cron
 // containers. Internal schedules use replaces=null. Legacy mapping from
 // family-events-backend/infra/railway-cron-drift/cron-services.json:
 //
@@ -12,14 +12,20 @@
 //   cron-review-events    */5 * * * *    -> review    key=process-review-queue
 //   cron-weekly-digest    0 13 * * 1     -> digest    key=weekly-digest
 //   cron-send-reminders   0 11 * * *     -> reminders key=send-reminders
-//   cron-db-maintenance   15 3 * * *     -> NOT a job family: database
-//     maintenance stays on the old pipeline until U18, then moves to pg_cron
-//     or a dedicated maintenance schedule (decided at U18, not here).
+//   cron-db-maintenance   15 3 * * *     -> maintenance key=daily-maintenance
 //
 // Notify polls the transactional notification_queue every five minutes. This
 // internal schedule has no legacy Railway owner.
 
-export const JOB_FAMILIES = ["scrape", "tag", "review", "digest", "reminders", "notify"] as const
+export const JOB_FAMILIES = [
+  "scrape",
+  "tag",
+  "review",
+  "digest",
+  "reminders",
+  "notify",
+  "maintenance",
+] as const
 
 export type JobFamily = (typeof JOB_FAMILIES)[number]
 
@@ -72,6 +78,20 @@ export function deadLetterName(family: JobFamily): string {
 const RETRY_DEFAULTS = { retryLimit: 3, retryDelay: 30, retryBackoff: true }
 
 export const FAMILIES: Record<JobFamily, FamilyConfig> = {
+  maintenance: {
+    queue: queueName("maintenance"),
+    deadLetter: deadLetterName("maintenance"),
+    concurrency: 1,
+    ...RETRY_DEFAULTS,
+    schedules: [
+      {
+        key: "daily-maintenance",
+        cron: "15 3 * * *",
+        task: "daily-maintenance",
+        replaces: "cron-db-maintenance",
+      },
+    ],
+  },
   scrape: {
     queue: queueName("scrape"),
     deadLetter: deadLetterName("scrape"),

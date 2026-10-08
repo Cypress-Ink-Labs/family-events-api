@@ -49,6 +49,7 @@ const originalEnv = {
   CUTOVER_DIGEST: process.env.CUTOVER_DIGEST,
   CUTOVER_REMINDERS: process.env.CUTOVER_REMINDERS,
   CUTOVER_NOTIFY: process.env.CUTOVER_NOTIFY,
+  CUTOVER_MAINTENANCE: process.env.CUTOVER_MAINTENANCE,
 }
 
 function restoreEnv(name: keyof typeof originalEnv): void {
@@ -63,6 +64,7 @@ async function boot(flags: {
   digest?: string
   reminders?: string
   notify?: string
+  maintenance?: string
 }): Promise<{
   app: INestApplication
   jobs: FakeJobs
@@ -79,6 +81,8 @@ async function boot(flags: {
   else process.env.CUTOVER_REMINDERS = flags.reminders
   if (flags.notify === undefined) delete process.env.CUTOVER_NOTIFY
   else process.env.CUTOVER_NOTIFY = flags.notify
+  if (flags.maintenance === undefined) delete process.env.CUTOVER_MAINTENANCE
+  else process.env.CUTOVER_MAINTENANCE = flags.maintenance
 
   const jobs = new FakeJobs()
   const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
@@ -100,6 +104,7 @@ afterEach(() => {
   restoreEnv("CUTOVER_DIGEST")
   restoreEnv("CUTOVER_REMINDERS")
   restoreEnv("CUTOVER_NOTIFY")
+  restoreEnv("CUTOVER_MAINTENANCE")
 })
 
 describe.sequential("pipeline family bootstrap", () => {
@@ -108,6 +113,7 @@ describe.sequential("pipeline family bootstrap", () => {
     try {
       expect(jobs.registered).toEqual([])
       expect(jobs.scheduleRemovals).toEqual([
+        { queue: "maintenance", key: "daily-maintenance" },
         { queue: "notify", key: "process-notification-queue" },
       ])
     } finally {
@@ -182,7 +188,27 @@ describe.sequential("pipeline family bootstrap", () => {
           key: "process-notification-queue",
         },
       ])
-      expect(jobs.scheduleRemovals).toEqual([])
+      expect(jobs.scheduleRemovals).toEqual([{ queue: "maintenance", key: "daily-maintenance" }])
+    } finally {
+      await app.close()
+    }
+  })
+  it("installs only the dedicated maintenance family after its explicit production flag", async () => {
+    const { app, jobs } = await boot({ maintenance: "true" })
+    try {
+      expect(jobs.registered.map((queue) => queue.name).toSorted()).toEqual([
+        "maintenance",
+        "maintenance.dlq",
+      ])
+      expect(jobs.registered.find((queue) => queue.name === "maintenance")).toMatchObject({
+        localConcurrency: 1,
+        schedules: [
+          { cron: "15 3 * * *", data: { task: "daily-maintenance" }, key: "daily-maintenance" },
+        ],
+      })
+      expect(jobs.scheduleRemovals).toEqual([
+        { queue: "notify", key: "process-notification-queue" },
+      ])
     } finally {
       await app.close()
     }
