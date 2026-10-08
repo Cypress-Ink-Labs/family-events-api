@@ -5492,6 +5492,82 @@
         ]
       }
     },
+    "/v1/plan/next": {
+      "get": {
+        "operationId": "getMyNextPlan",
+        "parameters": [
+          {
+            "required": false,
+            "name": "city_id",
+            "in": "query",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "required": false,
+            "name": "kid_age",
+            "in": "query",
+            "schema": {
+              "minimum": 0,
+              "maximum": 18,
+              "type": "integer"
+            }
+          },
+          {
+            "required": false,
+            "name": "lat",
+            "in": "query",
+            "schema": {
+              "minimum": -90,
+              "maximum": 90,
+              "type": "number"
+            }
+          },
+          {
+            "required": false,
+            "name": "lng",
+            "in": "query",
+            "schema": {
+              "minimum": -180,
+              "maximum": 180,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NextPlanDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid planner preferences or coordinates"
+          },
+          "401": {
+            "description": "A valid Clerk session is required"
+          },
+          "403": {
+            "description": "Enabled account access is required"
+          }
+        },
+        "security": [
+          {
+            "clerk": []
+          }
+        ],
+        "summary": "Find the first nonempty personal plan from today through day seven",
+        "tags": [
+          "consumer"
+        ]
+      }
+    },
     "/v1/me/profile": {
       "get": {
         "operationId": "getMyProfile",
@@ -10238,6 +10314,146 @@
         },
         "required": [
           "available",
+          "planned"
+        ]
+      },
+      "NextPlanContextDto": {
+        "type": "object",
+        "properties": {
+          "child_age": {
+            "type": "number",
+            "nullable": true
+          },
+          "city_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "location_source": {
+            "type": "string",
+            "enum": [
+              "device",
+              "city",
+              "none"
+            ]
+          }
+        },
+        "required": [
+          "child_age",
+          "city_ids",
+          "location_source"
+        ]
+      },
+      "PlanWeatherDto": {
+        "type": "object",
+        "properties": {
+          "available": {
+            "type": "boolean"
+          },
+          "weatherFit": {
+            "type": "string",
+            "enum": [
+              "outdoor",
+              "indoor",
+              "any",
+              "neutral"
+            ]
+          },
+          "temperatureC": {
+            "type": "number",
+            "nullable": true
+          },
+          "condition": {
+            "type": "string",
+            "nullable": true
+          },
+          "observedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        },
+        "required": [
+          "available",
+          "weatherFit",
+          "temperatureC",
+          "condition",
+          "observedAt"
+        ]
+      },
+      "NextPlannedEventDto": {
+        "type": "object",
+        "properties": {
+          "event": {
+            "$ref": "#/components/schemas/EnrichedEventDto"
+          },
+          "score": {
+            "type": "string"
+          },
+          "reasons": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "distance_km": {
+            "type": "number",
+            "nullable": true
+          }
+        },
+        "required": [
+          "event",
+          "score",
+          "reasons",
+          "distance_km"
+        ]
+      },
+      "NextPlanDto": {
+        "type": "object",
+        "properties": {
+          "available": {
+            "type": "boolean"
+          },
+          "date": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "day_offset": {
+            "type": "number",
+            "nullable": true,
+            "minimum": 0,
+            "maximum": 7
+          },
+          "timezone": {
+            "type": "string"
+          },
+          "context": {
+            "$ref": "#/components/schemas/NextPlanContextDto"
+          },
+          "weather": {
+            "description": "Current observed weather, not a forecast for future plan dates",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PlanWeatherDto"
+              }
+            ]
+          },
+          "planned": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NextPlannedEventDto"
+            }
+          }
+        },
+        "required": [
+          "available",
+          "date",
+          "day_offset",
+          "timezone",
+          "context",
+          "weather",
           "planned"
         ]
       },
