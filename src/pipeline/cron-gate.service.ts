@@ -29,8 +29,8 @@ export function nestGateLabel(legacyLabel: string): string {
  *   http_status stays NULL: there is no HTTP hop anymore, the worker runs
  *   in-process.
  *
- * Only legacy-replacement schedules are gated. Internal schedules such as
- * notification_queue polling have no legacy label and never enter this API.
+ * Internal schedules use runInternal with an independent operational gate
+ * and history label; they have no legacy owner.
  */
 @Injectable()
 export class CronGateService {

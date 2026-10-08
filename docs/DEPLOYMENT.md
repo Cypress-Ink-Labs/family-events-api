@@ -236,7 +236,8 @@ Operator checklist before flipping a flag:
 ## Event-change notification queue
 
 `CUTOVER_NOTIFY` installs an internal five-minute pg-boss schedule. It does not
-replace a Railway cron and does not use `CronGateService`. The existing
+replace a Railway cron. `CronGateService` checks the operational pause gate
+`internal:notify:process-notification-queue`; a missing row means enabled. The existing
 `public.notification_queue` table remains the durable one-hour debounce buffer.
 When the flag is off, bootstrap removes the durable `process-notification-queue`
 schedule if a prior deployment installed it. The runtime handler also rejects
@@ -258,9 +259,10 @@ Checklist before setting `CUTOVER_NOTIFY="true"`:
    soft-skip only that provider.
 6. Set `CUTOVER_NOTIFY="true"` and redeploy. Confirm `notify`, `notify.dlq`, and
    one `process-notification-queue` schedule exist with concurrency 1 and no retries.
-7. Do not create or disable a `private.cron_enabled` label for notify. Monitor the
-   first run counts, lock skips, refreshed rows, unmatched push recipients, and
-   any `persistenceFailed` result.
+7. Confirm `internal:notify:process-notification-queue` in `private.cron_enabled`
+   is enabled or absent. Setting it false pauses scheduled and queued execution
+   without removing the installed worker. Monitor first run counts, lock skips,
+   refreshed rows, unmatched push recipients, and any `persistenceFailed` result.
 
 Direct APNs delivery remains deferred until the schema has a provider
 discriminator and existing tokens have been migrated. The deployed iOS and
