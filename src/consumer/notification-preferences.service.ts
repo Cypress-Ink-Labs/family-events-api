@@ -50,14 +50,17 @@ export class NotificationPreferencesService {
       CUTOVER_NOTIFY: this.config.get("CUTOVER_NOTIFY", { infer: true }),
       CUTOVER_DIGEST: this.config.get("CUTOVER_DIGEST", { infer: true }),
     }
+    const gates = await this.preferences.deliveryGates().catch(() => {
+      throw new ServiceUnavailableException("Notification delivery status is unavailable")
+    })
     return {
       email_configured: !!this.config.get("RESEND_API_KEY", { infer: true }),
       web_push_configured: configured,
       vapid_public_key: configured ? publicKey! : null,
       digest_push_supported: false,
-      reminders_enabled: isFamilyEnabled("reminders", flags),
-      changes_enabled: isFamilyEnabled("notify", flags),
-      digest_enabled: isFamilyEnabled("digest", flags),
+      reminders_enabled: isFamilyEnabled("reminders", flags) && gates.reminders,
+      changes_enabled: isFamilyEnabled("notify", flags) && gates.notify,
+      digest_enabled: isFamilyEnabled("digest", flags) && gates.digest,
     }
   }
 
