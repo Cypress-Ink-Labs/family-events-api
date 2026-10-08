@@ -108,6 +108,7 @@ export class ConsumerService {
       keyword: input.keyword,
       cost: input.cost ?? "any",
       isFree: input.isFree,
+      ...(input.hidePast === undefined ? {} : { hidePast: input.hidePast }),
       dateFrom: input.dateFrom,
       dateTo: input.dateTo,
       ages: input.ages,

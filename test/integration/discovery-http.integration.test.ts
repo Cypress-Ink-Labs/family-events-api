@@ -53,6 +53,44 @@ afterAll(async () => {
 })
 
 describe("discovery through HTTP and PostgreSQL", () => {
+  it("hides finished events within an explicit calendar span while preserving local dates and ongoing events", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] })
+    vi.setSystemTime(new Date("2030-03-10T18:00:00Z"))
+    try {
+      await db.query(
+        `INSERT INTO public.events(title,start_datetime,end_datetime,timezone,city_id,status) VALUES
+        ('Finished today','2030-03-10T12:00:00Z','2030-03-10T13:00:00Z','America/Chicago',$1,'published'),
+        ('Ongoing today','2030-03-10T17:00:00Z','2030-03-10T19:00:00Z','America/Chicago',$1,'published'),
+        ('Late local Sunday','2030-03-11T04:59:59Z',NULL,'America/Chicago',$1,'published'),
+        ('Next local Monday','2030-03-11T05:00:00Z',NULL,'America/Chicago',$1,'published')`,
+        [city]
+      )
+      const span = { date_start: "2030-03-10", date_end: "2030-03-10" }
+      const hidden = await request(app.getHttpServer())
+        .get("/v1/events")
+        .query({ ...span, hide_past: "true" })
+        .expect(200)
+      expect(hidden.body.events.map((row: { title: string }) => row.title)).toEqual([
+        "Ongoing today",
+        "Late local Sunday",
+      ])
+      const all = await request(app.getHttpServer())
+        .get("/v1/events")
+        .query({ ...span, hide_past: "false" })
+        .expect(200)
+      expect(all.body.events.map((row: { title: string }) => row.title)).toEqual([
+        "Finished today",
+        "Ongoing today",
+        "Late local Sunday",
+      ])
+      await request(app.getHttpServer())
+        .get("/v1/events")
+        .query({ ...span, hide_past: "invalid" })
+        .expect(400)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
   it("combines local custom dates, tags and radius identically across Explore and Map", async () => {
     await db.query(
       `INSERT INTO public.events(id,title,start_datetime,timezone,city_id,status,latitude,longitude,age_min,age_max,admission_cost_state,admission_cost_evidence)

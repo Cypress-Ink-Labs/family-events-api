@@ -5343,6 +5343,16 @@
             }
           },
           {
+            "description": "Hide finished events inside an explicit calendar date span",
+            "required": false,
+            "name": "hide_past",
+            "in": "query",
+            "schema": {
+              "default": false,
+              "type": "boolean"
+            }
+          },
+          {
             "required": false,
             "name": "city_id",
             "in": "query",
