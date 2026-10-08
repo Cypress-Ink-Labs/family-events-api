@@ -64,6 +64,7 @@ const identity = {
 }
 
 const routes = [
+  { key: "choices", method: "get", path: "/v1/admin/sources/choices", body: undefined },
   { key: "list", method: "get", path: "/v1/admin/sources", body: undefined },
   { key: "create", method: "post", path: "/v1/admin/sources", body: createBody },
   {
@@ -95,6 +96,7 @@ const routes = [
 describe("admin source HTTP with the real guard chain", () => {
   let app: INestApplication
   const repository = {
+    choices: vi.fn(),
     list: vi.fn(),
     create: vi.fn(),
     update: vi.fn(),
@@ -130,6 +132,7 @@ describe("admin source HTTP with the real guard chain", () => {
 
   beforeEach(() => {
     vi.resetAllMocks()
+    repository.choices.mockResolvedValue({ cities: [{ id: SOURCE, name: "Inactive city" }] })
     repository.list.mockResolvedValue([source])
     repository.create.mockResolvedValue(source)
     repository.update.mockResolvedValue(source)
@@ -170,7 +173,9 @@ describe("admin source HTTP with the real guard chain", () => {
         const calls = Object.values(repository).flatMap((method) => method.mock.calls)
         expect(calls).toHaveLength(1)
         expect(calls[0]![0]).toBe(ACTOR)
-        if (route.key === "list") expect(response.body).toEqual([source])
+        if (route.key === "choices")
+          expect(response.body).toEqual({ cities: [{ id: SOURCE, name: "Inactive city" }] })
+        else if (route.key === "list") expect(response.body).toEqual([source])
         else if (route.key === "scrape") {
           expect(response.body).toEqual({ queue_id: "9007199254740993", deduped: false })
         } else if (route.key === "bulkSetProcessingMode") {

@@ -81,6 +81,10 @@ export class AdminSourceService {
     return this.call(() => this.repository.list(actor))
   }
 
+  choices(actor: string): Promise<{ cities: Array<{ id: string; name: string }> }> {
+    return this.call(() => this.repository.choices(actor))
+  }
+
   create(actor: string, input: AdminCreateSourceInput): Promise<AdminSourceRow> {
     return this.call(() => this.repository.create(actor, input))
   }

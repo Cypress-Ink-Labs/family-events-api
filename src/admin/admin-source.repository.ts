@@ -94,6 +94,16 @@ function createPayload(input: AdminCreateSourceInput): Record<string, unknown> {
 export class AdminSourceRepository {
   constructor(private readonly db: DbService) {}
 
+  choices(actor: string): Promise<{ cities: Array<{ id: string; name: string }> }> {
+    return withAdminActor(this.db, actor, async (client) => {
+      await requireDatabaseAdmin(client)
+      const cities = await client.query<{ id: string; name: string }>(
+        "SELECT id, name FROM public.cities ORDER BY name, id"
+      )
+      return { cities: cities.rows }
+    })
+  }
+
   list(actor: string): Promise<AdminSourceRow[]> {
     return withAdminActor(this.db, actor, async (client) => {
       await requireDatabaseAdmin(client)
