@@ -19,8 +19,11 @@ export interface SubmittedCorrectionReport {
 export class CorrectionReportService {
   constructor(private readonly db: DbService) {}
 
-  async mintAnonymousCapability(capability: string): Promise<void> {
-    await this.db.withTransaction(async (client) => {
+  async mintAnonymousCapability(
+    capability: string,
+    presentedCapability?: string
+  ): Promise<boolean> {
+    return this.db.withTransaction(async (client) => {
       await client.query(
         "SELECT pg_advisory_xact_lock(hashtextextended('correction-report-capability-issuance', 0))"
       )
@@ -28,6 +31,13 @@ export class CorrectionReportService {
         `DELETE FROM private.correction_report_capabilities
          WHERE expires_at <= now() OR consumed_at < now() - interval '1 hour'`
       )
+      if (presentedCapability !== undefined) {
+        const existing = await client.query(
+          "SELECT 1 FROM private.correction_report_capabilities WHERE token_hash=$1 AND consumed_at IS NULL AND expires_at > now()",
+          [capabilityHash(presentedCapability)]
+        )
+        if (existing.rowCount !== 0) return false
+      }
       const issued = await client.query(
         `SELECT count(*)::int AS count FROM private.correction_report_capabilities
          WHERE created_at > now() - interval '1 minute'`
@@ -39,6 +49,7 @@ export class CorrectionReportService {
          VALUES ($1, now() + interval '15 minutes')`,
         [capabilityHash(capability)]
       )
+      return true
     })
   }
 

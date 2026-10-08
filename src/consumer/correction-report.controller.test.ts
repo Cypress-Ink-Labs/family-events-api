@@ -101,10 +101,13 @@ describe("correction report HTTP contract", () => {
   })
 
   it("mints the capability before setting a private cookie", async () => {
-    const reports = { mintAnonymousCapability: vi.fn().mockResolvedValue(undefined) }
+    const reports = { mintAnonymousCapability: vi.fn().mockResolvedValue(true) }
     const response = { cookie: vi.fn() }
-    await new CorrectionReportCapabilityController(reports as never).mint(response as never)
-    expect(reports.mintAnonymousCapability).toHaveBeenCalledWith(expect.any(String))
+    await new CorrectionReportCapabilityController(reports as never).mint(
+      response as never,
+      { headers: {} } as never
+    )
+    expect(reports.mintAnonymousCapability).toHaveBeenCalledWith(expect.any(String), undefined)
     expect(response.cookie).toHaveBeenCalledWith(
       "correction_report_capability",
       expect.any(String),

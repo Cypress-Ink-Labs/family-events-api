@@ -149,9 +149,17 @@ export class CorrectionReportCapabilityController {
   })
   @ApiNoContentResponse({ description: "Capability set in an HttpOnly cookie" })
   @ApiTooManyRequestsResponse({ description: "Global short-lived issuance budget exhausted" })
-  async mint(@Res({ passthrough: true }) response: Response): Promise<void> {
+  async mint(
+    @Res({ passthrough: true }) response: Response,
+    @Req() request: OptionalIdentifiedRequest
+  ): Promise<void> {
     const capability = newAnonymousCapability()
-    await this.reports.mintAnonymousCapability(capability)
+    if (request.identity !== undefined) return
+    const created = await this.reports.mintAnonymousCapability(
+      capability,
+      readCapabilityCookie(request)
+    )
+    if (!created) return
     response.cookie("correction_report_capability", capability, {
       httpOnly: true,
       sameSite: "lax",

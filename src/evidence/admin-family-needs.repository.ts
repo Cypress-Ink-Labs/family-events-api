@@ -101,7 +101,7 @@ export class AdminFamilyNeedsRepository {
            ) ELSE false END AS has_conflict
          FROM public.event_family_need_evidence evidence
          WHERE event_id = $1::uuid
-         ORDER BY claim, observed_at DESC, recorded_at DESC, id DESC`,
+         ORDER BY invalidated_at NULLS FIRST, observed_at DESC, recorded_at DESC, id DESC`,
         [eventId]
       )
       return result.rows
