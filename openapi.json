@@ -4459,8 +4459,82 @@
               "enum": [
                 "today",
                 "weekend",
-                "upcoming"
+                "upcoming",
+                "week",
+                "month",
+                "past"
               ],
+              "type": "string"
+            }
+          },
+          {
+            "description": "Inclusive event-local first calendar date; cannot be combined with range or timestamp bounds",
+            "required": false,
+            "name": "date_start",
+            "in": "query",
+            "schema": {
+              "format": "date",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Inclusive event-local last calendar date",
+            "required": false,
+            "name": "date_end",
+            "in": "query",
+            "schema": {
+              "format": "date",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Comma-separated unique tag slugs, all required (maximum 20)",
+            "required": false,
+            "name": "tags",
+            "in": "query",
+            "schema": {
+              "maxLength": 1000,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Location latitude; requires longitude and radius",
+            "required": false,
+            "name": "lat",
+            "in": "query",
+            "schema": {
+              "minimum": -90,
+              "maximum": 90,
+              "type": "number"
+            }
+          },
+          {
+            "required": false,
+            "name": "lng",
+            "in": "query",
+            "schema": {
+              "minimum": -180,
+              "maximum": 180,
+              "type": "number"
+            }
+          },
+          {
+            "description": "Positive radius in kilometres; requires latitude and longitude",
+            "required": false,
+            "name": "radius_km",
+            "in": "query",
+            "schema": {
+              "minimum": 0,
+              "maximum": 50,
+              "type": "number"
+            }
+          },
+          {
+            "required": false,
+            "name": "sort",
+            "in": "query",
+            "schema": {
+              "default": "soonest",
               "type": "string"
             }
           },
@@ -4693,8 +4767,109 @@
               "enum": [
                 "today",
                 "weekend",
-                "upcoming"
+                "upcoming",
+                "week",
+                "month",
+                "past"
               ],
+              "type": "string"
+            }
+          },
+          {
+            "description": "Inclusive event-local first calendar date; cannot be combined with range or timestamp bounds",
+            "required": false,
+            "name": "date_start",
+            "in": "query",
+            "schema": {
+              "format": "date",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Inclusive event-local last calendar date",
+            "required": false,
+            "name": "date_end",
+            "in": "query",
+            "schema": {
+              "format": "date",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Comma-separated unique tag slugs, all required (maximum 20)",
+            "required": false,
+            "name": "tags",
+            "in": "query",
+            "schema": {
+              "maxLength": 1000,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Location latitude; requires longitude and radius",
+            "required": false,
+            "name": "lat",
+            "in": "query",
+            "schema": {
+              "minimum": -90,
+              "maximum": 90,
+              "type": "number"
+            }
+          },
+          {
+            "required": false,
+            "name": "lng",
+            "in": "query",
+            "schema": {
+              "minimum": -180,
+              "maximum": 180,
+              "type": "number"
+            }
+          },
+          {
+            "description": "Positive radius in kilometres; requires latitude and longitude",
+            "required": false,
+            "name": "radius_km",
+            "in": "query",
+            "schema": {
+              "minimum": 0,
+              "maximum": 50,
+              "type": "number"
+            }
+          },
+          {
+            "required": false,
+            "name": "sort",
+            "in": "query",
+            "schema": {
+              "default": "soonest",
+              "type": "string"
+            }
+          },
+          {
+            "required": false,
+            "name": "keyword",
+            "in": "query",
+            "schema": {
+              "maxLength": 100,
+              "type": "string"
+            }
+          },
+          {
+            "required": false,
+            "name": "date_from",
+            "in": "query",
+            "schema": {
+              "format": "date-time",
+              "type": "string"
+            }
+          },
+          {
+            "required": false,
+            "name": "date_to",
+            "in": "query",
+            "schema": {
+              "format": "date-time",
               "type": "string"
             }
           },
