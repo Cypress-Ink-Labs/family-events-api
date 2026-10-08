@@ -4681,6 +4681,178 @@
         ]
       }
     },
+    "/v1/me/notification-preferences": {
+      "get": {
+        "operationId": "getMyNotificationSettings",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationSettingsDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid notification settings request"
+          },
+          "401": {
+            "description": "A valid Clerk bearer token is required"
+          },
+          "403": {
+            "description": "Enabled account access is required"
+          }
+        },
+        "security": [
+          {
+            "clerk": []
+          }
+        ],
+        "summary": "Read saved notification preferences and actual channel capabilities",
+        "tags": [
+          "consumer"
+        ]
+      },
+      "put": {
+        "operationId": "updateMyNotificationPreferences",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NotificationPreferencesUpdateDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationSettingsDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid notification settings request"
+          },
+          "401": {
+            "description": "A valid Clerk bearer token is required"
+          },
+          "403": {
+            "description": "Enabled account access is required"
+          }
+        },
+        "security": [
+          {
+            "clerk": []
+          }
+        ],
+        "summary": "Patch owned preferences, requiring browser registration when enabling push",
+        "tags": [
+          "consumer"
+        ]
+      }
+    },
+    "/v1/me/push-subscriptions": {
+      "post": {
+        "operationId": "registerMyBrowserSubscription",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BrowserSubscriptionInputDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrowserSubscriptionDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid notification settings request"
+          },
+          "401": {
+            "description": "A valid Clerk bearer token is required"
+          },
+          "403": {
+            "description": "Enabled account access is required"
+          }
+        },
+        "security": [
+          {
+            "clerk": []
+          }
+        ],
+        "summary": "Register actual browser Web Push keys under the current account",
+        "tags": [
+          "consumer"
+        ]
+      }
+    },
+    "/v1/me/push-subscriptions/{id}": {
+      "delete": {
+        "operationId": "removeMyBrowserSubscription",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationSettingsDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid notification settings request"
+          },
+          "401": {
+            "description": "A valid Clerk bearer token is required"
+          },
+          "403": {
+            "description": "Enabled account access is required"
+          }
+        },
+        "security": [
+          {
+            "clerk": []
+          }
+        ],
+        "summary": "Remove one owned browser subscription",
+        "tags": [
+          "consumer"
+        ]
+      }
+    },
     "/v1/events/{id}/favorite": {
       "put": {
         "operationId": "ConsumerWriteController_setFavorite",
@@ -8499,6 +8671,163 @@
         "required": [
           "items",
           "unread_count"
+        ]
+      },
+      "NotificationPreferencesDto": {
+        "type": "object",
+        "properties": {
+          "reminder_email": {
+            "type": "boolean"
+          },
+          "reminder_push": {
+            "type": "boolean"
+          },
+          "change_email": {
+            "type": "boolean"
+          },
+          "change_push": {
+            "type": "boolean"
+          },
+          "digest_email": {
+            "type": "boolean"
+          },
+          "digest_push": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "reminder_email",
+          "reminder_push",
+          "change_email",
+          "change_push",
+          "digest_email",
+          "digest_push"
+        ]
+      },
+      "NotificationDeliveryDto": {
+        "type": "object",
+        "properties": {
+          "email_configured": {
+            "type": "boolean"
+          },
+          "web_push_configured": {
+            "type": "boolean"
+          },
+          "digest_push_supported": {
+            "type": "boolean",
+            "enum": [
+              false
+            ]
+          },
+          "reminders_enabled": {
+            "type": "boolean"
+          },
+          "changes_enabled": {
+            "type": "boolean"
+          },
+          "digest_enabled": {
+            "type": "boolean"
+          },
+          "vapid_public_key": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "email_configured",
+          "web_push_configured",
+          "digest_push_supported",
+          "reminders_enabled",
+          "changes_enabled",
+          "digest_enabled",
+          "vapid_public_key"
+        ]
+      },
+      "BrowserSubscriptionDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "endpoint": {
+            "type": "string",
+            "format": "uri"
+          }
+        },
+        "required": [
+          "id",
+          "endpoint"
+        ]
+      },
+      "NotificationSettingsDto": {
+        "type": "object",
+        "properties": {
+          "preferences": {
+            "$ref": "#/components/schemas/NotificationPreferencesDto"
+          },
+          "delivery": {
+            "$ref": "#/components/schemas/NotificationDeliveryDto"
+          },
+          "subscriptions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BrowserSubscriptionDto"
+            }
+          }
+        },
+        "required": [
+          "preferences",
+          "delivery",
+          "subscriptions"
+        ]
+      },
+      "NotificationPreferencesUpdateDto": {
+        "type": "object",
+        "properties": {
+          "reminder_email": {
+            "type": "boolean"
+          },
+          "reminder_push": {
+            "type": "boolean"
+          },
+          "change_email": {
+            "type": "boolean"
+          },
+          "change_push": {
+            "type": "boolean"
+          },
+          "digest_email": {
+            "type": "boolean"
+          },
+          "digest_push": {
+            "type": "boolean"
+          },
+          "browser_subscription_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Owned browser registration required when enabling reminder or change push"
+          }
+        }
+      },
+      "BrowserSubscriptionInputDto": {
+        "type": "object",
+        "properties": {
+          "endpoint": {
+            "type": "string",
+            "format": "uri"
+          },
+          "p256dh": {
+            "type": "string"
+          },
+          "auth_key": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "endpoint",
+          "p256dh",
+          "auth_key"
         ]
       },
       "ToggleInputDto": {
