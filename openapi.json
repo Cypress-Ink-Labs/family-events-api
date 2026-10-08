@@ -754,6 +754,83 @@
         ]
       }
     },
+    "/v1/admin/events/{id}/diagnostics": {
+      "get": {
+        "operationId": "adminEventDiagnostics",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminEventDiagnosticsDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid path, query parameters, or request body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminValidationErrorDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "A valid Clerk bearer token is required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The Clerk user is not provisioned, or database admin access is not provisioned. Database denial returns the stable message: admin access is not provisioned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The mapped user is not an operator, or the event does not exist",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "clerk": []
+          }
+        ],
+        "summary": "Inspect the event review summary, latest AI trace and audit identity",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/v1/admin/events/{id}/status": {
       "put": {
         "operationId": "adminSetEventStatus",
@@ -7179,6 +7256,366 @@
           "source_id",
           "status",
           "count"
+        ]
+      },
+      "AdminReviewDetailsDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "title": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "published",
+              "rejected",
+              "archived"
+            ]
+          },
+          "start_datetime": {
+            "type": "string",
+            "description": "Raw timestamp string, preserving up to six fractional digits. Accepts PostgreSQL and ISO representations: a space or T separates date and time; the required timezone is Z or a signed HH, HHMM, or HH:MM offset. Example: 2026-09-07 12:34:56.123456+00."
+          },
+          "venue_name": {
+            "type": "string",
+            "nullable": true
+          },
+          "city_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "source_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "source_name": {
+            "type": "string",
+            "nullable": true
+          },
+          "is_free": {
+            "type": "boolean"
+          },
+          "age_min": {
+            "type": "integer",
+            "nullable": true
+          },
+          "age_max": {
+            "type": "integer",
+            "nullable": true
+          },
+          "ai_confidence": {
+            "type": "string",
+            "nullable": true,
+            "description": "Exact PostgreSQL numeric string, preserving decimal precision"
+          },
+          "llm_review_status": {
+            "type": "string",
+            "enum": [
+              "not_required",
+              "pending",
+              "succeeded",
+              "failed",
+              "skipped"
+            ]
+          },
+          "llm_review_decision": {
+            "type": "string",
+            "enum": [
+              "approve",
+              "reject",
+              "needs_admin_review",
+              null
+            ],
+            "nullable": true
+          },
+          "llm_review_reason": {
+            "type": "string",
+            "nullable": true
+          },
+          "llm_review_error": {
+            "type": "string",
+            "nullable": true
+          },
+          "created_at": {
+            "type": "string",
+            "description": "Raw timestamp string, preserving up to six fractional digits. Accepts PostgreSQL and ISO representations: a space or T separates date and time; the required timezone is Z or a signed HH, HHMM, or HH:MM offset. Example: 2026-09-07 12:34:56.123456+00."
+          },
+          "ai_tag_provider": {
+            "type": "string",
+            "nullable": true
+          },
+          "ai_tag_model": {
+            "type": "string",
+            "nullable": true
+          },
+          "ai_tag_status": {
+            "type": "string",
+            "nullable": true
+          },
+          "llm_review_confidence": {
+            "type": "string",
+            "nullable": true,
+            "description": "Exact PostgreSQL numeric string"
+          },
+          "llm_review_flags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "llm_review_provider": {
+            "type": "string",
+            "nullable": true
+          },
+          "llm_review_model": {
+            "type": "string",
+            "nullable": true
+          },
+          "llm_review_prompt_version": {
+            "type": "string",
+            "nullable": true
+          },
+          "llm_reviewed_at": {
+            "type": "string",
+            "nullable": true,
+            "description": "Raw PostgreSQL timestamp preserving microseconds"
+          },
+          "admin_locked_fields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "admin_last_edited_at": {
+            "type": "string",
+            "nullable": true
+          },
+          "admin_last_edited_by": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "status",
+          "start_datetime",
+          "venue_name",
+          "city_id",
+          "source_id",
+          "source_name",
+          "is_free",
+          "age_min",
+          "age_max",
+          "ai_confidence",
+          "llm_review_status",
+          "llm_review_decision",
+          "llm_review_reason",
+          "llm_review_error",
+          "created_at",
+          "ai_tag_provider",
+          "ai_tag_model",
+          "ai_tag_status",
+          "llm_review_confidence",
+          "llm_review_flags",
+          "llm_review_provider",
+          "llm_review_model",
+          "llm_review_prompt_version",
+          "llm_reviewed_at",
+          "admin_locked_fields",
+          "admin_last_edited_at",
+          "admin_last_edited_by"
+        ]
+      },
+      "AdminAiTraceDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "event_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "source_run_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "trigger_type": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string",
+            "nullable": true
+          },
+          "model": {
+            "type": "string",
+            "nullable": true
+          },
+          "status": {
+            "type": "string"
+          },
+          "input_title": {
+            "type": "string"
+          },
+          "input_description": {
+            "type": "string",
+            "nullable": true
+          },
+          "available_tag_slugs": {
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": true
+              },
+              {
+                "type": "array",
+                "items": {}
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "object",
+                "nullable": true,
+                "enum": [
+                  null
+                ]
+              }
+            ]
+          },
+          "predicted_tags": {
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": true
+              },
+              {
+                "type": "array",
+                "items": {}
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "object",
+                "nullable": true,
+                "enum": [
+                  null
+                ]
+              }
+            ]
+          },
+          "predicted_fields": {
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": true
+              },
+              {
+                "type": "array",
+                "items": {}
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "object",
+                "nullable": true,
+                "enum": [
+                  null
+                ]
+              }
+            ]
+          },
+          "reasoning_summary": {
+            "type": "string",
+            "nullable": true
+          },
+          "fallback_reason": {
+            "type": "string",
+            "nullable": true
+          },
+          "processing_ms": {
+            "type": "integer",
+            "nullable": true
+          },
+          "prompt_version": {
+            "type": "string",
+            "nullable": true
+          },
+          "created_at": {
+            "type": "string",
+            "description": "Raw PostgreSQL timestamp preserving microseconds"
+          }
+        },
+        "required": [
+          "id",
+          "event_id",
+          "source_run_id",
+          "trigger_type",
+          "provider",
+          "model",
+          "status",
+          "input_title",
+          "input_description",
+          "available_tag_slugs",
+          "predicted_tags",
+          "predicted_fields",
+          "reasoning_summary",
+          "fallback_reason",
+          "processing_ms",
+          "prompt_version",
+          "created_at"
+        ]
+      },
+      "AdminEventDiagnosticsDto": {
+        "type": "object",
+        "properties": {
+          "review": {
+            "$ref": "#/components/schemas/AdminReviewDetailsDto"
+          },
+          "trace": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AdminAiTraceDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "review",
+          "trace"
         ]
       },
       "AdminStatusResultDto": {
