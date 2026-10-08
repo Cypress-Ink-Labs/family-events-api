@@ -7765,6 +7765,10 @@
       "EventCommentDto": {
         "type": "object",
         "properties": {
+          "can_delete": {
+            "type": "boolean",
+            "description": "Whether the verified caller owns this comment"
+          },
           "id": {
             "type": "string",
             "format": "uuid"
@@ -7790,6 +7794,7 @@
           }
         },
         "required": [
+          "can_delete",
           "id",
           "body",
           "created_at",
