@@ -2,14 +2,8 @@ import { describe, expect, it } from "vitest"
 
 import { FAMILIES, JOB_FAMILIES, deadLetterName, isLegacyReplacementSchedule } from "./families.js"
 
-/**
- * Parity guards in two directions:
- * 1. Against the U12 worker registry in family-events-app src/worker/families.ts
- *    (this file is a verbatim port; drift means one side changed deliberately).
- * 2. Against the legacy Railway cron services every schedule replaces
- *    (family-events-backend infra/railway-cron-drift/cron-services.json) —
- *    including the dedicated daily-maintenance owner.
- */
+// Retained Railway schedules from family-events-backend
+// infra/railway-cron-drift/cron-services.json, including daily maintenance.
 const LEGACY_REPLACEMENTS: ReadonlyArray<[service: string, cron: string]> = [
   ["cron-scrape-sources", "0 * * * *"],
   ["cron-cleanup-stale", "*/30 * * * *"],
