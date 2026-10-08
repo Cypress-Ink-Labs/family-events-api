@@ -62,8 +62,9 @@ export interface MapEvent {
   family_needs: EnrichedEvent["family_needs"]
 }
 
-function toPublicEventComment(comment: EventComment): PublicEventComment {
+function toPublicEventComment(comment: EventComment, userKey: string | null): PublicEventComment {
   return {
+    can_delete: userKey !== null && comment.user_id === userKey,
     id: comment.id,
     body: comment.body,
     created_at: comment.created_at,
@@ -165,7 +166,7 @@ export class ConsumerService {
     return {
       event,
       similar,
-      comments: comments.map(toPublicEventComment),
+      comments: comments.map((comment) => toPublicEventComment(comment, userKey)),
       my_rating: rating?.score ?? null,
       signed_in: userKey !== null,
     }
