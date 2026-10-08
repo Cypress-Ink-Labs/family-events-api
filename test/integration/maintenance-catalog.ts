@@ -3,8 +3,8 @@ import type { DbService } from "../../src/db/db.service.js"
 
 export async function ensureMaintenanceCatalog(db: DbService) {
   await db.query(`DROP TABLE IF EXISTS public.invite_request_attempts,public.invite_redemption_attempts,public.recommendation_signals CASCADE;
-      CREATE TABLE public.invite_request_attempts(id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,attempted_at timestamptz NOT NULL);
-      CREATE TABLE public.invite_redemption_attempts(id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,attempted_at timestamptz NOT NULL);
+      CREATE TABLE public.invite_request_attempts(id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,email_hash text NOT NULL,attempted_at timestamptz NOT NULL DEFAULT now(),succeeded boolean NOT NULL);
+      CREATE TABLE public.invite_redemption_attempts(id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,email_hash text NOT NULL,attempted_at timestamptz NOT NULL DEFAULT now(),succeeded boolean NOT NULL);
       CREATE TABLE public.recommendation_signals(id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,created_at timestamptz NOT NULL);
       DROP MATERIALIZED VIEW IF EXISTS private.timezone_names_cache CASCADE;
       CREATE MATERIALIZED VIEW private.timezone_names_cache AS SELECT name FROM pg_timezone_names ORDER BY name;

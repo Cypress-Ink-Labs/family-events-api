@@ -41,7 +41,7 @@ describe("daily maintenance with frozen PostgreSQL behavior", () => {
     )
     for (const table of ["invite_request_attempts", "invite_redemption_attempts"])
       await db.query(
-        `INSERT INTO public.${table}(attempted_at) VALUES(now()-interval '30 days'-interval '5 minutes'),(now()-interval '30 days'+interval '5 minutes')`
+        `INSERT INTO public.${table}(email_hash,succeeded,attempted_at) VALUES('old-maintenance-fixture',false,now()-interval '30 days'-interval '5 minutes'),('retained-maintenance-fixture',true,now()-interval '30 days'+interval '5 minutes')`
       )
     await db.query(
       "INSERT INTO public.recommendation_signals(created_at) VALUES(now()-interval '90 days'-interval '5 minutes'),(now()-interval '90 days'+interval '5 minutes')"
@@ -59,6 +59,16 @@ describe("daily maintenance with frozen PostgreSQL behavior", () => {
       "INSERT INTO private.cron_enabled(label,enabled) VALUES('cron-db-maintenance',false)"
     )
   }
+  it("keeps invitation attempt fixtures compatible with onboarding and account deletion", async () => {
+    for (const table of ["invite_request_attempts", "invite_redemption_attempts"]) {
+      await db.query(
+        `INSERT INTO public.${table}(email_hash,succeeded) VALUES('maintenance-fixture-hash',false)`
+      )
+      expect(await db.query(`SELECT email_hash,succeeded FROM public.${table}`)).toEqual([
+        { email_hash: "maintenance-fixture-hash", succeeded: false },
+      ])
+    }
+  })
   it("retains all exact legacy pruning families, refreshes timezones and records API history", async () => {
     await seedOldAndRetained()
     await apiOwns()

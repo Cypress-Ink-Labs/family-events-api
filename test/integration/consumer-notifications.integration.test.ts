@@ -58,6 +58,10 @@ describe("consumer notification HTTP ownership", () => {
     )
     privateKey = (await crypto.subtle.exportKey("jwk", keyPair.privateKey)).d!
     await ensureCatalogSchema(db)
+    await db.query("CREATE SCHEMA IF NOT EXISTS private")
+    await db.query(
+      "CREATE TABLE IF NOT EXISTS private.cron_enabled(label text PRIMARY KEY,enabled boolean NOT NULL)"
+    )
     await db.query("CREATE SCHEMA IF NOT EXISTS auth")
     await db.query("CREATE TABLE IF NOT EXISTS auth.users (id uuid PRIMARY KEY, email text)")
     await db.query(`CREATE TABLE IF NOT EXISTS public.clerk_user_mapping (
@@ -95,6 +99,7 @@ describe("consumer notification HTTP ownership", () => {
   })
 
   beforeEach(async () => {
+    await db.query("TRUNCATE private.cron_enabled")
     config.set("VAPID_PUBLIC_KEY", "")
     config.set("VAPID_PRIVATE_KEY", "")
     config.set("RESEND_API_KEY", "")
@@ -139,6 +144,90 @@ describe("consumer notification HTTP ownership", () => {
     )
   })
   afterAll(async () => app.close())
+
+  async function deliveryStatus() {
+    const result = await request(app.getHttpServer())
+      .get("/v1/me/notification-preferences")
+      .set("Authorization", "Bearer mine")
+      .expect(200)
+    return result.body.delivery
+  }
+
+  function installDeliveryFamilies() {
+    config.set("CUTOVER_REMINDERS", "true")
+    config.set("CUTOVER_NOTIFY", "true")
+    config.set("CUTOVER_DIGEST", "true")
+  }
+
+  it("reports legacy-owned reminders and digests inactive even when their API families are installed", async () => {
+    installDeliveryFamilies()
+    expect(await deliveryStatus()).toMatchObject({
+      reminders_enabled: false,
+      digest_enabled: false,
+      changes_enabled: true,
+    })
+    await db.query(
+      "INSERT INTO private.cron_enabled(label,enabled) VALUES('cron-send-reminders',true),('cron-weekly-digest',true)"
+    )
+    expect(await deliveryStatus()).toMatchObject({
+      reminders_enabled: false,
+      digest_enabled: false,
+    })
+  })
+
+  it("reports paused notification families inactive and their resumed worker gates active", async () => {
+    installDeliveryFamilies()
+    await db.query(
+      "INSERT INTO private.cron_enabled(label,enabled) VALUES('cron-send-reminders',false),('cron-weekly-digest',false),('nestjs:cron-send-reminders',false),('nestjs:cron-weekly-digest',false),('internal:notify:process-notification-queue',false)"
+    )
+    expect(await deliveryStatus()).toMatchObject({
+      reminders_enabled: false,
+      digest_enabled: false,
+      changes_enabled: false,
+    })
+    await db.query(
+      "UPDATE private.cron_enabled SET enabled=true WHERE label LIKE 'nestjs:%' OR label LIKE 'internal:%'"
+    )
+    expect(await deliveryStatus()).toMatchObject({
+      reminders_enabled: true,
+      digest_enabled: true,
+      changes_enabled: true,
+    })
+    config.set("CUTOVER_NOTIFY", "false")
+    config.set("CUTOVER_REMINDERS", "false")
+    config.set("CUTOVER_DIGEST", "false")
+    expect(await deliveryStatus()).toMatchObject({
+      reminders_enabled: false,
+      digest_enabled: false,
+      changes_enabled: false,
+    })
+  })
+
+  it("uses the worker defaults for missing operational gate rows after legacy ownership is released", async () => {
+    installDeliveryFamilies()
+    await db.query(
+      "INSERT INTO private.cron_enabled(label,enabled) VALUES('cron-send-reminders',false),('cron-weekly-digest',false)"
+    )
+    expect(await deliveryStatus()).toMatchObject({
+      reminders_enabled: true,
+      digest_enabled: true,
+      changes_enabled: true,
+    })
+  })
+
+  it("reports unavailable delivery status rather than claiming active workers when gate reads fail", async () => {
+    installDeliveryFamilies()
+    await db.query("ALTER TABLE private.cron_enabled RENAME TO cron_enabled_unavailable_fixture")
+    try {
+      const result = await request(app.getHttpServer())
+        .get("/v1/me/notification-preferences")
+        .set("Authorization", "Bearer mine")
+        .expect(503)
+      expect(result.body.message).toBe("Notification delivery status is unavailable")
+    } finally {
+      await db.query("ALTER TABLE private.cron_enabled_unavailable_fixture RENAME TO cron_enabled")
+    }
+  })
 
   it("returns only the owner's newest 20 notifications and counts unread beyond that page", async () => {
     const result = await request(app.getHttpServer())

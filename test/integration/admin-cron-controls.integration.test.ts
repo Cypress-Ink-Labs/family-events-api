@@ -274,7 +274,7 @@ describe("operator schedule controls over HTTP and disposable pg-boss", () => {
     await owner("api", label).expect(200)
     await db.query("TRUNCATE public.invite_request_attempts")
     await db.query(
-      "INSERT INTO public.invite_request_attempts(attempted_at) VALUES(now()-interval '31 days')"
+      "INSERT INTO public.invite_request_attempts(email_hash,succeeded,attempted_at) VALUES('maintenance-control-fixture',false,now()-interval '31 days')"
     )
     await post(label).expect(202)
     const [job] = await boss.fetch<{ task: string }>("maintenance")
