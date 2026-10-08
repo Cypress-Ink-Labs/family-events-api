@@ -259,6 +259,241 @@
         ]
       }
     },
+    "/v1/admin/invite-deliveries/status": {
+      "get": {
+        "operationId": "adminGetInviteDeliveryReadiness",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InviteDeliveryReadinessDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "clerk": []
+          }
+        ],
+        "summary": "Get transactional email configuration readiness",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/v1/admin/invite-deliveries/{id}/retry": {
+      "post": {
+        "operationId": "adminRetryInviteDelivery",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminInviteMutationDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Attempts older than 23 hours require operator reconciliation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "clerk": []
+          }
+        ],
+        "summary": "Retry an invitation delivery with its original provider key and body",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/v1/admin/invite-deliveries": {
+      "get": {
+        "operationId": "adminListInviteDeliveries",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/InviteDeliveryDto"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "clerk": []
+          }
+        ],
+        "summary": "List the latest 100 transactional delivery outcomes without message contents",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/v1/admin/events": {
       "get": {
         "operationId": "adminListEvents",
@@ -6162,6 +6397,142 @@
           "required"
         ]
       },
+      "AdminErrorDto": {
+        "type": "object",
+        "properties": {
+          "statusCode": {
+            "type": "integer",
+            "enum": [
+              401,
+              403,
+              404
+            ]
+          },
+          "message": {
+            "type": "string",
+            "description": "Stable Nest error message"
+          },
+          "error": {
+            "type": "string",
+            "description": "Nest error name; omitted by the default 404 response"
+          }
+        },
+        "required": [
+          "statusCode",
+          "message"
+        ]
+      },
+      "InviteDeliveryReadinessDto": {
+        "type": "object",
+        "properties": {
+          "worker_enabled": {
+            "type": "boolean"
+          },
+          "provider_configured": {
+            "type": "boolean"
+          },
+          "admin_recipient_configured": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "worker_enabled",
+          "provider_configured",
+          "admin_recipient_configured"
+        ]
+      },
+      "AdminInviteMutationDto": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          }
+        },
+        "required": [
+          "ok"
+        ]
+      },
+      "InviteDeliveryDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "welcome",
+              "admin_request",
+              "request_approved",
+              "request_rejected"
+            ]
+          },
+          "target_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "processing",
+              "sent",
+              "failed",
+              "needs_review",
+              "cancelled"
+            ]
+          },
+          "attempts": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "next_attempt_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "first_attempt_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "sent_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "last_error": {
+            "type": "string",
+            "nullable": true,
+            "description": "Sanitized delivery category. Message contents are never returned."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "target_id",
+          "status",
+          "attempts",
+          "next_attempt_at",
+          "first_attempt_at",
+          "sent_at",
+          "last_error",
+          "created_at",
+          "updated_at"
+        ]
+      },
       "AdminValidationIssueDto": {
         "type": "object",
         "properties": {
@@ -6220,31 +6591,6 @@
           "message",
           "error",
           "issues"
-        ]
-      },
-      "AdminErrorDto": {
-        "type": "object",
-        "properties": {
-          "statusCode": {
-            "type": "integer",
-            "enum": [
-              401,
-              403,
-              404
-            ]
-          },
-          "message": {
-            "type": "string",
-            "description": "Stable Nest error message"
-          },
-          "error": {
-            "type": "string",
-            "description": "Nest error name; omitted by the default 404 response"
-          }
-        },
-        "required": [
-          "statusCode",
-          "message"
         ]
       },
       "AdminStatus": {
@@ -7244,20 +7590,6 @@
           "expires_at",
           "notes",
           "created_at"
-        ]
-      },
-      "AdminInviteMutationDto": {
-        "type": "object",
-        "properties": {
-          "ok": {
-            "type": "boolean",
-            "enum": [
-              true
-            ]
-          }
-        },
-        "required": [
-          "ok"
         ]
       },
       "AdminInviteRequestDto": {

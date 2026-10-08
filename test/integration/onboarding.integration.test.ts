@@ -143,6 +143,13 @@ beforeAll(async () => {
   await db.query(
     readFileSync(join(process.cwd(), "test/integration/sql/onboarding_rpcs.sql"), "utf8")
   )
+  await db.query("DROP TABLE IF EXISTS private.transactional_email_outbox")
+  await db.query(
+    readFileSync(
+      join(process.cwd(), "schema/migrations/20261008004000_transactional_invite_email.sql"),
+      "utf8"
+    )
+  )
   await db.query(`CREATE TRIGGER on_auth_user_created AFTER INSERT ON auth.users
     FOR EACH ROW EXECUTE FUNCTION public.handle_new_user()`)
 })
@@ -154,7 +161,7 @@ beforeEach(async () => {
   provider.users.getUser.mockReset()
   await db.query("UPDATE private.clerk_lifecycle_policy_fixture SET require_invite=false")
   await db.query(
-    "TRUNCATE private.clerk_user_lifecycle, auth.users, public.clerk_user_mapping, public.pending_invite_claims,public.invite_codes,public.invite_requests,public.invite_request_attempts,public.invite_redemption_attempts CASCADE"
+    "TRUNCATE private.clerk_user_lifecycle, auth.users, public.clerk_user_mapping, public.pending_invite_claims,public.invite_codes,public.invite_requests,public.invite_request_attempts,public.invite_redemption_attempts,private.transactional_email_outbox CASCADE"
   )
 })
 
