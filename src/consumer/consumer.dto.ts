@@ -507,6 +507,11 @@ export class PlanQueryDto {
 }
 
 export class EventsQueryDto extends DiscoveryControlsDto {
+  @ApiPropertyOptional({
+    description: "Hide finished events inside an explicit calendar date span",
+    default: false,
+  })
+  hide_past?: boolean
   @ApiPropertyOptional({ format: "uuid" })
   city_id?: string
 
