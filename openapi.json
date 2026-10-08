@@ -5059,6 +5059,147 @@
         ]
       }
     },
+    "/v1/admin/ai": {
+      "get": {
+        "operationId": "AdminAiController_settings",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminAiSettingsDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid AI setting request"
+          },
+          "401": {
+            "description": "Verified session required"
+          },
+          "403": {
+            "description": "Database admin access required"
+          },
+          "404": {
+            "description": "Operator access required"
+          }
+        },
+        "security": [
+          {
+            "clerk": []
+          }
+        ],
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/v1/admin/ai/features/{feature}": {
+      "put": {
+        "operationId": "AdminAiController_update",
+        "parameters": [
+          {
+            "name": "feature",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "enum": [
+                "tagging",
+                "event-review",
+                "parent-tips",
+                "tag-memory",
+                "review-memory",
+                "source-auto-reject"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminAiUpdateDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminAiFeatureDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid AI setting request"
+          },
+          "401": {
+            "description": "Verified session required"
+          },
+          "403": {
+            "description": "Database admin access required"
+          },
+          "404": {
+            "description": "Operator access required"
+          }
+        },
+        "security": [
+          {
+            "clerk": []
+          }
+        ],
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/v1/admin/dashboard/health": {
+      "get": {
+        "operationId": "AdminAiController_health",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminDashboardHealthDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid AI setting request"
+          },
+          "401": {
+            "description": "Verified session required"
+          },
+          "403": {
+            "description": "Database admin access required"
+          },
+          "404": {
+            "description": "Operator access required"
+          }
+        },
+        "security": [
+          {
+            "clerk": []
+          }
+        ],
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/v1/cities": {
       "get": {
         "operationId": "ConsumerController_listCities",
@@ -10553,6 +10694,262 @@
             "type": "boolean"
           }
         }
+      },
+      "AdminAiModelDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string",
+            "enum": [
+              "openai",
+              "ollama",
+              "localai"
+            ]
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "cost_tier": {
+            "type": "string",
+            "enum": [
+              "low",
+              "medium",
+              "high"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "provider",
+          "display_name",
+          "description",
+          "cost_tier"
+        ]
+      },
+      "AdminAiFeatureDto": {
+        "type": "object",
+        "properties": {
+          "feature": {
+            "type": "string"
+          },
+          "model_id": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_by": {
+            "type": "string",
+            "nullable": true,
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "feature",
+          "model_id",
+          "enabled",
+          "updated_at",
+          "updated_by"
+        ]
+      },
+      "AdminAiSettingsDto": {
+        "type": "object",
+        "properties": {
+          "models": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminAiModelDto"
+            }
+          },
+          "features": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminAiFeatureDto"
+            }
+          }
+        },
+        "required": [
+          "models",
+          "features"
+        ]
+      },
+      "AdminAiUpdateDto": {
+        "type": "object",
+        "properties": {
+          "model_id": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "model_id",
+          "enabled"
+        ]
+      },
+      "AdminPresenceDto": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "display_name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id",
+          "display_name"
+        ]
+      },
+      "AdminIngestionDayDto": {
+        "type": "object",
+        "properties": {
+          "day": {
+            "type": "string"
+          },
+          "imported": {
+            "type": "number"
+          },
+          "skipped": {
+            "type": "number"
+          },
+          "errors": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "day",
+          "imported",
+          "skipped",
+          "errors"
+        ]
+      },
+      "AdminRecentRunDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "source_name": {
+            "type": "string",
+            "nullable": true
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "status": {
+            "type": "string"
+          },
+          "events_imported": {
+            "type": "number"
+          },
+          "events_skipped": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "source_name",
+          "started_at",
+          "status",
+          "events_imported",
+          "events_skipped"
+        ]
+      },
+      "AdminScheduleHealthDto": {
+        "type": "object",
+        "properties": {
+          "family": {
+            "type": "string"
+          },
+          "task": {
+            "type": "string"
+          },
+          "replaces": {
+            "type": "string",
+            "nullable": true
+          },
+          "legacy_enabled": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "nest_enabled": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "owner": {
+            "type": "string",
+            "enum": [
+              "legacy",
+              "api",
+              "paused",
+              "internal"
+            ]
+          }
+        },
+        "required": [
+          "family",
+          "task",
+          "replaces",
+          "legacy_enabled",
+          "nest_enabled",
+          "owner"
+        ]
+      },
+      "AdminDashboardHealthDto": {
+        "type": "object",
+        "properties": {
+          "generated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "presence": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminPresenceDto"
+            }
+          },
+          "ingestion": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminIngestionDayDto"
+            }
+          },
+          "recent_runs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminRecentRunDto"
+            }
+          },
+          "schedules": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminScheduleHealthDto"
+            }
+          }
+        },
+        "required": [
+          "generated_at",
+          "presence",
+          "ingestion",
+          "recent_runs",
+          "schedules"
+        ]
       },
       "CityDto": {
         "type": "object",
