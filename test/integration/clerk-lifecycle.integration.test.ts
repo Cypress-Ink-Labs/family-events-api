@@ -1,3 +1,4 @@
+import { UserAccessModule } from "../../src/user-access/user-access.module.js"
 import { createHmac, randomUUID } from "node:crypto"
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
@@ -83,6 +84,7 @@ beforeAll(async () => {
       }),
       DbModule,
       AuthModule,
+      UserAccessModule,
     ],
     controllers: [AdminUserController],
     providers: [AdminUserRepository, AdminUserService],
@@ -134,6 +136,13 @@ beforeAll(async () => {
   await db.query(
     readFileSync(
       join(process.cwd(), "schema/migrations/20261008004000_transactional_invite_email.sql"),
+      "utf8"
+    )
+  )
+  await db.query("DROP TABLE IF EXISTS private.account_deletions")
+  await db.query(
+    readFileSync(
+      join(process.cwd(), "schema/migrations/20261008006000_coordinated_account_deletion.sql"),
       "utf8"
     )
   )
