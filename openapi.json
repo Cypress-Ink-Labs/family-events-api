@@ -1005,6 +1005,73 @@
         ]
       }
     },
+    "/v1/admin/sources/choices": {
+      "get": {
+        "operationId": "adminSourceChoices",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminSourceChoicesDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid path, query parameters, request body, or source state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminValidationErrorDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "A valid Clerk bearer token is required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The Clerk user is not provisioned, or database admin access is not provisioned. Database denial returns the stable message: admin access is not provisioned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The mapped user is not an operator, or the source does not exist",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "clerk": []
+          }
+        ],
+        "summary": "List all city choices for source administration",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/v1/admin/sources": {
       "get": {
         "operationId": "adminListSources",
@@ -5595,6 +5662,37 @@
           "sources"
         ]
       },
+      "AdminSourceCityDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ]
+      },
+      "AdminSourceChoicesDto": {
+        "type": "object",
+        "properties": {
+          "cities": {
+            "description": "All cities, including inactive rows, ordered by name and ID.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminSourceCityDto"
+            }
+          }
+        },
+        "required": [
+          "cities"
+        ]
+      },
       "AdminSourceDto": {
         "type": "object",
         "properties": {
@@ -7753,6 +7851,10 @@
       "EventCommentDto": {
         "type": "object",
         "properties": {
+          "can_delete": {
+            "type": "boolean",
+            "description": "Whether the verified caller owns this comment"
+          },
           "id": {
             "type": "string",
             "format": "uuid"
@@ -7778,6 +7880,7 @@
           }
         },
         "required": [
+          "can_delete",
           "id",
           "body",
           "created_at",
