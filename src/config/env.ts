@@ -33,6 +33,10 @@ export const envSchema = z.object({
   RESEND_API_KEY: z.string().optional(),
   /** Verified sender identity; MailService applies the legacy sandbox default when unset. */
   RESEND_FROM: z.string().optional(),
+  ADMIN_NOTIFY_EMAIL: z.preprocess(
+    (value) => (value === "" ? undefined : value),
+    z.email().optional()
+  ),
   /** Public app URL used in notification links; notification services apply the legacy default. */
   APP_URL: z.string().optional(),
   /** Web Push VAPID credentials. PushService applies the legacy subject default when unset. */

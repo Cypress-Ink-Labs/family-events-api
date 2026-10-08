@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common"
 import { ConfigModule } from "@nestjs/config"
 
 import { AdminModule } from "./admin/admin.module.js"
+import { TransactionalEmailModule } from "./transactional-email/transactional-email.module.js"
 import { OnboardingModule } from "./onboarding/onboarding.module.js"
 import { AuthModule } from "./auth/auth.module.js"
 import { validateEnv } from "./config/env.js"
@@ -23,6 +24,7 @@ import { PipelineModule } from "./pipeline/pipeline.module.js"
     JobsModule,
     AuthModule,
     OnboardingModule,
+    TransactionalEmailModule,
     AdminModule,
     ConsumerModule,
     PipelineModule,

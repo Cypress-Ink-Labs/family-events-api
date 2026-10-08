@@ -123,6 +123,7 @@ export class ClerkLifecycleService {
       if (historical.rows.length > 1 || historical.rows[0]?.email_confirmed_at === null)
         throw new ConflictException("historical account cannot be linked")
       let account = historical.rows[0]
+      let created = false
       if (!account) {
         const uuid = randomUUID()
         await client.query(
@@ -150,6 +151,7 @@ export class ClerkLifecycleService {
           )
         }
         account = { id: uuid, role: "user", email_confirmed_at: "confirmed" }
+        created = true
       }
       const revoked = await client.query(
         "SELECT clerk_user_id FROM private.clerk_user_lifecycle WHERE storage_uuid=$1 AND deleted_at IS NOT NULL",
@@ -165,6 +167,14 @@ export class ClerkLifecycleService {
         `INSERT INTO public.clerk_user_mapping(clerk_user_id,supabase_uuid,email,role) VALUES($1,$2,$3,$4)`,
         [id, account.id, email, account.role === "admin" ? "operator" : "member"]
       )
+      if (created) {
+        await client.query(
+          `INSERT INTO private.transactional_email_outbox(dedupe_key,kind,target_id,payload)
+          SELECT $1,'welcome',id,jsonb_build_object('email',$2::text,'username',display_name)
+          FROM public.user_profiles WHERE id=$3 ON CONFLICT(dedupe_key) DO NOTHING`,
+          [`welcome:${id}`, email, account.id]
+        )
+      }
       await client.query(
         `INSERT INTO private.clerk_user_lifecycle(clerk_user_id,storage_uuid,provider_updated_at)
         VALUES($1,$2,$3) ON CONFLICT(clerk_user_id) DO UPDATE SET storage_uuid=$2,provider_updated_at=$3,updated_at=now()`,
@@ -193,6 +203,12 @@ export class ClerkLifecycleService {
         [id, uuid]
       )
       if (!uuid) return
+      await client.query(
+        `UPDATE private.transactional_email_outbox SET status='cancelled',payload=NULL,delivery=NULL,
+        locked_until=NULL,last_error='account_deleted',updated_at=now()
+        WHERE kind='welcome' AND target_id=$1 AND status<>'sent'`,
+        [uuid]
+      )
       const profile = await client.query("SELECT * FROM public.user_profiles WHERE id=$1", [uuid])
       const access = await client.query("SELECT * FROM public.user_access WHERE user_id=$1", [uuid])
       let cleanupDeferred = false
