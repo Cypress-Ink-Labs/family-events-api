@@ -4010,6 +4010,157 @@
         ]
       }
     },
+    "/v1/admin/cities": {
+      "get": {
+        "operationId": "AdminCityController_list",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AdminCityDto"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid city request"
+          },
+          "401": {
+            "description": "Verified Clerk session required"
+          },
+          "403": {
+            "description": "Mapped account/database admin access required"
+          },
+          "404": {
+            "description": "Non-operator or missing city"
+          }
+        },
+        "security": [
+          {
+            "clerk": []
+          }
+        ],
+        "summary": "List all cities, including inactive cities",
+        "tags": [
+          "admin"
+        ]
+      },
+      "post": {
+        "operationId": "AdminCityController_create",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminCreateCityDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminCityDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid city request"
+          },
+          "401": {
+            "description": "Verified Clerk session required"
+          },
+          "403": {
+            "description": "Mapped account/database admin access required"
+          },
+          "404": {
+            "description": "Non-operator or missing city"
+          },
+          "409": {
+            "description": "record already exists"
+          }
+        },
+        "security": [
+          {
+            "clerk": []
+          }
+        ],
+        "summary": "Create an active city with legacy location fields",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/v1/admin/cities/{id}/active": {
+      "put": {
+        "operationId": "AdminCityController_active",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminCityActiveDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminCityDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid city request"
+          },
+          "401": {
+            "description": "Verified Clerk session required"
+          },
+          "403": {
+            "description": "Mapped account/database admin access required"
+          },
+          "404": {
+            "description": "Non-operator or missing city"
+          }
+        },
+        "security": [
+          {
+            "clerk": []
+          }
+        ],
+        "summary": "Set city active state and audit the mapped actor",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/v1/cities": {
       "get": {
         "operationId": "ConsumerController_listCities",
@@ -7851,6 +8002,97 @@
         },
         "required": [
           "ok"
+        ]
+      },
+      "AdminCityDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string",
+            "nullable": true
+          },
+          "country": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "timezone": {
+            "type": "string"
+          },
+          "latitude": {
+            "type": "string",
+            "nullable": true
+          },
+          "longitude": {
+            "type": "string",
+            "nullable": true
+          },
+          "is_active": {
+            "type": "boolean"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "state",
+          "country",
+          "slug",
+          "timezone",
+          "latitude",
+          "longitude",
+          "is_active",
+          "created_at"
+        ]
+      },
+      "AdminCreateCityDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string",
+            "nullable": true
+          },
+          "country": {
+            "type": "string",
+            "default": "US"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "timezone": {
+            "type": "string",
+            "example": "America/New_York"
+          }
+        },
+        "required": [
+          "name",
+          "slug",
+          "timezone"
+        ]
+      },
+      "AdminCityActiveDto": {
+        "type": "object",
+        "properties": {
+          "is_active": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "is_active"
         ]
       },
       "CityDto": {
