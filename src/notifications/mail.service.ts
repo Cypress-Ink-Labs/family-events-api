@@ -12,6 +12,8 @@ export interface SendMailInput {
   html?: string
   templateId?: string
   variables?: Record<string, string>
+  from?: string
+  idempotencyKey?: string
   signal?: AbortSignal
 }
 
@@ -19,6 +21,7 @@ export interface SendMailResult {
   sent: boolean
   dev?: boolean
   status?: number
+  providerId?: string
 }
 
 @Injectable()
@@ -40,7 +43,7 @@ export class MailService {
     }
 
     const payload = {
-      from: this.config.get("RESEND_FROM", { infer: true }) ?? DEFAULT_FROM,
+      from: input.from ?? this.config.get("RESEND_FROM", { infer: true }) ?? DEFAULT_FROM,
       to: input.to,
       subject: input.subject,
       ...(input.templateId
@@ -54,6 +57,7 @@ export class MailService {
         headers: {
           Authorization: `Bearer ${apiKey}`,
           "Content-Type": "application/json",
+          ...(input.idempotencyKey ? { "Idempotency-Key": input.idempotencyKey } : {}),
         },
         body: JSON.stringify(payload),
         signal: input.signal
@@ -64,6 +68,18 @@ export class MailService {
       if (!response.ok) {
         this.logger.warn(`Resend rejected email: status=${response.status}`)
         return { sent: false, status: response.status }
+      }
+      if (input.idempotencyKey) {
+        const result: unknown = await response.json()
+        if (
+          typeof result !== "object" ||
+          result === null ||
+          !("id" in result) ||
+          typeof result.id !== "string" ||
+          !result.id
+        )
+          return { sent: false, status: response.status }
+        return { sent: true, status: response.status, providerId: result.id }
       }
       return { sent: true, status: response.status }
     } catch {

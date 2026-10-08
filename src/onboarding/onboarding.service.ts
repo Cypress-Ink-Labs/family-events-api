@@ -94,11 +94,27 @@ export class OnboardingService {
         [emailHash]
       )
       if (limited.rows[0]?.limited) return
-      await client.query(
-        `INSERT INTO public.invite_requests(email,message) VALUES($1,$2)
-     ON CONFLICT(lower(email)) WHERE status='pending' DO UPDATE SET message=coalesce(EXCLUDED.message,invite_requests.message)`,
-        [email, message]
+      const existing = await client.query(
+        "SELECT id FROM public.invite_requests WHERE lower(email)=$1 AND status='pending' FOR UPDATE",
+        [email]
       )
+      if (existing.rows.length) {
+        await client.query(
+          "UPDATE public.invite_requests SET message=coalesce($2,message) WHERE id=$1",
+          [existing.rows[0].id, message]
+        )
+      } else {
+        const created = await client.query<{ id: string }>(
+          "INSERT INTO public.invite_requests(email,message) VALUES($1,$2) RETURNING id",
+          [email, message]
+        )
+        const id = created.rows[0]!.id
+        await client.query(
+          `INSERT INTO private.transactional_email_outbox(dedupe_key,kind,target_id,payload)
+          VALUES($1,'admin_request',$2,jsonb_build_object('email',$3::text,'message',$4::text))`,
+          [`admin_request:${id}`, id, email, message]
+        )
+      }
       await client.query(
         "INSERT INTO public.invite_request_attempts(email_hash,succeeded) VALUES($1,true)",
         [emailHash]

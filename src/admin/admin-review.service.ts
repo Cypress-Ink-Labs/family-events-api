@@ -93,6 +93,10 @@ export class AdminReviewService {
     })
   }
 
+  diagnostics(actor: string, id: string) {
+    return this.call(() => this.repository.diagnostics(actor, id))
+  }
+
   setStatus(
     actor: string,
     id: string,
