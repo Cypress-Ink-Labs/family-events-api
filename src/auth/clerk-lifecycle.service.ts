@@ -1,3 +1,4 @@
+import { cleanRetainedAccount } from "../user-access/retained-account-cleanup.js"
 import { randomUUID } from "node:crypto"
 
 import { createClerkClient } from "@clerk/backend"
@@ -184,68 +185,124 @@ export class ClerkLifecycleService {
   }
 
   private async remove(id: string): Promise<void> {
-    await this.db.withTransaction(async (client) => {
+    const failed = await this.db.withTransaction(async (client) => {
       await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))", [`clerk:${id}`])
       const mapped = await client.query<{ supabase_uuid: string }>(
-        `SELECT m.supabase_uuid FROM public.clerk_user_mapping m
-        JOIN auth.users au ON au.id=m.supabase_uuid WHERE m.clerk_user_id=$1 FOR UPDATE OF au`,
+        "SELECT supabase_uuid FROM public.clerk_user_mapping WHERE clerk_user_id=$1",
         [id]
       )
-      const uuid = mapped.rows[0]?.supabase_uuid ?? null
-      const state = await client.query(
-        "SELECT deleted_at FROM private.clerk_user_lifecycle WHERE clerk_user_id=$1",
+      const state = await client.query<{ storage_uuid: string | null }>(
+        "SELECT storage_uuid FROM private.clerk_user_lifecycle WHERE clerk_user_id=$1",
         [id]
       )
-      if (state.rows[0]?.deleted_at) return
+      const uuid = mapped.rows[0]?.supabase_uuid ?? state.rows[0]?.storage_uuid ?? null
+      if (!uuid) {
+        await client.query(
+          `INSERT INTO private.clerk_user_lifecycle(clerk_user_id,deleted_at)
+          VALUES($1,now()) ON CONFLICT(clerk_user_id) DO UPDATE SET deleted_at=coalesce(private.clerk_user_lifecycle.deleted_at,now()),updated_at=now()`,
+          [id]
+        )
+        return false
+      }
+      const deletion = await client.query<{ status: string }>(
+        "SELECT status FROM private.account_deletions WHERE user_id=$1 FOR UPDATE",
+        [uuid]
+      )
+      if (deletion.rows[0]?.status === "completed") return false
+      const auth = await client.query("SELECT id FROM auth.users WHERE id=$1 FOR UPDATE", [uuid])
+      const profile = await client.query(
+        "SELECT * FROM public.user_profiles WHERE id=$1 FOR UPDATE",
+        [uuid]
+      )
+      const access = await client.query(
+        "SELECT * FROM public.user_access WHERE user_id=$1 FOR UPDATE",
+        [uuid]
+      )
       await client.query(
         `INSERT INTO private.clerk_user_lifecycle(clerk_user_id,storage_uuid,deleted_at)
-        VALUES($1,$2,now()) ON CONFLICT(clerk_user_id) DO UPDATE SET deleted_at=now(),updated_at=now()`,
+        VALUES($1,$2,now()) ON CONFLICT(clerk_user_id) DO UPDATE SET deleted_at=coalesce(private.clerk_user_lifecycle.deleted_at,now()),updated_at=now()`,
         [id, uuid]
       )
-      if (!uuid) return
+      await client.query("DELETE FROM public.clerk_user_mapping WHERE clerk_user_id=$1", [id])
+      await client.query(
+        `UPDATE public.user_access SET is_enabled=false,disabled_at=coalesce(disabled_at,now()),
+        disabled_reason='Clerk account deleted',updated_at=now() WHERE user_id=$1`,
+        [uuid]
+      )
       await client.query(
         `UPDATE private.transactional_email_outbox SET status='cancelled',payload=NULL,delivery=NULL,
         locked_until=NULL,last_error='account_deleted',updated_at=now()
         WHERE kind='welcome' AND target_id=$1 AND status<>'sent'`,
         [uuid]
       )
-      const profile = await client.query("SELECT * FROM public.user_profiles WHERE id=$1", [uuid])
-      const access = await client.query("SELECT * FROM public.user_access WHERE user_id=$1", [uuid])
-      let cleanupDeferred = false
+      await client.query(
+        `INSERT INTO private.account_deletions(user_id,clerk_user_id,status,attempts,provider_confirmed_at)
+        VALUES($1,$2,'pending_cleanup',1,now()) ON CONFLICT(user_id) DO UPDATE SET status='pending_cleanup',
+        attempts=private.account_deletions.attempts+1,provider_confirmed_at=coalesce(private.account_deletions.provider_confirmed_at,now()),locked_until=NULL,last_error=NULL,updated_at=now()`,
+        [uuid, id]
+      )
+      const audited =
+        (
+          await client.query(
+            "SELECT 1 FROM public.admin_audit_log WHERE target_id=$1 AND action='user.delete' AND metadata->>'source'='clerk' LIMIT 1",
+            [uuid]
+          )
+        ).rows.length > 0
       await client.query("SAVEPOINT clerk_account_cleanup")
       try {
-        await client.query("DELETE FROM auth.users WHERE id=$1", [uuid])
-        await client.query("RELEASE SAVEPOINT clerk_account_cleanup")
-      } catch (error) {
-        await client.query("ROLLBACK TO SAVEPOINT clerk_account_cleanup")
-        if (
-          typeof error !== "object" ||
-          error === null ||
-          !("code" in error) ||
-          error.code !== "23503"
-        )
-          throw error
-        cleanupDeferred = true
-        await client.query("DELETE FROM public.clerk_user_mapping WHERE clerk_user_id=$1", [id])
+        let deferred = false
+        try {
+          await client.query("DELETE FROM auth.users WHERE id=$1", [uuid])
+        } catch (error) {
+          await client.query("ROLLBACK TO SAVEPOINT clerk_account_cleanup")
+          if (
+            typeof error !== "object" ||
+            error === null ||
+            !("code" in error) ||
+            error.code !== "23503"
+          )
+            throw error
+          deferred = true
+          await cleanRetainedAccount(client, uuid)
+        }
+        if (!audited || (!deferred && auth.rows.length))
+          await client.query(
+            `INSERT INTO public.admin_audit_log(admin_user_id,action,target_type,target_id,metadata)
+            VALUES(NULL,$1,'user_access',$2,$3::jsonb)`,
+            [
+              audited ? "user.delete_cleanup_completed" : "user.delete",
+              uuid,
+              JSON.stringify({
+                source: "clerk",
+                cleanup_deferred: deferred,
+                previous_profile: profile.rows[0] ?? null,
+                previous_access: access.rows[0] ?? null,
+              }),
+            ]
+          )
         await client.query(
-          `UPDATE public.user_access SET is_enabled=false,disabled_at=now(),
-          disabled_reason='Clerk account deleted',updated_at=now() WHERE user_id=$1`,
+          `UPDATE private.account_deletions SET status=$2,last_error=$3,locked_until=NULL,
+          completed_at=CASE WHEN $2='completed' THEN now() END,updated_at=now() WHERE user_id=$1`,
+          [
+            uuid,
+            deferred ? "cleanup_deferred" : "completed",
+            deferred ? "protected_attribution" : null,
+          ]
+        )
+        await client.query("RELEASE SAVEPOINT clerk_account_cleanup")
+        return false
+      } catch {
+        await client.query("ROLLBACK TO SAVEPOINT clerk_account_cleanup")
+        await client.query(
+          "UPDATE private.account_deletions SET last_error='cleanup_failed',locked_until=NULL,updated_at=now() WHERE user_id=$1",
           [uuid]
         )
+        return true
       }
-      await client.query(
-        `INSERT INTO public.admin_audit_log(admin_user_id,action,target_type,target_id,metadata)
-        VALUES(NULL,'user.delete','user_access',$1,$2::jsonb)`,
-        [
-          uuid,
-          JSON.stringify({
-            source: "clerk",
-            cleanup_deferred: cleanupDeferred,
-            previous_profile: profile.rows[0] ?? null,
-            previous_access: access.rows[0] ?? null,
-          }),
-        ]
-      )
     })
+    if (failed)
+      throw new ServiceUnavailableException(
+        "Account access is revoked. Storage cleanup is pending; retry the lifecycle callback."
+      )
   }
 }

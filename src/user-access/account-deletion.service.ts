@@ -1,3 +1,4 @@
+import { cleanRetainedAccount } from "./retained-account-cleanup.js"
 import type { AdminUserAccessRow } from "../admin/admin-user.repository.js"
 import {
   BadRequestException,
@@ -17,10 +18,6 @@ import {
 } from "../admin/admin-database.js"
 import type { Env } from "../config/env.js"
 import { DbService } from "../db/db.service.js"
-
-function quoteSqlIdentifier(identifier: string) {
-  return '"' + identifier.replaceAll('"', '""') + '"'
-}
 
 interface Deletion {
   user_id: string
@@ -101,6 +98,11 @@ export class AccountDeletionService {
       if (existing.rows[0]?.busy)
         throw new ConflictException("Account deletion is already in progress")
       if (existing.rows[0]) {
+        const profile = await client.query("SELECT role FROM public.user_profiles WHERE id=$1", [
+          userId,
+        ])
+        if (profile.rows[0]?.role === "admin")
+          this.protectedAccount("cannot delete an administrator account")
         const claim = await client.query<Deletion>(
           "UPDATE private.account_deletions SET attempts=attempts+1,locked_until=now()+interval '30 seconds',updated_at=now() WHERE user_id=$1 RETURNING *",
           [userId]
@@ -248,37 +250,7 @@ export class AccountDeletionService {
             error.code !== "23503"
           )
             throw error
-          const owned = await client.query<{
-            schema: string
-            table_name: string
-            column_name: string
-          }>(
-            `SELECT DISTINCT ns.nspname AS schema,child.relname AS table_name,column_name.attname AS column_name
-             FROM pg_constraint fk
-             JOIN pg_class child ON child.oid=fk.conrelid
-             JOIN pg_namespace ns ON ns.oid=child.relnamespace
-             JOIN pg_attribute column_name ON column_name.attrelid=fk.conrelid AND column_name.attnum=fk.conkey[1]
-             JOIN pg_attribute parent_column ON parent_column.attrelid=fk.confrelid AND parent_column.attnum=fk.confkey[1]
-             WHERE fk.contype='f' AND fk.confdeltype='c' AND cardinality(fk.conkey)=1
-               AND fk.confrelid IN ('auth.users'::regclass,'public.user_profiles'::regclass)
-               AND parent_column.attname='id' AND ns.nspname IN ('public','private')
-               AND fk.conrelid NOT IN ('public.user_profiles'::regclass,'public.user_access'::regclass)
-             ORDER BY ns.nspname,child.relname,column_name.attname`
-          )
-          for (const table of owned.rows) {
-            await client.query(
-              `DELETE FROM ${quoteSqlIdentifier(table.schema)}.${quoteSqlIdentifier(table.table_name)} WHERE ${quoteSqlIdentifier(table.column_name)}=$1`,
-              [userId]
-            )
-          }
-          await client.query(
-            "UPDATE public.user_profiles SET email=NULL,display_name=NULL,avatar_url=NULL,city_preference_id=NULL,child_name=NULL,child_age=NULL,updated_at=now() WHERE id=$1",
-            [userId]
-          )
-          await client.query(
-            "UPDATE auth.users SET email=NULL,email_confirmed_at=NULL,raw_app_meta_data='{}'::jsonb,raw_user_meta_data='{}'::jsonb,updated_at=now() WHERE id=$1",
-            [userId]
-          )
+          await cleanRetainedAccount(client, userId)
           if (state.rows[0]?.status !== "cleanup_deferred")
             await client.query(
               "INSERT INTO public.admin_audit_log(admin_user_id,action,target_type,target_id,metadata) VALUES(auth.uid(),'user.delete_cleanup_deferred','user_access',$1,'{\"cleanup_deferred\":true}'::jsonb)",

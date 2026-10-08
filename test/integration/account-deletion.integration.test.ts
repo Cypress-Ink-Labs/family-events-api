@@ -221,6 +221,278 @@ function admin(method: "get" | "post", path: string, body = {}) {
   return agent[method](path).set("Authorization", "Bearer operator-token").send(body)
 }
 describe("Coordinated account deletion HTTP", () => {
+  it.each(["user.deleted", "provider404", "prior_tombstone"])(
+    "cleans retained personal rows after %s and exposes an idempotent provider-free operator retry",
+    async (kind) => {
+      await operator()
+      const other = await identity.resolve("user_operator")
+      provider.users.getUser.mockResolvedValue(verifiedUser())
+      await deliver("user.created")
+      const member = await identity.resolve("user_parent")
+      const eventId = randomUUID()
+      await db.query(
+        "CREATE TABLE private.callback_evidence_fixture(resolved_by uuid REFERENCES auth.users(id) ON DELETE RESTRICT)"
+      )
+      await db.query("INSERT INTO private.callback_evidence_fixture VALUES($1)", [
+        member!.supabaseUuid,
+      ])
+      await db.query(
+        "INSERT INTO public.events(id,title,start_datetime) VALUES($1,'Retained callback fixture',now())",
+        [eventId]
+      )
+      await db.query("INSERT INTO public.favorites(user_id,event_id) VALUES($1,$3),($2,$3)", [
+        member!.supabaseUuid,
+        other!.supabaseUuid,
+        eventId,
+      ])
+      await db.query(
+        "INSERT INTO public.comments(user_id,event_id,body) VALUES($1,$3,'Parent note'),($2,$3,'Other note')",
+        [member!.supabaseUuid, other!.supabaseUuid, eventId]
+      )
+      await db.query("INSERT INTO private.operator_presence(user_id) VALUES($1),($2)", [
+        member!.supabaseUuid,
+        other!.supabaseUuid,
+      ])
+      await db.query("UPDATE public.user_profiles SET child_name='Child',child_age=4 WHERE id=$1", [
+        member!.supabaseUuid,
+      ])
+      const fetch = vi.fn()
+      vi.stubGlobal("fetch", fetch)
+      try {
+        if (kind === "provider404") provider.users.getUser.mockRejectedValue({ status: 404 })
+        if (kind === "prior_tombstone") {
+          await db.query(
+            "UPDATE private.clerk_user_lifecycle SET deleted_at=now() WHERE clerk_user_id='user_parent'"
+          )
+          await db.query("DELETE FROM public.clerk_user_mapping WHERE clerk_user_id='user_parent'")
+          await db.query(
+            "INSERT INTO public.admin_audit_log(action,target_type,target_id,metadata) VALUES('user.delete','user_access',$1,$2::jsonb)",
+            [
+              member!.supabaseUuid,
+              JSON.stringify({
+                source: "clerk",
+                cleanup_deferred: true,
+                previous_profile: { email: "parent@example.com" },
+              }),
+            ]
+          )
+          await db.query("UPDATE public.user_access SET is_enabled=false WHERE user_id=$1", [
+            member!.supabaseUuid,
+          ])
+        }
+        expect(
+          (await deliver(kind === "provider404" ? "user.updated" : "user.deleted")).status
+        ).toBe(200)
+        expect(
+          await db.query(
+            "SELECT email,display_name,child_name,child_age FROM public.user_profiles WHERE id=$1",
+            [member!.supabaseUuid]
+          )
+        ).toEqual([{ email: null, display_name: null, child_name: null, child_age: null }])
+        expect(
+          await db.query("SELECT user_id FROM public.favorites WHERE event_id=$1", [eventId])
+        ).toEqual([{ user_id: other!.supabaseUuid }])
+        expect(
+          await db.query("SELECT user_id,body FROM public.comments WHERE event_id=$1", [eventId])
+        ).toEqual([{ user_id: other!.supabaseUuid, body: "Other note" }])
+        expect(await db.query("SELECT user_id FROM private.operator_presence")).toEqual([
+          { user_id: other!.supabaseUuid },
+        ])
+        expect(await db.query("SELECT resolved_by FROM private.callback_evidence_fixture")).toEqual(
+          [{ resolved_by: member!.supabaseUuid }]
+        )
+        const status = await admin("get", "/v1/admin/users/deletions")
+        expect(status.body).toEqual([
+          expect.objectContaining({
+            user_id: member!.supabaseUuid,
+            status: "cleanup_deferred",
+            provider_confirmed_at: expect.any(String),
+            last_error: "protected_attribution",
+          }),
+        ])
+        expect(await identity.resolve("user_parent")).toBeNull()
+        expect(
+          (
+            await request(app.getHttpServer())
+              .get("/v1/admin/users")
+              .set("Authorization", "Bearer old-parent-token")
+          ).status
+        ).toBe(403)
+        expect(
+          await db.query("SELECT action,metadata FROM public.admin_audit_log WHERE target_id=$1", [
+            member!.supabaseUuid,
+          ])
+        ).toEqual([
+          {
+            action: "user.delete",
+            metadata: expect.objectContaining({
+              source: "clerk",
+              cleanup_deferred: true,
+              previous_profile: expect.objectContaining({ email: "parent@example.com" }),
+            }),
+          },
+        ])
+        expect((await deliver("user.deleted")).status).toBe(200)
+        expect(
+          await db.query("SELECT action FROM public.admin_audit_log WHERE target_id=$1", [
+            member!.supabaseUuid,
+          ])
+        ).toEqual([{ action: "user.delete" }])
+        await db.query("DELETE FROM private.callback_evidence_fixture")
+        expect(
+          (
+            await request(app.getHttpServer())
+              .delete(`/v1/admin/users/${member!.supabaseUuid}`)
+              .set("Authorization", "Bearer operator-token")
+              .send({})
+          ).status
+        ).toBe(200)
+        expect((await admin("get", "/v1/admin/users/deletions")).body[0]).toMatchObject({
+          status: "completed",
+        })
+        expect(
+          await db.query("SELECT id FROM auth.users WHERE id=$1", [member!.supabaseUuid])
+        ).toEqual([])
+        expect((await deliver("user.deleted")).status).toBe(200)
+        expect(fetch).not.toHaveBeenCalled()
+      } finally {
+        vi.unstubAllGlobals()
+        await db.query("DROP TABLE private.callback_evidence_fixture")
+      }
+    }
+  )
+  it("never permits an operator to retry deletion of a retained administrator, while signed callback replays finish its cleanup", async () => {
+    await operator()
+    provider.users.getUser.mockResolvedValue(verifiedUser())
+    await deliver("user.created")
+    const member = await identity.resolve("user_parent")
+    await db.query("UPDATE public.user_profiles SET role='admin' WHERE id=$1", [
+      member!.supabaseUuid,
+    ])
+    await db.query(
+      "CREATE TABLE private.callback_admin_evidence_fixture(resolved_by uuid REFERENCES auth.users(id) ON DELETE RESTRICT)"
+    )
+    await db.query("INSERT INTO private.callback_admin_evidence_fixture VALUES($1)", [
+      member!.supabaseUuid,
+    ])
+    const fetch = vi.fn()
+    vi.stubGlobal("fetch", fetch)
+    try {
+      expect((await deliver("user.deleted")).status).toBe(200)
+      expect((await admin("get", "/v1/admin/users/deletions")).body[0]).toMatchObject({
+        status: "cleanup_deferred",
+        attempts: 1,
+      })
+      expect(
+        (
+          await request(app.getHttpServer())
+            .delete(`/v1/admin/users/${member!.supabaseUuid}`)
+            .set("Authorization", "Bearer operator-token")
+            .send({})
+        ).status
+      ).toBe(400)
+      expect((await admin("get", "/v1/admin/users/deletions")).body[0]).toMatchObject({
+        attempts: 1,
+      })
+      await db.query("DELETE FROM private.callback_admin_evidence_fixture")
+      expect((await deliver("user.deleted")).status).toBe(200)
+      expect((await admin("get", "/v1/admin/users/deletions")).body[0]).toMatchObject({
+        status: "completed",
+      })
+      expect(
+        await db.query("SELECT id FROM auth.users WHERE id=$1", [member!.supabaseUuid])
+      ).toEqual([])
+      expect(
+        await db.query(
+          "SELECT action FROM public.admin_audit_log WHERE target_id=$1 ORDER BY created_at",
+          [member!.supabaseUuid]
+        )
+      ).toEqual([{ action: "user.delete" }, { action: "user.delete_cleanup_completed" }])
+      expect(fetch).not.toHaveBeenCalled()
+    } finally {
+      vi.unstubAllGlobals()
+      await db.query("DROP TABLE private.callback_admin_evidence_fixture")
+    }
+  })
+  it("keeps callback revocation durable when cleanup auditing fails and finishes on replay", async () => {
+    await operator()
+    provider.users.getUser.mockResolvedValue(verifiedUser())
+    await deliver("user.created")
+    const member = await identity.resolve("user_parent")
+    await db.query(`CREATE FUNCTION public.fail_callback_cleanup_audit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.action='user.delete' THEN RAISE EXCEPTION 'fixture callback audit failure'; END IF; RETURN NEW; END $$;
+      CREATE TRIGGER fail_callback_cleanup_audit BEFORE INSERT ON public.admin_audit_log FOR EACH ROW EXECUTE FUNCTION public.fail_callback_cleanup_audit()`)
+    try {
+      expect((await deliver("user.deleted")).status).toBe(503)
+      expect(await identity.resolve("user_parent")).toBeNull()
+      expect((await admin("get", "/v1/admin/users/deletions")).body[0]).toMatchObject({
+        status: "pending_cleanup",
+        provider_confirmed_at: expect.any(String),
+        last_error: "cleanup_failed",
+      })
+      expect(
+        await db.query("SELECT id FROM auth.users WHERE id=$1", [member!.supabaseUuid])
+      ).toHaveLength(1)
+      expect(
+        await db.query(
+          "SELECT status,payload,delivery FROM private.transactional_email_outbox WHERE target_id=$1",
+          [member!.supabaseUuid]
+        )
+      ).toEqual([{ status: "cancelled", payload: null, delivery: null }])
+    } finally {
+      await db.query(
+        "DROP TRIGGER fail_callback_cleanup_audit ON public.admin_audit_log; DROP FUNCTION public.fail_callback_cleanup_audit()"
+      )
+    }
+    expect((await deliver("user.deleted")).status).toBe(200)
+    expect((await admin("get", "/v1/admin/users/deletions")).body[0]).toMatchObject({
+      status: "completed",
+    })
+    expect(await db.query("SELECT id FROM auth.users WHERE id=$1", [member!.supabaseUuid])).toEqual(
+      []
+    )
+  })
+  it("fences an in-flight operator provider acknowledgement after an authoritative deletion callback", async () => {
+    await operator()
+    provider.users.getUser.mockResolvedValue(verifiedUser())
+    await deliver("user.created")
+    const member = await identity.resolve("user_parent")
+    let started!: () => void
+    let release!: () => void
+    const beginning = new Promise<void>((resolve) => {
+      started = resolve
+    })
+    const held = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const fetch = vi.fn(async () => {
+      started()
+      await held
+      return new Response(JSON.stringify({ id: "user_parent", deleted: true }), { status: 200 })
+    })
+    vi.stubGlobal("fetch", fetch)
+    const deletion = request(app.getHttpServer())
+      .delete(`/v1/admin/users/${member!.supabaseUuid}`)
+      .set("Authorization", "Bearer operator-token")
+      .send({})
+      .then((response) => response)
+    try {
+      await beginning
+      expect((await deliver("user.deleted")).status).toBe(200)
+      release()
+      expect((await deletion).status).toBe(409)
+      expect((await admin("get", "/v1/admin/users/deletions")).body[0]).toMatchObject({
+        status: "completed",
+        last_error: null,
+      })
+      expect((await deliver("user.deleted")).status).toBe(200)
+      expect(await identity.resolve("user_parent")).toBeNull()
+      expect(fetch).toHaveBeenCalledOnce()
+    } finally {
+      release()
+      await deletion
+      vi.unstubAllGlobals()
+    }
+  })
   it("rolls back revocation if its required audit cannot persist, without contacting Clerk", async () => {
     await operator()
     provider.users.getUser.mockResolvedValue(verifiedUser())

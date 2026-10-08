@@ -157,7 +157,7 @@ beforeEach(async () => {
   provider.users.getUser.mockReset()
   await db.query("UPDATE private.clerk_lifecycle_policy_fixture SET require_invite=false")
   await db.query(
-    "TRUNCATE private.clerk_user_lifecycle, auth.users, public.clerk_user_mapping, public.pending_invite_claims, private.transactional_email_outbox CASCADE"
+    "TRUNCATE private.account_deletions, private.clerk_user_lifecycle, auth.users, public.clerk_user_mapping, public.pending_invite_claims, private.transactional_email_outbox CASCADE"
   )
 })
 
@@ -408,8 +408,11 @@ describe("Clerk lifecycle HTTP", () => {
       provider.users.getUser.mockResolvedValue(
         verifiedUser("user_replacement", "parent@example.com")
       )
-      expect((await deliver("user.created", "user_replacement")).status).toBe(409)
-      expect(await identity.resolve("user_replacement")).toBeNull()
+      expect((await deliver("user.created", "user_replacement")).status).toBe(200)
+      const replacement = await identity.resolve("user_replacement")
+      expect(replacement).toMatchObject({ role: "member", email: "parent@example.com" })
+      expect(replacement!.supabaseUuid).not.toBe(mapped!.supabaseUuid)
+      expect(await identity.resolve("user_parent")).toBeNull()
       expect(
         await db.query("SELECT metadata FROM public.admin_audit_log WHERE target_id=$1", [
           mapped!.supabaseUuid,

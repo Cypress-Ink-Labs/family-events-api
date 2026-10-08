@@ -183,7 +183,7 @@ beforeEach(async () => {
   provider.users.getUser.mockReset()
   await db.query("UPDATE private.clerk_lifecycle_policy_fixture SET require_invite=false")
   await db.query(
-    "TRUNCATE private.clerk_user_lifecycle, auth.users, public.clerk_user_mapping, public.pending_invite_claims,public.invite_codes,public.invite_requests,public.invite_request_attempts,public.invite_redemption_attempts,private.transactional_email_outbox CASCADE"
+    "TRUNCATE private.account_deletions, private.clerk_user_lifecycle, auth.users, public.clerk_user_mapping, public.pending_invite_claims,public.invite_codes,public.invite_requests,public.invite_request_attempts,public.invite_redemption_attempts,private.transactional_email_outbox CASCADE"
   )
 })
 
