@@ -45,6 +45,6 @@ describe("enabledFamilies", () => {
   })
 
   it("enables everything by default outside production", () => {
-    expect(enabledFamilies({})).toHaveLength(6)
+    expect(enabledFamilies({})).toHaveLength(7)
   })
 })

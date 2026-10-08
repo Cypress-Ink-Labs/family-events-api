@@ -3994,7 +3994,8 @@
                 "cron-review-events",
                 "cron-weekly-digest",
                 "cron-send-reminders",
-                "cron-process-notification-queue"
+                "cron-process-notification-queue",
+                "cron-db-maintenance"
               ],
               "type": "string"
             }
@@ -4114,7 +4115,8 @@
                 "cron-review-events",
                 "cron-weekly-digest",
                 "cron-send-reminders",
-                "cron-process-notification-queue"
+                "cron-process-notification-queue",
+                "cron-db-maintenance"
               ],
               "type": "string"
             }
@@ -4298,7 +4300,8 @@
                 "cron-review-events",
                 "cron-weekly-digest",
                 "cron-send-reminders",
-                "cron-process-notification-queue"
+                "cron-process-notification-queue",
+                "cron-db-maintenance"
               ],
               "type": "string"
             }

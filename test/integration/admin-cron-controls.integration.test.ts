@@ -8,6 +8,8 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 import { AdminModule } from "../../src/admin/admin.module.js"
 import { DbModule } from "../../src/db/db.module.js"
 import { DbService } from "../../src/db/db.service.js"
+import { ensureMaintenanceCatalog } from "./maintenance-catalog.js"
+import { MaintenanceQueueService } from "../../src/pipeline/maintenance-queue.service.js"
 import { JobsService } from "../../src/jobs/jobs.service.js"
 import { CronGateService } from "../../src/pipeline/cron-gate.service.js"
 import { ScrapeQueueService } from "../../src/pipeline/ingestion/scrape-queue.service.js"
@@ -37,6 +39,7 @@ describe("operator schedule controls over HTTP and disposable pg-boss", () => {
     await boss.start()
     await boss.createQueue("scrape")
     await boss.createQueue("notify")
+    await boss.createQueue("maintenance")
     const module = await Test.createTestingModule({
       imports: [
         ConfigModule.forRoot({
@@ -64,6 +67,7 @@ describe("operator schedule controls over HTTP and disposable pg-boss", () => {
     await app.init()
     db = app.get(DbService)
     await ensureAdminCatalog(db)
+    await ensureMaintenanceCatalog(db)
     await db.query(
       `CREATE TABLE IF NOT EXISTS public.clerk_user_mapping(clerk_user_id text PRIMARY KEY, supabase_uuid uuid NOT NULL UNIQUE REFERENCES auth.users(id) ON DELETE CASCADE, email text NOT NULL, role text NOT NULL)`
     )
@@ -264,6 +268,41 @@ describe("operator schedule controls over HTTP and disposable pg-boss", () => {
     expect(
       await db.query("SELECT name,data FROM cron_controls_fixture.job WHERE name='scrape'")
     ).toEqual([{ name: "scrape", data: { task: "scrape-due-sources" } }])
+  })
+  it("queues daily maintenance through HTTP and exposes the completed retained operation in history", async () => {
+    const label = "cron-db-maintenance"
+    await owner("api", label).expect(200)
+    await db.query("TRUNCATE public.invite_request_attempts")
+    await db.query(
+      "INSERT INTO public.invite_request_attempts(attempted_at) VALUES(now()-interval '31 days')"
+    )
+    await post(label).expect(202)
+    const [job] = await boss.fetch<{ task: string }>("maintenance")
+    expect(job!.data).toEqual({ task: "daily-maintenance" })
+    await new MaintenanceQueueService({} as JobsService, new CronGateService(db), db, {
+      NODE_ENV: "production",
+      CUTOVER_MAINTENANCE: "true",
+    }).handleJob(job!.data)
+    const history = await request(app.getHttpServer())
+      .get(`/v1/admin/crons/runs?label=${label}`)
+      .set("Authorization", "Bearer operator")
+      .expect(200)
+    expect(history.body.items[0]).toMatchObject({ label, status: "succeeded", http_status: null })
+    const detail = await request(app.getHttpServer())
+      .get(`/v1/admin/crons/runs/${history.body.items[0].id}`)
+      .set("Authorization", "Bearer operator")
+      .expect(200)
+    expect(JSON.parse(detail.body.body)).toMatchObject({
+      invite_request_attempts_pruned: 1,
+      timezone_names_refreshed: true,
+    })
+    const schedules = await request(app.getHttpServer())
+      .get("/v1/admin/crons")
+      .set("Authorization", "Bearer operator")
+      .expect(200)
+    expect(
+      schedules.body.items.find((item: { label: string }) => item.label === label)
+    ).toMatchObject({ cron: "15 3 * * *", timezone: "UTC", owner: "api", effective_enabled: true })
   })
   it("protects owner mutations and run dispatch before writes", async () => {
     for (const token of [null, "invalid", "member"]) {
