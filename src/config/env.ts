@@ -15,6 +15,7 @@ export const envSchema = z.object({
   PGBOSS_SCHEMA: z.string().default("pgboss"),
   /** Clerk secret key. Required outside tests; endpoints behind ClerkAuthGuard fail closed without it. */
   CLERK_SECRET_KEY: z.string().optional(),
+  CLERK_WEBHOOK_SIGNING_SECRET: optionalNonEmptyString,
   /** Per-job-family cutover flags. Semantics live in src/pipeline/flags.ts. */
   CUTOVER_SCRAPE: cutoverFlag,
   CUTOVER_TAG: cutoverFlag,

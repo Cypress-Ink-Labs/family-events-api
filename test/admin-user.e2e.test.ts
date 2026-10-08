@@ -34,6 +34,7 @@ const row = {
   updated_at: "2026-09-08 10:00:00.123456+00",
 }
 const identity = {
+  hasEnabledAccess: vi.fn(async () => true),
   resolve: vi.fn(async (clerkUserId: string) =>
     clerkUserId === "user_unmapped"
       ? null

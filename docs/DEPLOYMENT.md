@@ -258,3 +258,5 @@ Checklist before setting `CUTOVER_NOTIFY="true"`:
 Direct APNs delivery remains deferred until the schema has a provider
 discriminator and existing tokens have been migrated. The deployed iOS and
 Android subscription contract uses FCM.
+
+Lifecycle implementation and callback forwarding requirements are documented in [CLERK_LIFECYCLE.md](CLERK_LIFECYCLE.md). This migration work does not establish that the deployed acknowledge-only callback has been replaced.

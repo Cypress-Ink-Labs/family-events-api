@@ -21,6 +21,7 @@ const ACTOR = "11111111-1111-4111-8111-111111111111"
 const CODE = "22222222-2222-4222-8222-222222222222"
 const INVITE_REQUEST = "33333333-3333-4333-8333-333333333333"
 const identity = {
+  hasEnabledAccess: vi.fn(async () => true),
   resolve: vi.fn(async (clerkUserId: string) =>
     clerkUserId === "user_unmapped"
       ? null

@@ -45,7 +45,7 @@ function makeGuard(
     get: vi.fn(() => secretKey ?? undefined),
   } as unknown as ConfigService<never, true>
   const resolve = vi.fn(async () => mapped)
-  const identity = { resolve } as unknown as IdentityService
+  const identity = { resolve, hasEnabledAccess: async () => true } as unknown as IdentityService
   return { guard: new OptionalClerkAuthGuard(config, identity), resolve }
 }
 

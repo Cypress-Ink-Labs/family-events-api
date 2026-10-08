@@ -115,6 +115,10 @@ describe("consumer read HTTP API", () => {
        ($2, 'other@example.com', 'Other')`,
       [USER_READER, USER_OTHER]
     )
+    await db.query("INSERT INTO public.user_access(user_id,is_enabled) VALUES($1,true),($2,true)", [
+      USER_READER,
+      USER_OTHER,
+    ])
   })
 
   afterAll(async () => {
@@ -703,6 +707,55 @@ describe("consumer read HTTP API", () => {
   it("rejects a malformed cursor", async () => {
     await request(app.getHttpServer()).get("/v1/events").query({ cursor: "%%%" }).expect(400)
   })
+
+  it.each(["disabled", "expired", "missing"])(
+    "denies %s member account reads and writes while anonymous discovery remains public",
+    async (state) => {
+      const eventId = await insertEvent({ title: "Protected account action" })
+      if (state === "missing")
+        await db.query("DELETE FROM public.user_access WHERE user_id=$1", [USER_READER])
+      else
+        await db.query(
+          "UPDATE public.user_access SET is_enabled=$2,access_expires_at=CASE WHEN $2 THEN '2026-01-01'::timestamptz ELSE NULL END WHERE user_id=$1",
+          [USER_READER, state === "expired"]
+        )
+      const server = request(app.getHttpServer())
+      expect(
+        (await server.get("/v1/me/favorites").set("Authorization", "Bearer mapped-token")).status
+      ).toBe(403)
+      expect(
+        (
+          await server
+            .put(`/v1/events/${eventId}/favorite`)
+            .set("Authorization", "Bearer mapped-token")
+            .send({ on: true })
+        ).status
+      ).toBe(403)
+      expect(
+        (await server.get(`/v1/events/${eventId}`).set("Authorization", "Bearer mapped-token"))
+          .status
+      ).toBe(403)
+      expect(
+        (
+          await server
+            .post("/v1/correction-report-capability")
+            .set("Authorization", "Bearer mapped-token")
+        ).status
+      ).toBe(403)
+      expect(
+        (
+          await server
+            .post(`/v1/events/${eventId}/correction-reports`)
+            .set("Authorization", "Bearer mapped-token")
+            .send({ category: "wrong_location", details: "A correction" })
+        ).status
+      ).toBe(403)
+      expect((await server.get(`/v1/events/${eventId}`)).status).toBe(200)
+      expect(
+        await db.query("SELECT event_id FROM public.favorites WHERE user_id=$1", [USER_READER])
+      ).toEqual([])
+    }
+  )
 
   it("requires a provisioned Clerk identity for favorite and calendar page reads", async () => {
     for (const path of ["/v1/me/favorites", "/v1/me/calendar"]) {

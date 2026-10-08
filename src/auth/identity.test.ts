@@ -8,6 +8,7 @@ import { MappedIdentityGuard } from "./mapped-identity.guard.js"
 import { OperatorGuard } from "./operator.guard.js"
 
 const MAPPING_ROW = {
+  access_allowed: true,
   supabase_uuid: "0b6a3f5e-1111-4222-8333-444455556666",
   email: "jacob@example.com",
   role: "operator" as const,

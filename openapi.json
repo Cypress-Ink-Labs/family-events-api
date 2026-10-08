@@ -1,6 +1,96 @@
 {
   "openapi": "3.0.0",
   "paths": {
+    "/webhooks/clerk": {
+      "post": {
+        "operationId": "clerkLifecycleWebhook",
+        "parameters": [
+          {
+            "name": "svix-signature",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "svix-timestamp",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "svix-id",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "type",
+                  "data"
+                ],
+                "properties": {
+                  "type": {
+                    "type": "string"
+                  },
+                  "data": {
+                    "type": "object",
+                    "additionalProperties": true
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "ok"
+                  ],
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid signature, expired delivery, or malformed lifecycle identity"
+          },
+          "409": {
+            "description": "Identity binding conflicts with historical ownership"
+          },
+          "503": {
+            "description": "Configuration, provider, or storage failure; retry delivery"
+          }
+        },
+        "summary": "Apply a signed Clerk lifecycle delivery",
+        "tags": [
+          "identity"
+        ]
+      }
+    },
     "/v1/admin/events": {
       "get": {
         "operationId": "adminListEvents",
