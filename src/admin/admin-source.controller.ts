@@ -21,6 +21,7 @@ import {
   ApiOperation,
   ApiParam,
   ApiTags,
+  ApiQuery,
   ApiUnauthorizedResponse,
 } from "@nestjs/swagger"
 
@@ -45,6 +46,12 @@ import {
   parseAdminSourcesQuery,
   parseAdminUpdateSourceBody,
 } from "./admin-source.input.js"
+import {
+  AdminSourceRunsPageDto,
+  AdminSourceRunDetailDto,
+  AdminActiveQueuePageDto,
+} from "./admin-source-diagnostics.dto.js"
+import { parseSourceRunsQuery, parseSourceQueuesQuery } from "./admin-source-diagnostics.input.js"
 import { AdminSourceService } from "./admin-source.service.js"
 
 type AdminRequest = Pick<IdentifiedRequest, "identity">
@@ -72,6 +79,48 @@ type AdminRequest = Pick<IdentifiedRequest, "identity">
 @Controller("v1/admin/sources")
 export class AdminSourceController {
   constructor(private readonly admin: AdminSourceService) {}
+
+  @Get("runs")
+  @ApiOperation({ operationId: "adminSourceRuns", summary: "List protected source runs" })
+  @ApiQuery({ name: "source_id", required: false, format: "uuid" })
+  @ApiQuery({ name: "status", required: false, enum: ["running", "success", "error", "partial"] })
+  @ApiQuery({ name: "limit", required: false, type: Number, minimum: 1, maximum: 200 })
+  @ApiQuery({ name: "after_started_at", required: false, type: String })
+  @ApiQuery({ name: "after_id", required: false, format: "uuid" })
+  @ApiOkResponse({ type: AdminSourceRunsPageDto })
+  runs(@Query() query: Record<string, unknown>, @Req() request: AdminRequest) {
+    return this.admin.runs(request.identity.supabaseUuid, parseSourceRunsQuery(query))
+  }
+
+  @Get("runs/:runId")
+  @ApiOperation({
+    operationId: "adminSourceRunDetail",
+    summary: "Read a source run and extraction logs",
+  })
+  @ApiParam({ name: "runId", format: "uuid" })
+  @ApiOkResponse({ type: AdminSourceRunDetailDto })
+  runDetail(
+    @Param("runId") id: string,
+    @Query() query: Record<string, unknown>,
+    @Req() request: AdminRequest
+  ) {
+    parseAdminSourcesQuery(query)
+    return this.admin.runDetail(request.identity.supabaseUuid, parseAdminSourceId(id))
+  }
+
+  @Get("queues")
+  @ApiOperation({
+    operationId: "adminActiveSourceQueues",
+    summary: "Read active source or tag queue diagnostics and complete status summaries",
+  })
+  @ApiQuery({ name: "kind", required: true, enum: ["source", "tag"] })
+  @ApiQuery({ name: "source_id", required: false, format: "uuid" })
+  @ApiQuery({ name: "limit", required: false, type: Number, minimum: 1, maximum: 200 })
+  @ApiQuery({ name: "after_id", required: false, type: String, pattern: "^[1-9]\\d{0,18}$" })
+  @ApiOkResponse({ type: AdminActiveQueuePageDto })
+  queues(@Query() query: Record<string, unknown>, @Req() request: AdminRequest) {
+    return this.admin.queues(request.identity.supabaseUuid, parseSourceQueuesQuery(query))
+  }
 
   @Get("choices")
   @ApiOperation({
