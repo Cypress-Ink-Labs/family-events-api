@@ -1,5 +1,8 @@
 import { Module } from "@nestjs/common"
 
+import { ClerkLifecycleService } from "./clerk-lifecycle.service.js"
+import { ClerkLifecycleController } from "./clerk-lifecycle.controller.js"
+
 import { ClerkAuthGuard } from "./clerk.guard.js"
 import { IdentityService } from "./identity.service.js"
 import { MappedIdentityGuard } from "./mapped-identity.guard.js"
@@ -8,6 +11,7 @@ import { OptionalClerkAuthGuard } from "./optional-clerk.guard.js"
 
 const AUTH_PROVIDERS = [
   ClerkAuthGuard,
+  ClerkLifecycleService,
   IdentityService,
   MappedIdentityGuard,
   OperatorGuard,
@@ -15,6 +19,7 @@ const AUTH_PROVIDERS = [
 ]
 
 @Module({
+  controllers: [ClerkLifecycleController],
   providers: AUTH_PROVIDERS,
   exports: AUTH_PROVIDERS,
 })
