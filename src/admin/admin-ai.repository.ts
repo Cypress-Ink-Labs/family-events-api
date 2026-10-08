@@ -109,13 +109,23 @@ export class AdminAiRepository {
             schedule.replaces === null ? null : (enabled.get(schedule.replaces) ?? true)
           const nest =
             schedule.replaces === null ? null : (enabled.get(`nestjs:${schedule.replaces}`) ?? true)
+          const internal = enabled.get(`internal:${family}:${schedule.key}`) ?? true
           return {
             family,
             task: schedule.task,
             replaces: schedule.replaces,
             legacy_enabled: legacy,
             nest_enabled: nest,
-            owner: legacy === null ? "internal" : legacy ? "legacy" : nest ? "api" : "paused",
+            owner:
+              legacy === null
+                ? internal
+                  ? "internal"
+                  : "paused"
+                : legacy
+                  ? "legacy"
+                  : nest
+                    ? "api"
+                    : "paused",
           }
         })
       )

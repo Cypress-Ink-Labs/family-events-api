@@ -170,7 +170,7 @@ describe("AI settings and dashboard health HTTP", () => {
       "INSERT INTO public.source_runs(status,events_imported,events_skipped,started_at) VALUES('success',3,2,now()),('error',0,1,now()-interval '8 days')"
     )
     await db.query(
-      "INSERT INTO private.cron_enabled(label,enabled) VALUES('cron-tag-queue',false),('nestjs:cron-tag-queue',false)"
+      "INSERT INTO private.cron_enabled(label,enabled) VALUES('cron-tag-queue',false),('nestjs:cron-tag-queue',false),('internal:notify:process-notification-queue',false)"
     )
     await db.query("INSERT INTO private.operator_presence(user_id,last_seen_at) VALUES($1,now())", [
       member,
@@ -189,6 +189,9 @@ describe("AI settings and dashboard health HTTP", () => {
     expect((await get("dashboard/health").expect(200)).body.presence).toEqual([
       { user_id: actor, display_name: "Admin" },
     ])
+    expect(
+      result.body.schedules.find((row: { task: string }) => row.task === "process")
+    ).toMatchObject({ owner: "paused", legacy_enabled: null, nest_enabled: null })
     expect(result.body.recent_runs).toHaveLength(2)
     expect(
       result.body.ingestion.reduce((n: number, row: { imported: number }) => n + row.imported, 0)
