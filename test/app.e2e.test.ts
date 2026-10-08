@@ -748,6 +748,8 @@ describe("application bootstrap", () => {
       event: editable,
       tags: [],
       available_tags: [],
+      cities: [],
+      sources: [],
     }
     expect(matchesContract(editorDetail, schemas.AdminEventEditorDetailDto!, schemas)).toBe(true)
     expect(
