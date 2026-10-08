@@ -91,6 +91,174 @@
         ]
       }
     },
+    "/v1/onboarding/redeem": {
+      "post": {
+        "operationId": "OnboardingController_redeem",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "code"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OnboardingStatusDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid code or exhausted, expired, revoked, rate-limited invitation."
+          },
+          "401": {
+            "description": ""
+          },
+          "403": {
+            "description": "Disabled, expired, or previously claimed account cannot enroll again."
+          },
+          "409": {
+            "description": "Trusted identity mapping is still being provisioned."
+          },
+          "503": {
+            "description": "Invitation service unavailable; retry without assuming access was granted."
+          }
+        },
+        "security": [
+          {
+            "clerk": []
+          }
+        ],
+        "tags": [
+          "onboarding"
+        ]
+      }
+    },
+    "/v1/onboarding/requests": {
+      "post": {
+        "operationId": "OnboardingController_request",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "email"
+                ],
+                "properties": {
+                  "email": {
+                    "type": "string",
+                    "format": "email",
+                    "maxLength": 320
+                  },
+                  "message": {
+                    "type": "string",
+                    "nullable": true,
+                    "maxLength": 500
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OnboardingReceiptDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Invitation service unavailable; retry without assuming access was granted."
+          }
+        },
+        "tags": [
+          "onboarding"
+        ]
+      }
+    },
+    "/v1/onboarding/me": {
+      "get": {
+        "operationId": "OnboardingController_status",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OnboardingStatusDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": ""
+          },
+          "503": {
+            "description": "Invitation service unavailable; retry without assuming access was granted."
+          }
+        },
+        "security": [
+          {
+            "clerk": []
+          }
+        ],
+        "tags": [
+          "onboarding"
+        ]
+      }
+    },
+    "/v1/onboarding": {
+      "get": {
+        "operationId": "OnboardingController_policy",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OnboardingPolicyDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Invitation service unavailable; retry without assuming access was granted."
+          }
+        },
+        "tags": [
+          "onboarding"
+        ]
+      }
+    },
     "/v1/admin/events": {
       "get": {
         "operationId": "adminListEvents",
@@ -5169,6 +5337,203 @@
         ]
       }
     },
+    "/v1/public-events": {
+      "get": {
+        "operationId": "PublicExportsController_list",
+        "parameters": [
+          {
+            "required": false,
+            "name": "city_id",
+            "in": "query",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "required": false,
+            "name": "date_from",
+            "in": "query",
+            "schema": {
+              "format": "date-time",
+              "type": "string"
+            }
+          },
+          {
+            "required": false,
+            "name": "date_to",
+            "in": "query",
+            "schema": {
+              "format": "date-time",
+              "type": "string"
+            }
+          },
+          {
+            "required": false,
+            "name": "is_free",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Comma-separated tag slugs, maximum 10",
+            "required": false,
+            "name": "tags",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "required": false,
+            "name": "keyword",
+            "in": "query",
+            "schema": {
+              "maxLength": 100,
+              "type": "string"
+            }
+          },
+          {
+            "required": false,
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "type": "number"
+            }
+          },
+          {
+            "description": "Legacy Base64 JSON keyset cursor",
+            "required": false,
+            "name": "cursor",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicEventsPageDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid public filter or cursor"
+          }
+        },
+        "security": [],
+        "summary": "Legacy public event collection",
+        "tags": [
+          "public-exports"
+        ]
+      }
+    },
+    "/v1/public-events/{id}": {
+      "get": {
+        "operationId": "PublicExportsController_event",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicEventEnvelopeDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Event is missing or unpublished"
+          }
+        },
+        "security": [],
+        "summary": "Legacy public event envelope",
+        "tags": [
+          "public-exports"
+        ]
+      }
+    },
+    "/v1/public-exports/feed": {
+      "get": {
+        "operationId": "PublicExportsController_feed",
+        "parameters": [
+          {
+            "name": "city",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PublicEventDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [],
+        "summary": "Upcoming published feed events, maximum 200",
+        "tags": [
+          "public-exports"
+        ]
+      }
+    },
+    "/v1/public-exports/sitemap": {
+      "get": {
+        "operationId": "PublicExportsController_sitemap",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SitemapEventDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [],
+        "summary": "Published sitemap entries, maximum 5000",
+        "tags": [
+          "public-exports"
+        ]
+      }
+    },
     "/healthz": {
       "get": {
         "operationId": "HealthController_healthz",
@@ -5231,6 +5596,49 @@
       }
     },
     "schemas": {
+      "OnboardingStatusDto": {
+        "type": "object",
+        "properties": {
+          "required": {
+            "type": "boolean"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "ready",
+              "invite_required",
+              "provisioning_pending",
+              "access_unavailable"
+            ]
+          }
+        },
+        "required": [
+          "required",
+          "state"
+        ]
+      },
+      "OnboardingReceiptDto": {
+        "type": "object",
+        "properties": {
+          "received": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "received"
+        ]
+      },
+      "OnboardingPolicyDto": {
+        "type": "object",
+        "properties": {
+          "required": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "required"
+        ]
+      },
       "AdminValidationIssueDto": {
         "type": "object",
         "properties": {
@@ -8783,6 +9191,152 @@
           "status",
           "priority",
           "created_at"
+        ]
+      },
+      "PublicEventDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "start_datetime": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "end_datetime": {
+            "type": "string",
+            "nullable": true,
+            "format": "date-time"
+          },
+          "timezone": {
+            "type": "string",
+            "nullable": true
+          },
+          "venue_name": {
+            "type": "string",
+            "nullable": true
+          },
+          "address": {
+            "type": "string",
+            "nullable": true
+          },
+          "city_id": {
+            "type": "string",
+            "nullable": true,
+            "format": "uuid"
+          },
+          "latitude": {
+            "type": "number",
+            "nullable": true
+          },
+          "longitude": {
+            "type": "number",
+            "nullable": true
+          },
+          "age_min": {
+            "type": "number",
+            "nullable": true
+          },
+          "age_max": {
+            "type": "number",
+            "nullable": true
+          },
+          "price": {
+            "type": "number",
+            "nullable": true
+          },
+          "is_free": {
+            "type": "boolean"
+          },
+          "is_featured": {
+            "type": "boolean"
+          },
+          "is_outdoor": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "images": {
+            "type": "array",
+            "items": {}
+          },
+          "source_url": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "description",
+          "start_datetime",
+          "end_datetime",
+          "timezone",
+          "venue_name",
+          "address",
+          "city_id",
+          "latitude",
+          "longitude",
+          "age_min",
+          "age_max",
+          "price",
+          "is_free",
+          "is_featured",
+          "is_outdoor",
+          "images",
+          "source_url"
+        ]
+      },
+      "PublicEventsPageDto": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PublicEventDto"
+            }
+          },
+          "next_cursor": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "PublicEventEnvelopeDto": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/PublicEventDto"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "SitemapEventDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "start_datetime": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "start_datetime"
         ]
       },
       "HealthResponse": {
