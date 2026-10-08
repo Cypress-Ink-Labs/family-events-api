@@ -4396,6 +4396,292 @@
         ]
       }
     },
+    "/v1/admin/comments": {
+      "get": {
+        "operationId": "AdminContributionController_comments",
+        "parameters": [
+          {
+            "name": "filter",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "enum": [
+                "all",
+                "pending",
+                "flagged",
+                "approved"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 0,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminCommentPageDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid contribution request"
+          },
+          "401": {
+            "description": "Verified Clerk session required"
+          },
+          "403": {
+            "description": "Database admin access required"
+          },
+          "404": {
+            "description": "Non-operator or missing contribution"
+          }
+        },
+        "security": [
+          {
+            "clerk": []
+          }
+        ],
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/v1/admin/ratings": {
+      "get": {
+        "operationId": "AdminContributionController_ratings",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 0,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminRatingPageDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid contribution request"
+          },
+          "401": {
+            "description": "Verified Clerk session required"
+          },
+          "403": {
+            "description": "Database admin access required"
+          },
+          "404": {
+            "description": "Non-operator or missing contribution"
+          }
+        },
+        "security": [
+          {
+            "clerk": []
+          }
+        ],
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/v1/admin/comments/{id}": {
+      "put": {
+        "operationId": "AdminContributionController_update",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminCommentUpdateDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "updated"
+                  ],
+                  "properties": {
+                    "updated": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid contribution request"
+          },
+          "401": {
+            "description": "Verified Clerk session required"
+          },
+          "403": {
+            "description": "Database admin access required"
+          },
+          "404": {
+            "description": "Non-operator or missing contribution"
+          }
+        },
+        "security": [
+          {
+            "clerk": []
+          }
+        ],
+        "tags": [
+          "admin"
+        ]
+      },
+      "delete": {
+        "operationId": "AdminContributionController_removeComment",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "removed"
+                  ],
+                  "properties": {
+                    "removed": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid contribution request"
+          },
+          "401": {
+            "description": "Verified Clerk session required"
+          },
+          "403": {
+            "description": "Database admin access required"
+          },
+          "404": {
+            "description": "Non-operator or missing contribution"
+          }
+        },
+        "security": [
+          {
+            "clerk": []
+          }
+        ],
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/v1/admin/ratings/{id}": {
+      "delete": {
+        "operationId": "AdminContributionController_removeRating",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "removed"
+                  ],
+                  "properties": {
+                    "removed": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid contribution request"
+          },
+          "401": {
+            "description": "Verified Clerk session required"
+          },
+          "403": {
+            "description": "Database admin access required"
+          },
+          "404": {
+            "description": "Non-operator or missing contribution"
+          }
+        },
+        "security": [
+          {
+            "clerk": []
+          }
+        ],
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/v1/cities": {
       "get": {
         "operationId": "ConsumerController_listCities",
@@ -8973,6 +9259,151 @@
         "required": [
           "is_active"
         ]
+      },
+      "AdminCommentDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "user_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "event_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "display_name": {
+            "type": "string",
+            "nullable": true
+          },
+          "event_title": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "body": {
+            "type": "string"
+          },
+          "is_approved": {
+            "type": "boolean"
+          },
+          "is_flagged": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "user_id",
+          "event_id",
+          "display_name",
+          "event_title",
+          "created_at",
+          "updated_at",
+          "body",
+          "is_approved",
+          "is_flagged"
+        ]
+      },
+      "AdminCommentPageDto": {
+        "type": "object",
+        "properties": {
+          "rows": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminCommentDto"
+            }
+          },
+          "totalCount": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "rows",
+          "totalCount"
+        ]
+      },
+      "AdminRatingDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "user_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "event_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "display_name": {
+            "type": "string",
+            "nullable": true
+          },
+          "event_title": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "score": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "user_id",
+          "event_id",
+          "display_name",
+          "event_title",
+          "created_at",
+          "score"
+        ]
+      },
+      "AdminRatingPageDto": {
+        "type": "object",
+        "properties": {
+          "rows": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminRatingDto"
+            }
+          },
+          "totalCount": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "rows",
+          "totalCount"
+        ]
+      },
+      "AdminCommentUpdateDto": {
+        "type": "object",
+        "properties": {
+          "body": {
+            "type": "string",
+            "maxLength": 4000,
+            "minLength": 1
+          },
+          "is_approved": {
+            "type": "boolean"
+          },
+          "is_flagged": {
+            "type": "boolean"
+          }
+        }
       },
       "CityDto": {
         "type": "object",
