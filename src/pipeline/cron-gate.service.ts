@@ -65,6 +65,36 @@ export class CronGateService {
     )
   }
 
+  async runInternal(
+    gateLabel: string,
+    historyLabel: string,
+    fn: () => Promise<string | void>
+  ): Promise<void> {
+    const rows = await this.db.query<{ enabled: boolean }>(
+      "SELECT COALESCE((SELECT enabled FROM private.cron_enabled WHERE label=$1),true) AS enabled",
+      [gateLabel]
+    )
+    if (rows[0]?.enabled !== true) return
+    const started = Date.now()
+    try {
+      const summary = await fn()
+      await this.recordRun(
+        historyLabel,
+        "succeeded",
+        (Date.now() - started) / 1000,
+        summary ?? null
+      )
+    } catch (error) {
+      await this.recordRun(
+        historyLabel,
+        "failed",
+        (Date.now() - started) / 1000,
+        error instanceof Error ? error.message : String(error)
+      )
+      throw error
+    }
+  }
+
   /**
    * Run one scheduled Nest tick only after the legacy owner is disabled.
    * Successful/failed Nest executions retain the legacy run-history label,

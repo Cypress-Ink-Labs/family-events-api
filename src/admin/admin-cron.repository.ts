@@ -2,6 +2,7 @@ import { Injectable } from "@nestjs/common"
 
 import { DbService } from "../db/db.service.js"
 import { requireDatabaseAdmin, withAdminActor } from "./admin-database.js"
+import { scheduledOperations } from "../pipeline/scheduled-operations.js"
 import { CRON_LABELS } from "./admin-cron.input.js"
 
 @Injectable()
@@ -16,15 +17,21 @@ export class AdminCronRepository {
                 COALESCE(g.enabled, true) AS legacy_enabled,
                 COALESCE(n.enabled, true) AS nest_enabled,
                 r.id::text, r.status, r.ran_at::text, r.duration_s, r.http_status
-           FROM unnest($1::text[]) AS l(label)
+           FROM unnest($1::text[], $2::text[]) AS l(label, gate_label)
            LEFT JOIN private.cron_enabled g ON g.label = l.label
-           LEFT JOIN private.cron_enabled n ON n.label = 'nestjs:' || l.label
+           LEFT JOIN private.cron_enabled n ON n.label = l.gate_label
            LEFT JOIN LATERAL (
              SELECT id, status, ran_at, duration_s, http_status
                FROM private.railway_cron_runs
               WHERE label = l.label ORDER BY ran_at DESC, id DESC LIMIT 1
            ) r ON true`,
-        [labels]
+        [
+          labels,
+          labels.map(
+            (label) =>
+              scheduledOperations().find((operation) => operation.label === label)!.gateLabel
+          ),
+        ]
       )
       return result.rows
     })

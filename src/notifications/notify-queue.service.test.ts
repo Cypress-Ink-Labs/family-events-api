@@ -1,6 +1,7 @@
 import { Logger } from "@nestjs/common"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
+import type { CronGateService } from "../pipeline/cron-gate.service.js"
 import type { JobsService } from "../jobs/jobs.service.js"
 import { NotifyQueueService } from "./notify-queue.service.js"
 import type { NotificationQueueService } from "./notification-queue.service.js"
@@ -15,6 +16,7 @@ describe("NotifyQueueService", () => {
     const queue = new NotifyQueueService(
       { registerQueue } as unknown as JobsService,
       { processRun: vi.fn() } as unknown as NotificationQueueService,
+      {} as CronGateService,
       { NODE_ENV: "production", CUTOVER_NOTIFY: "true" }
     )
 
@@ -45,6 +47,7 @@ describe("NotifyQueueService", () => {
     const queue = new NotifyQueueService(
       { registerQueue, registerScheduleRemoval } as unknown as JobsService,
       { processRun: vi.fn() } as unknown as NotificationQueueService,
+      {} as CronGateService,
       { NODE_ENV: "production" }
     )
 
@@ -59,6 +62,9 @@ describe("NotifyQueueService", () => {
     const queue = new NotifyQueueService(
       { registerQueue: vi.fn(), registerScheduleRemoval: vi.fn() } as unknown as JobsService,
       { processRun } as unknown as NotificationQueueService,
+      {
+        runInternal: async (_gate: string, _label: string, work: () => Promise<void>) => work(),
+      } as CronGateService,
       { NODE_ENV: "production" }
     )
 
@@ -66,7 +72,7 @@ describe("NotifyQueueService", () => {
     expect(processRun).not.toHaveBeenCalled()
   })
 
-  it("runs process jobs directly without CronGate and logs only counts", async () => {
+  it("runs process jobs through the internal gate and logs only counts", async () => {
     const rawId = "11111111-1111-4111-8111-111111111111"
     const processRun = vi.fn(async () => ({
       ok: true,
@@ -86,6 +92,9 @@ describe("NotifyQueueService", () => {
     const queue = new NotifyQueueService(
       { registerQueue: vi.fn() } as unknown as JobsService,
       { processRun } as unknown as NotificationQueueService,
+      {
+        runInternal: async (_gate: string, _label: string, work: () => Promise<void>) => work(),
+      } as CronGateService,
       { NODE_ENV: "production", CUTOVER_NOTIFY: "true", SECRET: rawId }
     )
 

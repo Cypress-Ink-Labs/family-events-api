@@ -334,6 +334,8 @@ describe("application bootstrap", () => {
       .filter(([path]) => path.startsWith("/v1/admin/crons"))
       .map(([path, item]) => [path, Object.keys(item!).filter((key) => key !== "parameters")])
     expect(cronPaths).toEqual([
+      ["/v1/admin/crons/{label}/owner", ["put"]],
+      ["/v1/admin/crons/{label}/run", ["post"]],
       ["/v1/admin/crons", ["get"]],
       ["/v1/admin/crons/runs", ["get"]],
       ["/v1/admin/crons/runs/{id}", ["get"]],

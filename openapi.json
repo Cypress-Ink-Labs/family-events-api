@@ -3557,6 +3557,233 @@
         ]
       }
     },
+    "/v1/admin/crons/{label}/owner": {
+      "put": {
+        "operationId": "adminSetCronOwner",
+        "parameters": [
+          {
+            "name": "label",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "enum": [
+                "cron-scrape-sources",
+                "cron-cleanup-stale",
+                "cron-tag-queue",
+                "cron-enrich-events",
+                "cron-review-events",
+                "cron-weekly-digest",
+                "cron-send-reminders",
+                "cron-process-notification-queue"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "owner"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "owner": {
+                    "type": "string",
+                    "enum": [
+                      "api",
+                      "legacy",
+                      "paused"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminCronOwnerDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminValidationErrorDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "clerk": []
+          }
+        ],
+        "summary": "Transfer or pause one supported schedule",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/v1/admin/crons/{label}/run": {
+      "post": {
+        "operationId": "adminRunCron",
+        "parameters": [
+          {
+            "name": "label",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "enum": [
+                "cron-scrape-sources",
+                "cron-cleanup-stale",
+                "cron-tag-queue",
+                "cron-enrich-events",
+                "cron-review-events",
+                "cron-weekly-digest",
+                "cron-send-reminders",
+                "cron-process-notification-queue"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminCronReceiptDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminValidationErrorDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "clerk": []
+          }
+        ],
+        "summary": "Queue a supported task under its current ownership gates",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/v1/admin/crons": {
       "get": {
         "operationId": "adminListCrons",
@@ -3650,7 +3877,8 @@
                 "cron-enrich-events",
                 "cron-review-events",
                 "cron-weekly-digest",
-                "cron-send-reminders"
+                "cron-send-reminders",
+                "cron-process-notification-queue"
               ],
               "type": "string"
             }
@@ -8980,6 +9208,47 @@
           "ok"
         ]
       },
+      "AdminCronOwnerDto": {
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string"
+          },
+          "owner": {
+            "type": "string",
+            "enum": [
+              "api",
+              "legacy",
+              "paused"
+            ]
+          }
+        },
+        "required": [
+          "label",
+          "owner"
+        ]
+      },
+      "AdminCronReceiptDto": {
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string"
+          },
+          "accepted": {
+            "type": "boolean"
+          },
+          "job_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          }
+        },
+        "required": [
+          "label",
+          "accepted",
+          "job_id"
+        ]
+      },
       "AdminCronRunSummaryDto": {
         "type": "object",
         "properties": {
@@ -9017,6 +9286,33 @@
       "AdminCronScheduleDto": {
         "type": "object",
         "properties": {
+          "label": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string"
+          },
+          "timezone": {
+            "type": "string",
+            "enum": [
+              "UTC"
+            ]
+          },
+          "cutover_enabled": {
+            "type": "boolean"
+          },
+          "effective_enabled": {
+            "type": "boolean"
+          },
+          "owner": {
+            "type": "string",
+            "enum": [
+              "api",
+              "legacy",
+              "paused",
+              "internal"
+            ]
+          },
           "family": {
             "type": "string"
           },
@@ -9052,6 +9348,12 @@
           }
         },
         "required": [
+          "label",
+          "key",
+          "timezone",
+          "cutover_enabled",
+          "effective_enabled",
+          "owner",
           "family",
           "queue",
           "task",

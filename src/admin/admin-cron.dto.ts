@@ -10,6 +10,16 @@ export class AdminCronRunSummaryDto {
 }
 
 export class AdminCronScheduleDto {
+  @ApiProperty() label!: string
+  @ApiProperty() key!: string
+  @ApiProperty({ enum: ["UTC"] }) timezone!: "UTC"
+  @ApiProperty() cutover_enabled!: boolean
+  @ApiProperty() effective_enabled!: boolean
+  @ApiProperty({ enum: ["api", "legacy", "paused", "internal"] }) owner!:
+    | "api"
+    | "legacy"
+    | "paused"
+    | "internal"
   @ApiProperty() family!: string
   @ApiProperty() queue!: string
   @ApiProperty() task!: string
@@ -19,6 +29,16 @@ export class AdminCronScheduleDto {
   @ApiProperty({ type: Boolean, nullable: true }) nest_enabled!: boolean | null
   @ApiProperty({ type: AdminCronRunSummaryDto, nullable: true })
   latest_run!: AdminCronRunSummaryDto | null
+}
+
+export class AdminCronOwnerDto {
+  @ApiProperty() label!: string
+  @ApiProperty({ enum: ["api", "legacy", "paused"] }) owner!: string
+}
+export class AdminCronReceiptDto {
+  @ApiProperty() label!: string
+  @ApiProperty() accepted!: boolean
+  @ApiProperty({ type: String, format: "uuid", nullable: true }) job_id!: string | null
 }
 
 export class AdminCronSchedulesDto {
