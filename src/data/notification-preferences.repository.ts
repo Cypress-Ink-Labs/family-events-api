@@ -5,6 +5,7 @@ import {
   NotFoundException,
 } from "@nestjs/common"
 import { DbService } from "../db/db.service.js"
+import { scheduledOperations } from "../pipeline/scheduled-operations.js"
 import type {
   BrowserSubscriptionDto,
   NotificationPreferencesDto,
@@ -23,10 +24,37 @@ export const DEFAULT_NOTIFICATION_PREFERENCES: NotificationPreferencesDto = {
   digest_push: false,
 }
 const FIELDS = "reminder_email, reminder_push, change_email, change_push, digest_email, digest_push"
+type DeliveryFamily = "notify" | "reminders" | "digest"
 
 @Injectable()
 export class NotificationPreferencesRepository {
   constructor(private readonly db: DbService) {}
+
+  async deliveryGates(): Promise<Record<DeliveryFamily, boolean>> {
+    const schedules = scheduledOperations().filter(
+      ({ family }) => family === "notify" || family === "reminders" || family === "digest"
+    )
+    const rows = await this.db.query<{ family: DeliveryFamily; enabled: boolean }>(
+      `SELECT schedule.family,
+        (schedule.legacy_label IS NULL OR NOT COALESCE(legacy.enabled,true))
+          AND COALESCE(api.enabled,true) AS enabled
+       FROM unnest($1::text[],$2::text[],$3::text[]) AS schedule(family,legacy_label,api_label)
+       LEFT JOIN private.cron_enabled legacy ON legacy.label=schedule.legacy_label
+       LEFT JOIN private.cron_enabled api ON api.label=schedule.api_label`,
+      [
+        schedules.map(({ family }) => family),
+        schedules.map(({ replaces }) => replaces),
+        schedules.map(({ gateLabel }) => gateLabel),
+      ]
+    )
+    const gates: Record<DeliveryFamily, boolean> = {
+      notify: false,
+      reminders: false,
+      digest: false,
+    }
+    for (const row of rows) gates[row.family] = row.enabled
+    return gates
+  }
 
   async get(userId: string): Promise<NotificationPreferencesDto> {
     const [row] = await this.db.query<NotificationPreferencesDto>(
