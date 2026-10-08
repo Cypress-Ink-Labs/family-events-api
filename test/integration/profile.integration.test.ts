@@ -18,7 +18,7 @@ const USER = "11111111-1111-4111-8111-111111111111"
 const OTHER = "22222222-2222-4222-8222-222222222222"
 const CITY = "33333333-3333-4333-8333-333333333333"
 const OTHER_CITY = "44444444-4444-4444-8444-444444444444"
-const migrationPath = "schema/migrations/20261008001000_profile_theme_preference"
+const migrationPath = "schema/migrations/20261008002000_profile_theme_preference"
 
 describe("profile and preferred-city HTTP ownership", () => {
   let app: INestApplication
@@ -294,4 +294,40 @@ describe("profile and preferred-city HTTP ownership", () => {
       .expect(200)
     expect(restored.body.theme_preference).toBeNull()
   })
+
+  it.each(["disabled", "expired", "missing"])(
+    "denies settings and city changes for %s access",
+    async (state) => {
+      if (state === "missing")
+        await db.query("DELETE FROM public.user_access WHERE user_id = $1", [USER])
+      else
+        await db.query(
+          "UPDATE public.user_access SET is_enabled = $2, access_expires_at = $3 WHERE user_id = $1",
+          [USER, state !== "disabled", state === "expired" ? "2020-01-01T00:00:00Z" : null]
+        )
+      await request(app.getHttpServer())
+        .get("/v1/me/profile")
+        .set("Authorization", "Bearer mine")
+        .expect(403)
+      await request(app.getHttpServer())
+        .put("/v1/me/profile")
+        .set("Authorization", "Bearer mine")
+        .send({ display_name: "Denied" })
+        .expect(403)
+      await request(app.getHttpServer())
+        .get("/v1/me/preferred-cities")
+        .set("Authorization", "Bearer mine")
+        .expect(403)
+      await request(app.getHttpServer())
+        .put("/v1/me/preferred-cities")
+        .set("Authorization", "Bearer mine")
+        .send({ city_ids: [OTHER_CITY], primary_city_id: OTHER_CITY })
+        .expect(403)
+      const [profile] = await db.query(
+        "SELECT display_name, city_preference_id::text FROM public.user_profiles WHERE id = $1",
+        [USER]
+      )
+      expect(profile).toEqual({ display_name: "Existing parent", city_preference_id: CITY })
+    }
+  )
 })
