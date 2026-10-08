@@ -8,6 +8,7 @@ import { ConsumerWriteService } from "./consumer-write.service.js"
 import { ConsumerController } from "./consumer.controller.js"
 import { ConsumerService } from "./consumer.service.js"
 import { PlanController } from "./plan.controller.js"
+import { ProfileController } from "./profile.controller.js"
 import { WeatherService } from "./weather.service.js"
 import {
   CorrectionReportCapabilityController,
@@ -19,6 +20,7 @@ const CONSUMER_CONTROLLERS = [
   ConsumerController,
   ConsumerAccountReadController,
   PlanController,
+  ProfileController,
   ConsumerWriteController,
   CorrectionReportController,
   CorrectionReportCapabilityController,

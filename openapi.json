@@ -4645,6 +4645,92 @@
         ]
       }
     },
+    "/v1/me/profile": {
+      "get": {
+        "operationId": "getMyProfile",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserProfileDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid profile settings or query"
+          },
+          "401": {
+            "description": "A verified Clerk session is required"
+          },
+          "403": {
+            "description": "The user is not provisioned or has no active access"
+          },
+          "404": {
+            "description": "Profile not found"
+          }
+        },
+        "security": [
+          {
+            "clerk": []
+          }
+        ],
+        "summary": "Read the current user's app settings",
+        "tags": [
+          "consumer"
+        ]
+      },
+      "put": {
+        "operationId": "updateMyProfile",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProfileUpdateDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserProfileDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid profile settings or query"
+          },
+          "401": {
+            "description": "A verified Clerk session is required"
+          },
+          "403": {
+            "description": "The user is not provisioned or has no active access"
+          },
+          "404": {
+            "description": "Profile not found"
+          }
+        },
+        "security": [
+          {
+            "clerk": []
+          }
+        ],
+        "summary": "Update the current user's app settings",
+        "tags": [
+          "consumer"
+        ]
+      }
+    },
     "/v1/events/{id}/favorite": {
       "put": {
         "operationId": "ConsumerWriteController_setFavorite",
@@ -8373,6 +8459,73 @@
           "available",
           "planned"
         ]
+      },
+      "UserProfileDto": {
+        "type": "object",
+        "properties": {
+          "display_name": {
+            "type": "string",
+            "nullable": true
+          },
+          "child_name": {
+            "type": "string",
+            "nullable": true
+          },
+          "child_age": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 18,
+            "nullable": true
+          },
+          "city_preference_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "theme_preference": {
+            "type": "string",
+            "enum": [
+              "light",
+              "dark",
+              "system"
+            ],
+            "nullable": true
+          }
+        },
+        "required": [
+          "display_name",
+          "child_name",
+          "child_age",
+          "city_preference_id",
+          "theme_preference"
+        ]
+      },
+      "ProfileUpdateDto": {
+        "type": "object",
+        "properties": {
+          "display_name": {
+            "type": "string",
+            "nullable": true
+          },
+          "child_name": {
+            "type": "string",
+            "nullable": true
+          },
+          "child_age": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 18,
+            "nullable": true
+          },
+          "theme_preference": {
+            "type": "string",
+            "enum": [
+              "light",
+              "dark",
+              "system"
+            ]
+          }
+        }
       },
       "ToggleInputDto": {
         "type": "object",
