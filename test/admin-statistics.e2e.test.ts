@@ -46,6 +46,7 @@ const pipeline = {
 }
 
 const identity = {
+  hasEnabledAccess: vi.fn(async () => true),
   resolve: vi.fn(async (clerkUserId: string) =>
     clerkUserId === "user_unmapped"
       ? null

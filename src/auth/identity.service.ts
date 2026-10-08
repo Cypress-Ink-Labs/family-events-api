@@ -16,6 +16,17 @@ export interface MappedIdentity {
 export class IdentityService {
   constructor(private readonly db: DbService) {}
 
+  async hasEnabledAccess(storageUuid: string): Promise<boolean> {
+    const rows = await this.db.query<{ access_allowed: boolean }>(
+      `
+      SELECT EXISTS(SELECT FROM public.user_access
+        WHERE user_id=$1::uuid AND is_enabled=true
+          AND (access_expires_at IS NULL OR access_expires_at>now())) AS access_allowed`,
+      [storageUuid]
+    )
+    return rows[0]?.access_allowed === true
+  }
+
   async resolve(clerkUserId: string): Promise<MappedIdentity | null> {
     const rows = await this.db.query<{
       supabase_uuid: string

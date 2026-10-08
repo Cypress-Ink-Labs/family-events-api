@@ -20,6 +20,7 @@ vi.mock("@clerk/backend", () => ({
 
 const ACTOR = "11111111-1111-4111-8111-111111111111"
 const identity = {
+  hasEnabledAccess: vi.fn(async () => true),
   resolve: vi.fn(async (id: string) =>
     id === "user_unmapped"
       ? null

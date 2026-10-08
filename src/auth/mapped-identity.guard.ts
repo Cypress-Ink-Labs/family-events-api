@@ -22,6 +22,9 @@ export class MappedIdentityGuard implements CanActivate {
     if (mapped === null) {
       throw new ForbiddenException("user is not provisioned")
     }
+    if (!(await this.identity.hasEnabledAccess(mapped.supabaseUuid))) {
+      throw new ForbiddenException("account access is not enabled")
+    }
     request.identity = mapped
     return true
   }

@@ -1,5 +1,6 @@
 import { verifyToken } from "@clerk/backend"
 import {
+  ForbiddenException,
   Injectable,
   Logger,
   UnauthorizedException,
@@ -48,7 +49,12 @@ export class OptionalClerkAuthGuard implements CanActivate {
     }
 
     const mapped = await this.identity.resolve(clerkUserId)
-    if (mapped !== null) request.identity = mapped
+    if (mapped !== null) {
+      if (!(await this.identity.hasEnabledAccess(mapped.supabaseUuid))) {
+        throw new ForbiddenException("account access is not enabled")
+      }
+      request.identity = mapped
+    }
     return true
   }
 }
