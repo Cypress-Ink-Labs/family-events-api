@@ -33,6 +33,7 @@ import {
   ADMIN_SOURCE_PROCESSING_MODE_BODY_SCHEMA,
   ADMIN_UPDATE_SOURCE_BODY_SCHEMA,
   AdminSourceDto,
+  AdminSourceChoicesDto,
   AdminSourceMutationResultDto,
   AdminSourceScrapeResultDto,
 } from "./admin-source.dto.js"
@@ -71,6 +72,20 @@ type AdminRequest = Pick<IdentifiedRequest, "identity">
 @Controller("v1/admin/sources")
 export class AdminSourceController {
   constructor(private readonly admin: AdminSourceService) {}
+
+  @Get("choices")
+  @ApiOperation({
+    operationId: "adminSourceChoices",
+    summary: "List all city choices for source administration",
+  })
+  @ApiOkResponse({ type: AdminSourceChoicesDto })
+  choices(
+    @Query() query: Record<string, unknown>,
+    @Req() request: AdminRequest
+  ): Promise<AdminSourceChoicesDto> {
+    parseAdminSourcesQuery(query)
+    return this.admin.choices(request.identity.supabaseUuid)
+  }
 
   @Get()
   @ApiOperation({ operationId: "adminListSources", summary: "List event sources" })

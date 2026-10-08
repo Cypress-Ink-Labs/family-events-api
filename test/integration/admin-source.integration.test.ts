@@ -84,6 +84,23 @@ async function source(overrides: Record<string, unknown> = {}): Promise<string> 
 }
 
 describe("admin source reads and access", () => {
+  it("offers active and inactive cities in deterministic order only to database admins", async () => {
+    const inactive = await city()
+    const active = await city()
+    await db.query("UPDATE public.cities SET name = 'Alpha', is_active = false WHERE id = $1", [
+      inactive,
+    ])
+    await db.query("UPDATE public.cities SET name = 'Zebra' WHERE id = $1", [active])
+    await expect(service.choices(actor)).resolves.toEqual({
+      cities: [
+        { id: inactive, name: "Alpha" },
+        { id: active, name: "Zebra" },
+      ],
+    })
+    await db.query("UPDATE public.user_access SET is_enabled = false WHERE user_id = $1", [actor])
+    await expect(service.choices(actor)).rejects.toBeInstanceOf(ForbiddenException)
+  })
+
   it("lists status and scheduling metadata with raw microsecond timestamps", async () => {
     const older = await source({
       name: "Older",
