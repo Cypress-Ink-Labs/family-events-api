@@ -153,6 +153,14 @@ export class AdminEditableEventDto {
   updated_at!: string
 }
 
+export class AdminEditorReferenceDto {
+  @ApiProperty({ format: "uuid" })
+  id!: string
+
+  @ApiProperty()
+  name!: string
+}
+
 export class AdminEventEditorDetailDto {
   @ApiProperty({ type: AdminEditableEventDto })
   event!: AdminEditableEventDto
@@ -162,6 +170,18 @@ export class AdminEventEditorDetailDto {
 
   @ApiProperty({ type: [AdminEditorTagDto] })
   available_tags!: AdminEditorTagDto[]
+
+  @ApiProperty({
+    type: [AdminEditorReferenceDto],
+    description: "All cities, including inactive rows, ordered by name and ID.",
+  })
+  cities!: AdminEditorReferenceDto[]
+
+  @ApiProperty({
+    type: [AdminEditorReferenceDto],
+    description: "All sources, including inactive rows, ordered by name and ID.",
+  })
+  sources!: AdminEditorReferenceDto[]
 }
 
 const NULLABLE_STRING = (maximum?: number): RequestBodySchema => ({

@@ -5542,6 +5542,22 @@
           "color"
         ]
       },
+      "AdminEditorReferenceDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ]
+      },
       "AdminEventEditorDetailDto": {
         "type": "object",
         "properties": {
@@ -5559,12 +5575,28 @@
             "items": {
               "$ref": "#/components/schemas/AdminEditorTagDto"
             }
+          },
+          "cities": {
+            "description": "All cities, including inactive rows, ordered by name and ID.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminEditorReferenceDto"
+            }
+          },
+          "sources": {
+            "description": "All sources, including inactive rows, ordered by name and ID.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminEditorReferenceDto"
+            }
           }
         },
         "required": [
           "event",
           "tags",
-          "available_tags"
+          "available_tags",
+          "cities",
+          "sources"
         ]
       },
       "AdminSourceDto": {

@@ -78,6 +78,45 @@ function update(
 }
 
 describe("admin event editor reads", () => {
+  it("returns inactive references and sorts every editor choice by name then id on reads and saves", async () => {
+    const references = [
+      { id: "10000000-0000-4000-8000-000000000003", name: "Zebra", active: true },
+      { id: "10000000-0000-4000-8000-000000000002", name: "Alpha", active: true },
+      { id: "10000000-0000-4000-8000-000000000001", name: "Alpha", active: false },
+    ]
+    for (const reference of references) {
+      await db.query(
+        `INSERT INTO public.cities (id, name, slug, timezone, is_active)
+         VALUES ($1::uuid, $2, $1::text, 'America/Chicago', $3)`,
+        [reference.id, reference.name, reference.active]
+      )
+      await db.query(
+        `INSERT INTO public.event_sources (id, name, url, is_active)
+         VALUES ($1, $2, 'https://example.com/calendar', $3)`,
+        [reference.id, reference.name, reference.active]
+      )
+    }
+    const assigned = references[2]!.id
+    const id = await event({ city_id: assigned, source_id: assigned })
+    const expected = references.toReversed().map(({ id: referenceId, name }) => ({
+      id: referenceId,
+      name,
+    }))
+    const read = await service.get(actor, id)
+    expect(read).toMatchObject({ cities: expected, sources: expected })
+    expect(read.event).toMatchObject({ city_id: assigned, source_id: assigned })
+
+    const saved = await service.update(actor, id, update({ title: "Corrected title" }, []))
+    expect(saved).toMatchObject({ cities: expected, sources: expected })
+    expect(saved.event).toMatchObject({
+      city_id: assigned,
+      source_id: assigned,
+      start_datetime: read.event.start_datetime,
+      admin_last_edited_by: actor,
+    })
+    expect(saved.event.start_datetime).toContain(".123456")
+  })
+
   it("returns exact numerics, microsecond timestamps, assigned tags, and all choices", async () => {
     const selected = await tag("Storytime")
     const available = await tag("Outdoors")

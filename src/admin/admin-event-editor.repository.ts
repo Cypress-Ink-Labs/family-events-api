@@ -58,10 +58,17 @@ export interface AdminEventTagRow extends AdminEditorTagRow {
   is_manual_override: boolean
 }
 
+export interface AdminEditorReferenceRow {
+  id: string
+  name: string
+}
+
 export interface AdminEventEditorDetail {
   event: AdminEditableEventRow
   tags: AdminEventTagRow[]
   availableTags: AdminEditorTagRow[]
+  cities: AdminEditorReferenceRow[]
+  sources: AdminEditorReferenceRow[]
 }
 
 const EVENT_SQL = `
@@ -139,11 +146,21 @@ export class AdminEventEditorRepository {
     const eventResult = await client.query<AdminEditableEventRow>(EVENT_SQL, [eventId])
     const event = eventResult.rows[0]
     if (event === undefined) return null
-    const [tags, availableTags] = await Promise.all([
-      client.query<AdminEventTagRow>(EVENT_TAGS_SQL, [eventId]),
-      client.query<AdminEditorTagRow>(AVAILABLE_TAGS_SQL),
-    ])
-    return { event, tags: tags.rows, availableTags: availableTags.rows }
+    const tags = await client.query<AdminEventTagRow>(EVENT_TAGS_SQL, [eventId])
+    const availableTags = await client.query<AdminEditorTagRow>(AVAILABLE_TAGS_SQL)
+    const cities = await client.query<AdminEditorReferenceRow>(
+      "SELECT id, name FROM public.cities ORDER BY name, id"
+    )
+    const sources = await client.query<AdminEditorReferenceRow>(
+      "SELECT id, name FROM public.event_sources ORDER BY name, id"
+    )
+    return {
+      event,
+      tags: tags.rows,
+      availableTags: availableTags.rows,
+      cities: cities.rows,
+      sources: sources.rows,
+    }
   }
 
   get(actor: string, eventId: string): Promise<AdminEventEditorDetail | null> {

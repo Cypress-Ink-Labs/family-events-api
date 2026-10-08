@@ -63,6 +63,8 @@ const detail = {
     },
   ],
   availableTags: [{ id: TAG, name: "Storytime", slug: "storytime", color: "#123456" }],
+  cities: [{ id: TAG, name: "Inactive assigned city" }],
+  sources: [{ id: ACTOR, name: "Inactive assigned source" }],
 }
 
 const identity = {
@@ -167,6 +169,8 @@ describe("admin event editor HTTP with the real guard chain", () => {
             event: detail.event,
             tags: detail.tags,
             available_tags: detail.availableTags,
+            cities: detail.cities,
+            sources: detail.sources,
           })
         }
       })

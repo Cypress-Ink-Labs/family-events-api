@@ -25,6 +25,8 @@ const detail = {
   event: { id: EVENT },
   tags: [{ id: TAG }],
   availableTags: [{ id: TAG, name: "Storytime" }],
+  cities: [{ id: TAG, name: "City" }],
+  sources: [{ id: EVENT, name: "Source" }],
 }
 
 describe("AdminEventEditorController", () => {
@@ -55,6 +57,8 @@ describe("AdminEventEditorController", () => {
       event: { id: EVENT },
       tags: [{ id: TAG }],
       available_tags: [{ id: TAG, name: "Storytime" }],
+      cities: detail.cities,
+      sources: detail.sources,
     })
     expect(service.get).toHaveBeenCalledWith(ACTOR, EVENT)
   })
