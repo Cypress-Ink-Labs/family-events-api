@@ -10,6 +10,8 @@ import {
   Query,
   Req,
   UseGuards,
+  HttpException,
+  ServiceUnavailableException,
 } from "@nestjs/common"
 import {
   ApiBadRequestResponse,
@@ -66,6 +68,14 @@ type AdminRequest = Pick<IdentifiedRequest, "identity">
 @Controller("v1/admin")
 export class AdminInviteController {
   constructor(private readonly admin: AdminInviteService) {}
+  private async inviteOutcome<T>(action: () => Promise<T>): Promise<T> {
+    try {
+      return await action()
+    } catch (error) {
+      if (error instanceof HttpException) throw error
+      throw new ServiceUnavailableException("Invitation decision could not be saved. Try again.")
+    }
+  }
 
   @Get("invites/required")
   @ApiOperation({ operationId: "adminGetInvitesRequired", summary: "Get invite gate status" })
@@ -137,7 +147,7 @@ export class AdminInviteController {
   approveRequest(@Param("id") rawId: string, @Body() body: unknown, @Req() request: AdminRequest) {
     const id = parseAdminInviteRequestId(rawId)
     parseAdminApproveInviteRequestBody(body)
-    return this.admin.approveRequest(request.identity.supabaseUuid, id)
+    return this.inviteOutcome(() => this.admin.approveRequest(request.identity.supabaseUuid, id))
   }
 
   @Post("invite-requests/:id/reject")
@@ -153,7 +163,9 @@ export class AdminInviteController {
   ) {
     const id = parseAdminInviteRequestId(rawId)
     const input = parseAdminRejectInviteRequestBody(body)
-    await this.admin.rejectRequest(request.identity.supabaseUuid, id, input)
+    await this.inviteOutcome(() =>
+      this.admin.rejectRequest(request.identity.supabaseUuid, id, input)
+    )
     return { ok: true as const }
   }
 }

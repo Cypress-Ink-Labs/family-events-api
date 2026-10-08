@@ -1,4 +1,6 @@
 import type { INestApplication } from "@nestjs/common"
+import { ConfigService } from "@nestjs/config"
+import { validateEnv } from "../src/config/env.js"
 import { Test } from "@nestjs/testing"
 import { afterEach, describe, expect, it } from "vitest"
 
@@ -80,6 +82,8 @@ async function boot(flags: {
 
   const jobs = new FakeJobs()
   const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
+    .overrideProvider(ConfigService)
+    .useValue(new ConfigService(validateEnv(process.env)))
     .overrideProvider(JobsService)
     .useValue(jobs)
     .compile()
@@ -151,12 +155,19 @@ describe.sequential("pipeline family bootstrap", () => {
     }
   })
 
-  it("installs only the serial no-retry notify queue and internal schedule after its flag flips", async () => {
+  it("installs serial notification and transactional delivery queues only after notify ownership flips", async () => {
     const { app, jobs } = await boot({ notify: "true" })
     try {
       expect(jobs.registered.map((queue) => queue.name).toSorted()).toEqual([
         "notify",
         "notify.dlq",
+        "transactional-email",
+      ])
+      const transactional = jobs.registered.find((queue) => queue.name === "transactional-email")
+      expect(transactional?.options).toMatchObject({ retryLimit: 0 })
+      expect(transactional?.localConcurrency).toBe(1)
+      expect(transactional?.schedules).toEqual([
+        { cron: "* * * * *", data: { task: "process" }, key: "transactional-email-outbox" },
       ])
       const notify = jobs.registered.find((queue) => queue.name === "notify")
       expect(notify?.options).toMatchObject({

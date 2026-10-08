@@ -259,6 +259,241 @@
         ]
       }
     },
+    "/v1/admin/invite-deliveries/status": {
+      "get": {
+        "operationId": "adminGetInviteDeliveryReadiness",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InviteDeliveryReadinessDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "clerk": []
+          }
+        ],
+        "summary": "Get transactional email configuration readiness",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/v1/admin/invite-deliveries/{id}/retry": {
+      "post": {
+        "operationId": "adminRetryInviteDelivery",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminInviteMutationDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Attempts older than 23 hours require operator reconciliation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "clerk": []
+          }
+        ],
+        "summary": "Retry an invitation delivery with its original provider key and body",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/v1/admin/invite-deliveries": {
+      "get": {
+        "operationId": "adminListInviteDeliveries",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/InviteDeliveryDto"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminErrorDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "clerk": []
+          }
+        ],
+        "summary": "List the latest 100 transactional delivery outcomes without message contents",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/v1/admin/events": {
       "get": {
         "operationId": "adminListEvents",
@@ -4538,6 +4773,292 @@
         ]
       }
     },
+    "/v1/admin/comments": {
+      "get": {
+        "operationId": "AdminContributionController_comments",
+        "parameters": [
+          {
+            "name": "filter",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "enum": [
+                "all",
+                "pending",
+                "flagged",
+                "approved"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 0,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminCommentPageDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid contribution request"
+          },
+          "401": {
+            "description": "Verified Clerk session required"
+          },
+          "403": {
+            "description": "Database admin access required"
+          },
+          "404": {
+            "description": "Non-operator or missing contribution"
+          }
+        },
+        "security": [
+          {
+            "clerk": []
+          }
+        ],
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/v1/admin/ratings": {
+      "get": {
+        "operationId": "AdminContributionController_ratings",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 0,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminRatingPageDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid contribution request"
+          },
+          "401": {
+            "description": "Verified Clerk session required"
+          },
+          "403": {
+            "description": "Database admin access required"
+          },
+          "404": {
+            "description": "Non-operator or missing contribution"
+          }
+        },
+        "security": [
+          {
+            "clerk": []
+          }
+        ],
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/v1/admin/comments/{id}": {
+      "put": {
+        "operationId": "AdminContributionController_update",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminCommentUpdateDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "updated"
+                  ],
+                  "properties": {
+                    "updated": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid contribution request"
+          },
+          "401": {
+            "description": "Verified Clerk session required"
+          },
+          "403": {
+            "description": "Database admin access required"
+          },
+          "404": {
+            "description": "Non-operator or missing contribution"
+          }
+        },
+        "security": [
+          {
+            "clerk": []
+          }
+        ],
+        "tags": [
+          "admin"
+        ]
+      },
+      "delete": {
+        "operationId": "AdminContributionController_removeComment",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "removed"
+                  ],
+                  "properties": {
+                    "removed": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid contribution request"
+          },
+          "401": {
+            "description": "Verified Clerk session required"
+          },
+          "403": {
+            "description": "Database admin access required"
+          },
+          "404": {
+            "description": "Non-operator or missing contribution"
+          }
+        },
+        "security": [
+          {
+            "clerk": []
+          }
+        ],
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/v1/admin/ratings/{id}": {
+      "delete": {
+        "operationId": "AdminContributionController_removeRating",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "removed"
+                  ],
+                  "properties": {
+                    "removed": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid contribution request"
+          },
+          "401": {
+            "description": "Verified Clerk session required"
+          },
+          "403": {
+            "description": "Database admin access required"
+          },
+          "404": {
+            "description": "Non-operator or missing contribution"
+          }
+        },
+        "security": [
+          {
+            "clerk": []
+          }
+        ],
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/v1/cities": {
       "get": {
         "operationId": "ConsumerController_listCities",
@@ -5348,6 +5869,82 @@
         ]
       }
     },
+    "/v1/plan/next": {
+      "get": {
+        "operationId": "getMyNextPlan",
+        "parameters": [
+          {
+            "required": false,
+            "name": "city_id",
+            "in": "query",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "required": false,
+            "name": "kid_age",
+            "in": "query",
+            "schema": {
+              "minimum": 0,
+              "maximum": 18,
+              "type": "integer"
+            }
+          },
+          {
+            "required": false,
+            "name": "lat",
+            "in": "query",
+            "schema": {
+              "minimum": -90,
+              "maximum": 90,
+              "type": "number"
+            }
+          },
+          {
+            "required": false,
+            "name": "lng",
+            "in": "query",
+            "schema": {
+              "minimum": -180,
+              "maximum": 180,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NextPlanDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid planner preferences or coordinates"
+          },
+          "401": {
+            "description": "A valid Clerk session is required"
+          },
+          "403": {
+            "description": "Enabled account access is required"
+          }
+        },
+        "security": [
+          {
+            "clerk": []
+          }
+        ],
+        "summary": "Find the first nonempty personal plan from today through day seven",
+        "tags": [
+          "consumer"
+        ]
+      }
+    },
     "/v1/me/profile": {
       "get": {
         "operationId": "getMyProfile",
@@ -5719,6 +6316,88 @@
           }
         ],
         "summary": "Remove one owned browser subscription",
+        "tags": [
+          "consumer"
+        ]
+      }
+    },
+    "/v1/me/saved-events": {
+      "get": {
+        "operationId": "getMySavedEvents",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SavedEventsDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid saved-event request"
+          },
+          "401": {
+            "description": "A valid Clerk bearer token is required"
+          },
+          "403": {
+            "description": "Enabled account access is required"
+          }
+        },
+        "security": [
+          {
+            "clerk": []
+          }
+        ],
+        "summary": "List the current user's saved ideas and calendar plans, including past saves",
+        "tags": [
+          "consumer"
+        ]
+      }
+    },
+    "/v1/me/saved-events/{id}": {
+      "delete": {
+        "operationId": "removeMySavedEvent",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkResponseDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid saved-event request"
+          },
+          "401": {
+            "description": "A valid Clerk bearer token is required"
+          },
+          "403": {
+            "description": "Enabled account access is required"
+          }
+        },
+        "security": [
+          {
+            "clerk": []
+          }
+        ],
+        "summary": "Remove the current user's favorite and calendar save together",
         "tags": [
           "consumer"
         ]
@@ -6457,6 +7136,142 @@
           "required"
         ]
       },
+      "AdminErrorDto": {
+        "type": "object",
+        "properties": {
+          "statusCode": {
+            "type": "integer",
+            "enum": [
+              401,
+              403,
+              404
+            ]
+          },
+          "message": {
+            "type": "string",
+            "description": "Stable Nest error message"
+          },
+          "error": {
+            "type": "string",
+            "description": "Nest error name; omitted by the default 404 response"
+          }
+        },
+        "required": [
+          "statusCode",
+          "message"
+        ]
+      },
+      "InviteDeliveryReadinessDto": {
+        "type": "object",
+        "properties": {
+          "worker_enabled": {
+            "type": "boolean"
+          },
+          "provider_configured": {
+            "type": "boolean"
+          },
+          "admin_recipient_configured": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "worker_enabled",
+          "provider_configured",
+          "admin_recipient_configured"
+        ]
+      },
+      "AdminInviteMutationDto": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          }
+        },
+        "required": [
+          "ok"
+        ]
+      },
+      "InviteDeliveryDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "welcome",
+              "admin_request",
+              "request_approved",
+              "request_rejected"
+            ]
+          },
+          "target_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "processing",
+              "sent",
+              "failed",
+              "needs_review",
+              "cancelled"
+            ]
+          },
+          "attempts": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "next_attempt_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "first_attempt_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "sent_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "last_error": {
+            "type": "string",
+            "nullable": true,
+            "description": "Sanitized delivery category. Message contents are never returned."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "target_id",
+          "status",
+          "attempts",
+          "next_attempt_at",
+          "first_attempt_at",
+          "sent_at",
+          "last_error",
+          "created_at",
+          "updated_at"
+        ]
+      },
       "AdminValidationIssueDto": {
         "type": "object",
         "properties": {
@@ -6515,31 +7330,6 @@
           "message",
           "error",
           "issues"
-        ]
-      },
-      "AdminErrorDto": {
-        "type": "object",
-        "properties": {
-          "statusCode": {
-            "type": "integer",
-            "enum": [
-              401,
-              403,
-              404
-            ]
-          },
-          "message": {
-            "type": "string",
-            "description": "Stable Nest error message"
-          },
-          "error": {
-            "type": "string",
-            "description": "Nest error name; omitted by the default 404 response"
-          }
-        },
-        "required": [
-          "statusCode",
-          "message"
         ]
       },
       "AdminStatus": {
@@ -8237,20 +9027,6 @@
           "created_at"
         ]
       },
-      "AdminInviteMutationDto": {
-        "type": "object",
-        "properties": {
-          "ok": {
-            "type": "boolean",
-            "enum": [
-              true
-            ]
-          }
-        },
-        "required": [
-          "ok"
-        ]
-      },
       "AdminInviteRequestDto": {
         "type": "object",
         "properties": {
@@ -9633,6 +10409,151 @@
           "is_active"
         ]
       },
+      "AdminCommentDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "user_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "event_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "display_name": {
+            "type": "string",
+            "nullable": true
+          },
+          "event_title": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "body": {
+            "type": "string"
+          },
+          "is_approved": {
+            "type": "boolean"
+          },
+          "is_flagged": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "user_id",
+          "event_id",
+          "display_name",
+          "event_title",
+          "created_at",
+          "updated_at",
+          "body",
+          "is_approved",
+          "is_flagged"
+        ]
+      },
+      "AdminCommentPageDto": {
+        "type": "object",
+        "properties": {
+          "rows": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminCommentDto"
+            }
+          },
+          "totalCount": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "rows",
+          "totalCount"
+        ]
+      },
+      "AdminRatingDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "user_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "event_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "display_name": {
+            "type": "string",
+            "nullable": true
+          },
+          "event_title": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "score": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "user_id",
+          "event_id",
+          "display_name",
+          "event_title",
+          "created_at",
+          "score"
+        ]
+      },
+      "AdminRatingPageDto": {
+        "type": "object",
+        "properties": {
+          "rows": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminRatingDto"
+            }
+          },
+          "totalCount": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "rows",
+          "totalCount"
+        ]
+      },
+      "AdminCommentUpdateDto": {
+        "type": "object",
+        "properties": {
+          "body": {
+            "type": "string",
+            "maxLength": 4000,
+            "minLength": 1
+          },
+          "is_approved": {
+            "type": "boolean"
+          },
+          "is_flagged": {
+            "type": "boolean"
+          }
+        }
+      },
       "CityDto": {
         "type": "object",
         "properties": {
@@ -10469,6 +11390,146 @@
           "planned"
         ]
       },
+      "NextPlanContextDto": {
+        "type": "object",
+        "properties": {
+          "child_age": {
+            "type": "number",
+            "nullable": true
+          },
+          "city_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "location_source": {
+            "type": "string",
+            "enum": [
+              "device",
+              "city",
+              "none"
+            ]
+          }
+        },
+        "required": [
+          "child_age",
+          "city_ids",
+          "location_source"
+        ]
+      },
+      "PlanWeatherDto": {
+        "type": "object",
+        "properties": {
+          "available": {
+            "type": "boolean"
+          },
+          "weatherFit": {
+            "type": "string",
+            "enum": [
+              "outdoor",
+              "indoor",
+              "any",
+              "neutral"
+            ]
+          },
+          "temperatureC": {
+            "type": "number",
+            "nullable": true
+          },
+          "condition": {
+            "type": "string",
+            "nullable": true
+          },
+          "observedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        },
+        "required": [
+          "available",
+          "weatherFit",
+          "temperatureC",
+          "condition",
+          "observedAt"
+        ]
+      },
+      "NextPlannedEventDto": {
+        "type": "object",
+        "properties": {
+          "event": {
+            "$ref": "#/components/schemas/EnrichedEventDto"
+          },
+          "score": {
+            "type": "string"
+          },
+          "reasons": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "distance_km": {
+            "type": "number",
+            "nullable": true
+          }
+        },
+        "required": [
+          "event",
+          "score",
+          "reasons",
+          "distance_km"
+        ]
+      },
+      "NextPlanDto": {
+        "type": "object",
+        "properties": {
+          "available": {
+            "type": "boolean"
+          },
+          "date": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "day_offset": {
+            "type": "number",
+            "nullable": true,
+            "minimum": 0,
+            "maximum": 7
+          },
+          "timezone": {
+            "type": "string"
+          },
+          "context": {
+            "$ref": "#/components/schemas/NextPlanContextDto"
+          },
+          "weather": {
+            "description": "Current observed weather, not a forecast for future plan dates",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PlanWeatherDto"
+              }
+            ]
+          },
+          "planned": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NextPlannedEventDto"
+            }
+          }
+        },
+        "required": [
+          "available",
+          "date",
+          "day_offset",
+          "timezone",
+          "context",
+          "weather",
+          "planned"
+        ]
+      },
       "UserProfileDto": {
         "type": "object",
         "properties": {
@@ -10760,15 +11821,340 @@
           "auth_key"
         ]
       },
-      "ToggleInputDto": {
+      "SavedEventDto": {
         "type": "object",
         "properties": {
-          "on": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "start_datetime": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "end_datetime": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "timezone": {
+            "type": "string",
+            "nullable": true
+          },
+          "venue_name": {
+            "type": "string",
+            "nullable": true
+          },
+          "address": {
+            "type": "string",
+            "nullable": true
+          },
+          "city_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "latitude": {
+            "type": "string",
+            "nullable": true
+          },
+          "longitude": {
+            "type": "string",
+            "nullable": true
+          },
+          "age_min": {
+            "type": "integer",
+            "nullable": true
+          },
+          "age_max": {
+            "type": "integer",
+            "nullable": true
+          },
+          "price": {
+            "type": "string",
+            "nullable": true
+          },
+          "is_free": {
             "type": "boolean"
+          },
+          "admission_cost_state": {
+            "type": "string",
+            "enum": [
+              "free",
+              "paid",
+              "unknown"
+            ]
+          },
+          "admission_amount": {
+            "type": "string",
+            "nullable": true,
+            "description": "Exact PostgreSQL numeric string"
+          },
+          "admission_cost_evidence": {
+            "type": "string",
+            "nullable": true
+          },
+          "parking_details": {
+            "type": "string",
+            "nullable": true
+          },
+          "reservation_details": {
+            "type": "string",
+            "nullable": true
+          },
+          "source_url": {
+            "type": "string",
+            "nullable": true
+          },
+          "source_name": {
+            "type": "string",
+            "nullable": true
+          },
+          "source_details_fetched_at": {
+            "type": "string",
+            "nullable": true,
+            "description": "Raw PostgreSQL timestamp of the last successful retrieval of this listing's source details; null when unavailable"
+          },
+          "images": {
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": true
+              },
+              {
+                "type": "array",
+                "items": {}
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              }
+            ],
+            "nullable": true
+          },
+          "status": {
+            "type": "string"
+          },
+          "recurrence_info": {
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": true
+              },
+              {
+                "type": "array",
+                "items": {}
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              }
+            ],
+            "nullable": true
+          },
+          "is_featured": {
+            "type": "boolean"
+          },
+          "view_count": {
+            "type": "integer"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "avg_rating": {
+            "type": "string",
+            "nullable": true
+          },
+          "rating_count": {
+            "type": "integer"
+          },
+          "tags": {
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": true
+              },
+              {
+                "type": "array",
+                "items": {}
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              }
+            ],
+            "nullable": true
+          },
+          "is_favorited": {
+            "type": "boolean"
+          },
+          "is_in_calendar": {
+            "type": "boolean"
+          },
+          "age_match": {
+            "type": "string",
+            "enum": [
+              "confirmed",
+              "unknown"
+            ],
+            "nullable": true,
+            "description": "Age suitability for the selected ages; null when ages were not selected"
+          },
+          "family_needs": {
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "indoor",
+                  "outdoor",
+                  "wheelchair_accessible",
+                  "sensory_friendly",
+                  "stroller_friendly"
+                ],
+                "properties": {
+                  "indoor": {
+                    "type": "string",
+                    "enum": [
+                      "confirmed",
+                      "contradicted",
+                      "unknown"
+                    ]
+                  },
+                  "outdoor": {
+                    "type": "string",
+                    "enum": [
+                      "confirmed",
+                      "contradicted",
+                      "unknown"
+                    ]
+                  },
+                  "wheelchair_accessible": {
+                    "type": "string",
+                    "enum": [
+                      "confirmed",
+                      "contradicted",
+                      "unknown"
+                    ]
+                  },
+                  "sensory_friendly": {
+                    "type": "string",
+                    "enum": [
+                      "confirmed",
+                      "contradicted",
+                      "unknown"
+                    ]
+                  },
+                  "stroller_friendly": {
+                    "type": "string",
+                    "enum": [
+                      "confirmed",
+                      "contradicted",
+                      "unknown"
+                    ]
+                  }
+                }
+              }
+            ]
+          },
+          "my_rating": {
+            "type": "number",
+            "nullable": true,
+            "minimum": 1,
+            "maximum": 5
+          },
+          "calendar_notes": {
+            "type": "string",
+            "nullable": true
+          },
+          "calendar_added_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
           }
         },
         "required": [
-          "on"
+          "id",
+          "title",
+          "description",
+          "start_datetime",
+          "end_datetime",
+          "timezone",
+          "venue_name",
+          "address",
+          "city_id",
+          "latitude",
+          "longitude",
+          "age_min",
+          "age_max",
+          "price",
+          "is_free",
+          "admission_cost_state",
+          "admission_amount",
+          "admission_cost_evidence",
+          "parking_details",
+          "reservation_details",
+          "source_url",
+          "source_name",
+          "source_details_fetched_at",
+          "images",
+          "status",
+          "recurrence_info",
+          "is_featured",
+          "view_count",
+          "created_at",
+          "updated_at",
+          "avg_rating",
+          "rating_count",
+          "tags",
+          "is_favorited",
+          "is_in_calendar",
+          "age_match",
+          "family_needs",
+          "my_rating",
+          "calendar_notes",
+          "calendar_added_at"
+        ]
+      },
+      "SavedEventsDto": {
+        "type": "object",
+        "properties": {
+          "events": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SavedEventDto"
+            }
+          }
+        },
+        "required": [
+          "events"
         ]
       },
       "OkResponseDto": {
@@ -10783,6 +12169,17 @@
         },
         "required": [
           "ok"
+        ]
+      },
+      "ToggleInputDto": {
+        "type": "object",
+        "properties": {
+          "on": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "on"
         ]
       },
       "RatingInputDto": {
