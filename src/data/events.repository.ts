@@ -82,6 +82,41 @@ function familyNeedsProjectionSql(eventAlias: string): string {
 // New schema and RPC behavior is owned by the API migration ledger and its
 // schema tests; the deprecated backend is only the frozen bootstrap snapshot.
 
+function publicImageAttributionsSql(eventAlias: "enriched" | "ee"): string {
+  return `(
+    SELECT COALESCE(jsonb_agg(jsonb_build_object(
+      'provider', a.provider,
+      'image_url', a.image_url,
+      'matched_tag', a.matched_tag,
+      'photo_id', CASE a.provider
+        WHEN 'unsplash' THEN a.unsplash_photo_id
+        WHEN 'pexels' THEN a.pexels_photo_id
+        WHEN 'pixabay' THEN a.pixabay_photo_id
+      END,
+      'photographer_name', CASE a.provider
+        WHEN 'unsplash' THEN a.unsplash_photographer_name
+        WHEN 'pexels' THEN a.pexels_photographer_name
+        WHEN 'pixabay' THEN a.pixabay_photographer_name
+      END,
+      'photographer_username', CASE a.provider
+        WHEN 'unsplash' THEN a.unsplash_photographer_username
+        WHEN 'pixabay' THEN a.pixabay_photographer_username
+      END,
+      'photographer_profile_url', CASE a.provider
+        WHEN 'unsplash' THEN a.unsplash_photographer_profile_url
+        WHEN 'pexels' THEN a.pexels_photographer_profile_url
+      END,
+      'photo_url', CASE a.provider
+        WHEN 'unsplash' THEN a.unsplash_photo_url
+        WHEN 'pexels' THEN a.pexels_photo_url
+        WHEN 'pixabay' THEN a.pixabay_photo_url
+      END
+    ) ORDER BY a.created_at, a.id), '[]'::jsonb)
+    FROM public.event_image_attributions a
+    WHERE a.event_id = ${eventAlias}.id
+  ) AS image_attributions`
+}
+
 const LIST_SQL = `
 WITH candidate AS (
   SELECT
@@ -90,7 +125,7 @@ WITH candidate AS (
   price, is_free, admission_cost_state, admission_amount, admission_cost_evidence,
   parking_details, reservation_details,
   source_url, source_name, source_details_fetched_at,
-  images, image_attributions, parent_tips, parent_tips_generated_at, is_outdoor,
+  images, ${publicImageAttributionsSql("enriched")}, parent_tips, parent_tips_generated_at, is_outdoor,
   status, recurrence_info,
   is_featured, view_count, created_at, updated_at, avg_rating, rating_count,
   tags, is_favorited, is_in_calendar, ${familyNeedsProjectionSql("enriched")}
@@ -229,7 +264,7 @@ SELECT
   ee.price, ee.is_free, ee.admission_cost_state, ee.admission_amount,
   ee.admission_cost_evidence, ee.parking_details, ee.reservation_details,
   ee.source_url, ee.source_name, ee.source_details_fetched_at,
-  ee.images, ee.image_attributions, ee.parent_tips, ee.parent_tips_generated_at, ee.is_outdoor,
+  ee.images, ${publicImageAttributionsSql("ee")}, ee.parent_tips, ee.parent_tips_generated_at, ee.is_outdoor,
   ee.status,
   ee.recurrence_info, ee.is_featured, ee.view_count, ee.created_at, ee.updated_at,
   ee.avg_rating, ee.rating_count, ee.tags, ee.is_favorited, ee.is_in_calendar,

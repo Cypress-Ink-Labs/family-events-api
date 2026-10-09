@@ -528,6 +528,14 @@ describe("consumer read HTTP API", () => {
         'https://www.pexels.com/@other','https://www.pexels.com/photo/other')`,
       [id]
     )
+    await db.query(
+      `INSERT INTO public.event_image_attributions (
+        event_id,image_url,provider,pixabay_photo_id,pixabay_photographer_name,
+        pixabay_photographer_username,pixabay_photo_url,download_tracking_last_error
+      ) VALUES ($1,'https://cdn.pixabay.com/photo-third','pixabay','third','Third Photographer',
+        'third-photo','https://pixabay.com/photos/photo-third','private pixabay error')`,
+      [id]
+    )
     const expected = {
       id,
       is_outdoor: true,
@@ -548,11 +556,21 @@ describe("consumer read HTTP API", () => {
           provider: "pexels",
           image_url: "https://images.pexels.com/photo-other",
           matched_tag: null,
-          photo_id: null,
-          photographer_name: null,
+          photo_id: "other",
+          photographer_name: "Other Photographer",
           photographer_username: null,
+          photographer_profile_url: "https://www.pexels.com/@other",
+          photo_url: "https://www.pexels.com/photo/other",
+        },
+        {
+          provider: "pixabay",
+          image_url: "https://cdn.pixabay.com/photo-third",
+          matched_tag: null,
+          photo_id: "third",
+          photographer_name: "Third Photographer",
+          photographer_username: "third-photo",
           photographer_profile_url: null,
-          photo_url: null,
+          photo_url: "https://pixabay.com/photos/photo-third",
         },
       ],
     }
@@ -568,6 +586,7 @@ describe("consumer read HTTP API", () => {
       expect(JSON.stringify(event)).not.toContain("internal_trace")
       expect(JSON.stringify(event)).not.toContain("download_location")
       expect(JSON.stringify(event)).not.toContain("private provider error")
+      expect(JSON.stringify(event)).not.toContain("private pixabay error")
     }
   })
 
