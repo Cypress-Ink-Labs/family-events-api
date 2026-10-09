@@ -20,6 +20,7 @@ jobs:
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test
+      - run: pnpm test:legacy-public
       - run: pnpm build
       - name: OpenAPI document is up to date
         run: |
