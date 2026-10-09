@@ -16,7 +16,7 @@ import { ReviewRepository } from "./review/review.repository.js"
  * here as they are ported. Scrape (U28), tag, enrichment, and review (U29)
  * install behind their family creation-time gates — in production their
  * queues, schedules, and workers do not exist until each flag flips, so the
- * Railway crons remain the single writer. Repositories are passive SQL access.
+ * Railway crons remain the single writer.
  */
 @Module({
   providers: [

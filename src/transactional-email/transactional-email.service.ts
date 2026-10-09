@@ -24,9 +24,22 @@ const QUEUE = "transactional-email"
 type Delivery = Omit<SendMailInput, "signal" | "idempotencyKey">
 interface Entry {
   id: string
-  kind: "welcome" | "admin_request" | "request_approved" | "request_rejected"
+  kind:
+    | "welcome"
+    | "admin_request"
+    | "request_approved"
+    | "request_rejected"
+    | "community_event_approved"
+    | "community_event_rejected"
   target_id: string | null
-  payload: { email: string; message?: string | null; code?: string; username?: string } | null
+  payload: {
+    email: string
+    message?: string | null
+    code?: string
+    username?: string
+    event_title?: string
+    event_id?: string
+  } | null
   delivery: Delivery | null
   attempts: number
   first_attempt_at: string | null
@@ -91,11 +104,29 @@ export class TransactionalEmailService implements OnModuleInit {
           APP_URL: origin.toString().replace(/\/$/, ""),
         },
       }
+    const inline = {
+      ...common,
+      ...(this.config.get("RESEND_REPLY_TO", { infer: true })
+        ? { replyTo: this.config.get("RESEND_REPLY_TO", { infer: true }) }
+        : {}),
+    }
+    if (row.kind === "community_event_approved" || row.kind === "community_event_rejected") {
+      const approved = row.kind === "community_event_approved"
+      const title = payload.event_title ?? ""
+      const target = approved ? `/events/${payload.event_id}` : "/submit-event"
+      return {
+        ...inline,
+        subject: approved
+          ? `Your event "${title}" is now live!`
+          : `Update on your event "${title}"`,
+        html: `<h1>${approved ? "Event Approved!" : "Event Review Update"}</h1><p>Hi ${escape(payload.username ?? "")},</p><p>${escape(title)}</p><p>${approved ? "Your event has been approved and is now live on Family Events. Local families can discover it and add it to their calendars." : "Thanks for submitting your event. After review, we were unable to publish it at this time. You are welcome to submit other events."}</p><p><a href="${escape(new URL(target, origin).toString())}">${approved ? "View Your Event" : "Submit Another Event"}</a></p>`,
+      }
+    }
     if (row.kind === "admin_request") {
       const recipient = this.config.get("ADMIN_NOTIFY_EMAIL", { infer: true })
       if (!recipient) return null
       return {
-        ...common,
+        ...inline,
         to: recipient,
         subject: `[Family Events] New invite request from ${payload.email}`,
         html: `<h1>New Invite Request</h1><p>${escape(payload.email)}</p>${payload.message ? `<p>${escape(payload.message)}</p>` : ""}<p><a href="${escape(new URL("/admin/invites", origin).toString())}">Review invitation request</a></p>`,
@@ -103,12 +134,12 @@ export class TransactionalEmailService implements OnModuleInit {
     }
     if (row.kind === "request_approved")
       return {
-        ...common,
+        ...inline,
         subject: "Your Family Events invite code",
         html: `<h1>Your invitation is approved</h1><p>Thanks for asking to join Family Events. Here is your invitation code:</p><p><strong>${escape(payload.code ?? "")}</strong></p><p><a href="${escape(new URL("/onboarding", origin).toString())}">Create an account or sign in, then redeem your code</a></p>`,
       }
     return {
-      ...common,
+      ...inline,
       subject: "Update on your Family Events invite request",
       html: "<h1>Invitation request update</h1><p>Thanks for your interest in Family Events. We are unable to approve your invitation request at this time.</p>",
     }
@@ -138,11 +169,23 @@ export class TransactionalEmailService implements OnModuleInit {
             return { skip: true as const }
           }
         }
-        if (item.kind === "welcome") {
-          const active = await client.query(
-            "SELECT clerk_user_id FROM public.clerk_user_mapping WHERE supabase_uuid=$1",
-            [item.target_id]
-          )
+        if (
+          item.kind === "welcome" ||
+          item.kind === "community_event_approved" ||
+          item.kind === "community_event_rejected"
+        ) {
+          const active =
+            item.kind === "welcome"
+              ? await client.query(
+                  "SELECT clerk_user_id FROM public.clerk_user_mapping WHERE supabase_uuid=$1",
+                  [item.target_id]
+                )
+              : await client.query(
+                  `SELECT id FROM auth.users WHERE id=$1 AND email IS NOT NULL
+                AND NOT EXISTS(SELECT FROM private.clerk_user_lifecycle WHERE storage_uuid=$1 AND deleted_at IS NOT NULL)
+                AND NOT EXISTS(SELECT FROM private.account_deletions WHERE user_id=$1)`,
+                  [item.target_id]
+                )
           if (!active.rows.length) {
             await client.query(
               "UPDATE private.transactional_email_outbox SET status='cancelled',payload=NULL,delivery=NULL,locked_until=NULL,last_error='account_deleted',updated_at=now() WHERE id=$1",

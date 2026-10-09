@@ -458,6 +458,11 @@ export async function ensureIngestionSchema(db: DbService): Promise<void> {
   `)
 
   await db.query("CREATE SCHEMA IF NOT EXISTS private")
+  await db.query(`CREATE TABLE IF NOT EXISTS private.cron_enabled (
+    label text PRIMARY KEY,
+    enabled boolean NOT NULL DEFAULT true,
+    updated_at timestamptz NOT NULL DEFAULT now()
+  )`)
   await db.query(`
     CREATE OR REPLACE FUNCTION public.invoke_process_tag_queue() RETURNS void
     LANGUAGE sql AS 'SELECT NULL::void'

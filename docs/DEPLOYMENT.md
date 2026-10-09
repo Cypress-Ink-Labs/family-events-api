@@ -178,6 +178,7 @@ the queue but sends nothing until the corresponding legacy cron is disabled.
 | --- | --- | --- |
 | `RESEND_API_KEY` | yes | Resend key. Unset means all email soft-fails (logged as `sent: false, dev: true`); jobs still complete without retry. |
 | `RESEND_FROM` | recommended | Default `Family Events <onboarding@resend.dev>` is a sandbox sender; replace it with a verified domain for production. |
+| `RESEND_REPLY_TO` | no | Retained reply address for inline transactional invitation and community-decision mail. The first attempt freezes it with the provider body. Welcome/reminder hosted templates retain their existing contract. |
 | `APP_URL` | recommended | Default `https://family-events.up.railway.app`; used for event, logo, browse, and preference links. |
 | `TELEGRAM_BOT_TOKEN` | yes for Telegram digest | Vault value `telegram_bot_token` takes precedence over this environment fallback. Missing token or per-user chat ID skips only Telegram. |
 | Web Push / FCM credentials | yes for reminder push | Use the VAPID and FCM variables or Vault names listed above. Missing provider credentials skip only that provider. |

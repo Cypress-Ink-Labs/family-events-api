@@ -1,6 +1,10 @@
 import { Injectable } from "@nestjs/common"
 
 import { DbService } from "../../db/db.service.js"
+import { JobsService } from "../../jobs/jobs.service.js"
+import { CronGateService } from "../cron-gate.service.js"
+import { FAMILIES } from "../families.js"
+import { isFamilyEnabled } from "../flags.js"
 import type {
   AdminAuditLogInsert,
   BulkImportResult,
@@ -13,12 +17,8 @@ import type {
 import type { ExtractionTraceInsert, SourceQueueDb, SourceQueueRow } from "./source-queue.worker.js"
 import type { EventSourceRow } from "./types.js"
 
-// SQL translations of the supabase-js queries and RPC calls the legacy
-// scrape-source edge function issued (U28). The RPCs themselves
-// (bulk_import_scrape_events, find_cross_source_event_candidates,
-// invoke_process_tag_queue) stay in the database — the API calls the same
-// public wrappers PostgREST exposed, so old and new pipelines share one
-// implementation until U18 decommissions the edge functions.
+// Import RPCs retain the shared database contract. Tag kicks follow the
+// canonical ownership gates so API scrapers cannot wake a retired executor.
 
 const RESOLVE_CITY_TIMEZONE_SQL = `
 SELECT timezone
@@ -185,7 +185,11 @@ SELECT EXISTS (
 
 @Injectable()
 export class IngestionRepository implements ProcessSourceDb, SourceQueueDb {
-  constructor(private readonly db: DbService) {}
+  constructor(
+    private readonly db: DbService,
+    private readonly jobs: JobsService,
+    private readonly gate: CronGateService
+  ) {}
 
   async resolveCityTimezone(cityId: string | null): Promise<string> {
     if (!cityId) return "UTC"
@@ -290,7 +294,17 @@ export class IngestionRepository implements ProcessSourceDb, SourceQueueDb {
   }
 
   async invokeProcessTagQueue(): Promise<void> {
-    await this.db.query(INVOKE_PROCESS_TAG_QUEUE_SQL)
+    const state = await this.gate.getGateState("cron-tag-queue")
+    if (state.legacyEnabled) {
+      await this.db.query(INVOKE_PROCESS_TAG_QUEUE_SQL)
+      return
+    }
+    if (!state.nestEnabled || !isFamilyEnabled("tag", process.env)) return
+    await this.jobs.send(
+      FAMILIES.tag.queue,
+      { task: "drain-tag-queue" },
+      { singletonKey: "drain-tag-queue" }
+    )
   }
 
   async reapStuckSourceScrapeQueueRows(): Promise<number> {

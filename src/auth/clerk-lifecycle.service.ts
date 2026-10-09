@@ -232,7 +232,7 @@ export class ClerkLifecycleService {
       await client.query(
         `UPDATE private.transactional_email_outbox SET status='cancelled',payload=NULL,delivery=NULL,
         locked_until=NULL,last_error='account_deleted',updated_at=now()
-        WHERE kind='welcome' AND target_id=$1 AND status<>'sent'`,
+        WHERE kind IN ('welcome','community_event_approved','community_event_rejected') AND target_id=$1 AND status<>'sent'`,
         [uuid]
       )
       await client.query(

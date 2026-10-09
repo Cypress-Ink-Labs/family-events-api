@@ -1,6 +1,8 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest"
 
 import { IngestionRepository } from "../../src/pipeline/ingestion/ingestion.repository.js"
+import { CronGateService } from "../../src/pipeline/cron-gate.service.js"
+import type { JobsService } from "../../src/jobs/jobs.service.js"
 import { importParsedSourceEvents } from "../../src/pipeline/ingestion/process-source.js"
 import type { ParsedEvent } from "../../src/pipeline/ingestion/types.js"
 import type { EventSourceRow } from "../../src/pipeline/ingestion/types.js"
@@ -21,7 +23,11 @@ let repository: IngestionRepository
 
 beforeAll(async () => {
   db = createIntegrationDb()
-  repository = new IngestionRepository(db)
+  repository = new IngestionRepository(
+    db,
+    { send: async () => null } as unknown as JobsService,
+    new CronGateService(db)
+  )
   await ensureIngestionSchema(db)
 })
 

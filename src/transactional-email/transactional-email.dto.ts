@@ -2,7 +2,16 @@ import { ApiProperty } from "@nestjs/swagger"
 
 export class InviteDeliveryDto {
   @ApiProperty({ format: "uuid" }) id!: string
-  @ApiProperty({ enum: ["welcome", "admin_request", "request_approved", "request_rejected"] })
+  @ApiProperty({
+    enum: [
+      "welcome",
+      "admin_request",
+      "request_approved",
+      "request_rejected",
+      "community_event_approved",
+      "community_event_rejected",
+    ],
+  })
   kind!: string
   @ApiProperty({ type: String, format: "uuid", nullable: true }) target_id!: string | null
   @ApiProperty({ enum: ["pending", "processing", "sent", "failed", "needs_review", "cancelled"] })

@@ -76,6 +76,20 @@ describe("validateEnv", () => {
     })
   })
 
+  it("retains the optional legacy transactional reply address including display names", () => {
+    expect(validateEnv({ ...base, RESEND_REPLY_TO: "support@example.com" })).toMatchObject({
+      RESEND_REPLY_TO: "support@example.com",
+    })
+    expect(validateEnv({ ...base, RESEND_REPLY_TO: "" })).toMatchObject({
+      RESEND_REPLY_TO: undefined,
+    })
+    expect(
+      validateEnv({ ...base, RESEND_REPLY_TO: "Support <support@example.com>" })
+    ).toMatchObject({
+      RESEND_REPLY_TO: "Support <support@example.com>",
+    })
+  })
+
   it("accepts optional push provider settings without applying defaults", () => {
     const withoutPush = validateEnv(base)
     expect(withoutPush.VAPID_PRIVATE_KEY).toBeUndefined()

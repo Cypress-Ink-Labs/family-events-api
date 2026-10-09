@@ -114,7 +114,7 @@ describe("operator schedule controls over HTTP and disposable pg-boss", () => {
         send: (name: string, data: object, options: object) => boss.send(name, data, options),
       } as JobsService,
       new CronGateService(db),
-      new IngestionRepository(db),
+      new IngestionRepository(db, app.get(JobsService), new CronGateService(db)),
       {} as FailurePingService
     )
     await worker.handleJob(job!.data)
@@ -142,7 +142,7 @@ describe("operator schedule controls over HTTP and disposable pg-boss", () => {
     const worker = new ScrapeQueueService(
       {} as JobsService,
       new CronGateService(db),
-      new IngestionRepository(db),
+      new IngestionRepository(db, app.get(JobsService), new CronGateService(db)),
       {} as FailurePingService
     )
     await worker.handleJob(job!.data)

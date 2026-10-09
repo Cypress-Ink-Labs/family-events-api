@@ -7709,7 +7709,9 @@
               "welcome",
               "admin_request",
               "request_approved",
-              "request_rejected"
+              "request_rejected",
+              "community_event_approved",
+              "community_event_rejected"
             ]
           },
           "target_id": {

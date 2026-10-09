@@ -28,6 +28,7 @@ const { ConsumerModule } = require("./dist/src/consumer/consumer.module.js")
 const { AdminModule } = require("./dist/src/admin/admin.module.js")
 const { PublicExportsModule } = require("./dist/src/public-exports/public-exports.module.js")
 const { HealthModule } = require("./dist/src/health/health.module.js")
+const { OnboardingModule } = require("./dist/src/onboarding/onboarding.module.js")
 const { JobsService } = require("./dist/src/jobs/jobs.service.js")
 
 let now = null
@@ -64,6 +65,7 @@ const moduleBuilder = Test.createTestingModule({
     AdminModule,
     PublicExportsModule,
     HealthModule,
+    OnboardingModule,
   ],
 })
   .overrideProvider(JobsService)
@@ -137,7 +139,7 @@ if (process.env.APP_FIXTURE_PREPARE_CATALOG === "true") {
   `)
 }
 identity = module.get(IdentityService)
-const app = module.createNestApplication()
+const app = module.createNestApplication({ rawBody: true })
 const { PgExceptionFilter } = require("./dist/src/common/pg-exception.filter.js")
 app.useGlobalFilters(new PgExceptionFilter(app.getHttpAdapter()))
 const express = app.getHttpAdapter().getInstance()
