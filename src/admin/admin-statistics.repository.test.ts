@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest"
 import { AdminStatisticsRepository } from "./admin-statistics.repository.js"
 
 describe("AdminStatisticsRepository", () => {
-  it("sets transaction-local claims and checks database admin before both RPCs", async () => {
+  it("sets transaction-local claims and checks database admin before either statistics query", async () => {
     const query = vi
       .fn()
       .mockResolvedValueOnce({ rows: [] })
@@ -23,9 +23,7 @@ describe("AdminStatisticsRepository", () => {
       query.mock.calls.filter(([sql]) => String(sql).includes("private.is_admin"))
     ).toHaveLength(2)
     expect(query.mock.calls[2]?.[0]).toContain("admin_dashboard_stats")
-    expect(query.mock.calls[5]).toEqual([
-      "SELECT public.pipeline_learning_stats($1::int) AS stats",
-      [30],
-    ])
+    expect(query.mock.calls[5]?.[0]).toContain("jsonb_build_object")
+    expect(query.mock.calls[5]?.[1]).toEqual([30])
   })
 })

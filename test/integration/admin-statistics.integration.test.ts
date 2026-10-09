@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto"
 
 import { ForbiddenException } from "@nestjs/common"
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest"
+import type { PoolClient } from "pg"
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { AdminStatisticsRepository } from "../../src/admin/admin-statistics.repository.js"
 import { AdminStatisticsService } from "../../src/admin/admin-statistics.service.js"
@@ -58,6 +59,23 @@ async function event(
   return row.id
 }
 
+function parallelTraceScan(node: Record<string, unknown>, parallel = false): boolean {
+  const inherited = parallel || ["Gather", "Gather Merge"].includes(String(node["Node Type"]))
+  if (node["Relation Name"] === "event_ai_traces" && inherited) return true
+  return ((node.Plans ?? []) as Record<string, unknown>[]).some((child) =>
+    parallelTraceScan(child, inherited)
+  )
+}
+function reviewScans(node: Record<string, unknown>): number {
+  return (
+    Number(node["Relation Name"] === "event_llm_review_traces") +
+    ((node.Plans ?? []) as Record<string, unknown>[]).reduce(
+      (total, child) => total + reviewScans(child),
+      0
+    )
+  )
+}
+
 describe("admin dashboard statistics", () => {
   it("enforces authorization and returns empty values with a raw generated timestamp", async () => {
     await expect(service.dashboard(randomUUID())).rejects.toBeInstanceOf(ForbiddenException)
@@ -111,6 +129,80 @@ describe("admin dashboard statistics", () => {
 })
 
 describe("pipeline learning statistics", () => {
+  it("preserves legacy statistics with one review scan and parallel tag counting", async () => {
+    const eventId = await event("published")
+    await db.query(
+      `INSERT INTO public.event_ai_traces
+       (event_id,input_title,input_description,predicted_fields,created_at)
+       SELECT $1::uuid,'Statistics load fixture',array_to_string(ARRAY(SELECT md5(n::text||':'||part::text) FROM generate_series(1,32) part),''),
+         CASE n%8
+           WHEN 0 THEN '{"memory_context":{"used":true}}'::jsonb
+           WHEN 1 THEN '{"memory_context":{"used":true}}'::jsonb
+           WHEN 2 THEN '{"memory_context":{"used":"true"}}'::jsonb
+           WHEN 3 THEN '{"memory_context":{"used":false}}'::jsonb
+           WHEN 4 THEN '{"memory_context":{"used":"false"}}'::jsonb
+           WHEN 5 THEN '{"memory_context":{"used":null}}'::jsonb
+           WHEN 6 THEN '{}'::jsonb
+           ELSE '{"memory_context":{"used":{"other":true}}}'::jsonb
+         END,
+         CASE WHEN n%8=0 THEN now()-interval '60 days' ELSE now() END
+       FROM generate_series(1,140000) n`,
+      [eventId]
+    )
+    await db.query(
+      `INSERT INTO public.event_llm_review_traces
+       (event_id,prompt_version,status,flags,created_at)
+       SELECT $1::uuid,'load-fixture',(CASE WHEN n%2=0 THEN 'succeeded' ELSE 'failed' END)::public.llm_event_review_status,
+         CASE n%4
+           WHEN 0 THEN ARRAY['source_auto_rejected','memory_context_used']
+           WHEN 1 THEN ARRAY['source_auto_rejected']
+           WHEN 2 THEN ARRAY['memory_context_used']
+           ELSE ARRAY[]::text[]
+         END,
+         CASE WHEN n%4=0 THEN now()-interval '60 days' ELSE now() END
+       FROM generate_series(1,12000) n`,
+      [eventId]
+    )
+    await db.query("ANALYZE public.event_ai_traces")
+    await db.query("ANALYZE public.event_llm_review_traces")
+    let plan: Record<string, unknown> | undefined
+    const measuredDb = {
+      withTransaction: <T>(work: (client: PoolClient) => Promise<T>): Promise<T> =>
+        db.withTransaction(async (client) => {
+          const query = vi.spyOn(client, "query")
+          let sql: string
+          let parameters: unknown[] | undefined
+          let result: T
+          try {
+            result = await work(client)
+            const call = query.mock.calls.at(-1)!
+            sql = String(call[0])
+            parameters = call[1] as unknown[] | undefined
+          } finally {
+            query.mockRestore()
+          }
+          const explained = await client.query(`EXPLAIN (FORMAT JSON) ${sql}`, parameters)
+          plan = explained.rows[0]["QUERY PLAN"][0].Plan
+          return result
+        }),
+    }
+    const measured = new AdminStatisticsService(
+      new AdminStatisticsRepository(measuredDb as DbService)
+    )
+    const actual = await measured.pipeline(actor, 30)
+    const legacy = await db.query<{ stats: unknown }>(
+      "SELECT public.pipeline_learning_stats(30) AS stats"
+    )
+    expect(actual).toEqual(legacy[0]!.stats)
+    expect(actual).toMatchObject({
+      llm_reviewed: 3000,
+      auto_rejected: 3000,
+      memory_hits: 3000,
+      tag_memory_hits: 35000,
+    })
+    expect(parallelTraceScan(plan!)).toBe(true)
+    expect(reviewScans(plan!)).toBe(1)
+  })
   it("enforces authorization and preserves the production empty feature flag mismatch", async () => {
     await expect(service.pipeline(randomUUID(), 30)).rejects.toBeInstanceOf(ForbiddenException)
     expect(await service.pipeline(actor, 30)).toEqual({
