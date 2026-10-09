@@ -136,9 +136,10 @@ export async function geocodeViaNominatim(
   url.searchParams.set("limit", "1")
   url.searchParams.set("q", query)
   if (region) {
-    url.searchParams.set("addressdetails", "1")
     const country = region.country?.trim().toLowerCase()
-    if (country) url.searchParams.set("countrycodes", country)
+    if (!country || !/^[a-z]{2}$/.test(country)) return null
+    url.searchParams.set("addressdetails", "1")
+    url.searchParams.set("countrycodes", country)
   }
 
   try {

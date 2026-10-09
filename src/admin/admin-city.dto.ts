@@ -15,7 +15,8 @@ export class AdminCityDto {
 export class AdminCreateCityDto {
   @ApiProperty() name!: string
   @ApiPropertyOptional({ type: String, nullable: true }) state?: string | null
-  @ApiPropertyOptional({ default: "US" }) country?: string
+  @ApiPropertyOptional({ default: "US", pattern: "^[A-Za-z]{2}$", minLength: 2, maxLength: 2 })
+  country?: string
   @ApiProperty() slug!: string
   @ApiProperty({ example: "America/New_York" }) timezone!: string
 }

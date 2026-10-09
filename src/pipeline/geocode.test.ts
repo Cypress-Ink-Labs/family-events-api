@@ -170,6 +170,14 @@ describe("geocodeViaNominatim", () => {
     return pending
   }
 
+  it.each(["United States", "us,ca", "USA", "u1", "", "   ", null])(
+    "rejects malformed country %j before requesting the provider",
+    async (country) => {
+      expect(await geocodeWithMock([], { country, state: "LA" })).toBeNull()
+      expect(fetch).not.toHaveBeenCalled()
+    }
+  )
+
   it.each([
     ["California", { country_code: "us", "ISO3166-2-lvl4": "US-CA", state: "California" }],
     ["Florida", { country_code: "us", "ISO3166-2-lvl4": "US-FL", state: "Florida" }],
@@ -201,7 +209,7 @@ describe("geocodeViaNominatim", () => {
             },
           },
         ],
-        { country: "US", state: "LA" }
+        { country: " uS ", state: "LA" }
       )
     ).toEqual({ latitude: 30.1446, longitude: -91.9612, source: "nominatim" })
     const url = new URL(vi.mocked(fetch).mock.calls[0]?.[0] as string)

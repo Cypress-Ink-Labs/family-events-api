@@ -364,7 +364,7 @@ describe("enrichOne — region validation", () => {
     const { first, second } = await pending
     expect(first.coordsSet).toBe(true)
     expect(second.coordsSet).toBe(false)
-    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
     expect(db.calls).toContainEqual({ type: "markEnrichmentAttempt", eventId: "scoped" })
   })
 
