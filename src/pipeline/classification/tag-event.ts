@@ -520,6 +520,7 @@ export interface TagFeatureConfigRow {
 export interface CityLocationRow {
   name: string
   state: string | null
+  country: string | null
   latitude: number | null
   longitude: number | null
 }
@@ -701,7 +702,12 @@ async function resolveMissingCoordinates(
   })
 
   if (query) {
-    const hit = await geocode(query)
+    const hit = await geocode(
+      query,
+      currentEvent?.city_id
+        ? { country: city?.country ?? null, state: city?.state ?? null }
+        : undefined
+    )
     if (hit) {
       return { latitude: hit.latitude, longitude: hit.longitude }
     }

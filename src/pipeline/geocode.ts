@@ -30,9 +30,15 @@ export interface GeocodeResult {
   source: "nominatim" | "city-fallback"
 }
 
+export interface GeocodeRegion {
+  country: string | null
+  state: string | null
+}
+
 interface NominatimHit {
   lat?: unknown
   lon?: unknown
+  address?: Record<string, unknown>
 }
 
 const NOMINATIM_UA = "family-events-ui/1.0 (geocoder)"
@@ -75,6 +81,26 @@ function escapeRegex(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
 }
 
+function matchesRegion(hit: NominatimHit, region: GeocodeRegion): boolean {
+  const country = region.country?.trim().toLowerCase()
+  const address = hit.address
+  if (!country || typeof address?.country_code !== "string") return false
+  if (address.country_code.trim().toLowerCase() !== country) return false
+
+  const state = region.state?.trim()
+  if (!state) return true
+  if (/^[a-z]{2}$/i.test(state)) {
+    const subdivision = address["ISO3166-2-lvl4"]
+    return (
+      typeof subdivision === "string" &&
+      subdivision.toUpperCase() === `${country}-${state}`.toUpperCase()
+    )
+  }
+  return (
+    typeof address.state === "string" && address.state.trim().toLowerCase() === state.toLowerCase()
+  )
+}
+
 async function waitForNominatimSlot(): Promise<void> {
   let releaseQueue: (() => void) | undefined
   const queueTail = new Promise<void>((resolve) => {
@@ -99,17 +125,29 @@ async function waitForNominatimSlot(): Promise<void> {
  * Query Nominatim for a place. Returns lat/lng or null if not found / error.
  * Caller must respect the 1 req/sec rate limit.
  */
-export async function geocodeViaNominatim(query: string): Promise<GeocodeResult | null> {
+export async function geocodeViaNominatim(
+  query: string,
+  region?: GeocodeRegion
+): Promise<GeocodeResult | null> {
   if (!query || query.trim().length < 3) return null
 
-  const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(query)}`
+  const url = new URL("https://nominatim.openstreetmap.org/search")
+  url.searchParams.set("format", "json")
+  url.searchParams.set("limit", "1")
+  url.searchParams.set("q", query)
+  if (region) {
+    url.searchParams.set("addressdetails", "1")
+    const country = region.country?.trim().toLowerCase()
+    if (country) url.searchParams.set("countrycodes", country)
+  }
 
   try {
     await waitForNominatimSlot()
-    const res = await fetch(url, {
+    const res = await fetch(url.toString(), {
       headers: {
         "User-Agent": NOMINATIM_UA,
         Accept: "application/json",
+        "Accept-Language": "en",
       },
       signal: AbortSignal.timeout(5_000),
     })
@@ -119,7 +157,7 @@ export async function geocodeViaNominatim(query: string): Promise<GeocodeResult 
 
     const hits = (await res.json()) as NominatimHit[]
     const first = hits?.[0]
-    if (!first) return null
+    if (!first || (region && !matchesRegion(first, region))) return null
 
     const lat = parseCoordinate(first.lat)
     const lng = parseCoordinate(first.lon)

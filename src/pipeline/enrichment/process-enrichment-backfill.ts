@@ -36,7 +36,12 @@
 //   `findImage` still defaults to `../stock-images.js`'s multi-provider
 //   `findFallbackImage`, matching legacy's actual `enrichOne` import exactly.
 
-import { buildGeocodeQuery, geocodeViaNominatim, type GeocodeResult } from "../geocode.js"
+import {
+  buildGeocodeQuery,
+  geocodeViaNominatim,
+  type GeocodeResult,
+  type GeocodeRegion,
+} from "../geocode.js"
 import type { EnvReader } from "../llm-config.js"
 import { errorMessage, logEdgeEvent } from "../logger.js"
 import {
@@ -126,8 +131,10 @@ export interface EnrichmentDb extends ParentTipsDb {
   listEventsNeedingEnrichment(limit: number): Promise<EnrichmentCandidate[]>
   /** private.backfill_image_enrichment_in_scope(p_limit) */
   listImageEnrichmentInScope(limit: number): Promise<EnrichmentCandidate[]>
-  /** SELECT name, state FROM public.cities WHERE id = $1 — legacy fetched city context for buildGeocodeQuery, cached per tick. */
-  getCityContext(cityId: string): Promise<{ name: string; state: string | null } | null>
+  /** SELECT name, state, country FROM public.cities WHERE id = $1 — legacy fetched city context for buildGeocodeQuery, cached per tick. */
+  getCityContext(
+    cityId: string
+  ): Promise<{ name: string; state: string | null; country: string | null } | null>
   /** private.update_event_enrichment(p_event_id, p_latitude, p_longitude, p_images) */
   updateEventEnrichment(
     eventId: string,
@@ -263,8 +270,8 @@ export interface EnrichOneOutcome {
 /**
  * Per-tick memoization caches threaded from `runEnrichmentTick` into every
  * `enrichOne` call for one claimed batch (finding F2). Ported from legacy's
- * `geocodeCache` (index.ts:109-229, keyed on the exact query string built by
- * `buildGeocodeQuery`) and `imageCache` (index.ts:256-279, keyed on
+ * `geocodeCache` (index.ts:109-229, now keyed on query plus country/state)
+ * and `imageCache` (index.ts:256-279, keyed on
  * `[...tags].sort().join(",")`). Both legacy caches store hits AND misses —
  * see the comment at index.ts:142-144: "a venue that fails to geocode should
  * not be retried for every event in the same batch." Optional and defaulted
@@ -301,10 +308,14 @@ export async function enrichOne(
 
   // Both hits and misses are cached — a venue that fails to geocode should
   // not be retried for every event in the same batch (index.ts:142-144).
-  const cachedGeocode = async (query: string): Promise<GeocodeResult | null> => {
-    if (geocodeCache.has(query)) return geocodeCache.get(query) ?? null
-    const result = await geocode(query)
-    geocodeCache.set(query, result)
+  const cachedGeocode = async (
+    query: string,
+    region?: GeocodeRegion
+  ): Promise<GeocodeResult | null> => {
+    const key = JSON.stringify([query, region ? [region.country, region.state] : null])
+    if (geocodeCache.has(key)) return geocodeCache.get(key) ?? null
+    const result = await geocode(query, region)
+    geocodeCache.set(key, result)
     return result
   }
 
@@ -316,6 +327,9 @@ export async function enrichOne(
 
   if (candidate.needsCoords) {
     const cityCtx = candidate.cityId ? await db.getCityContext(candidate.cityId) : null
+    const region = candidate.cityId
+      ? { country: cityCtx?.country ?? null, state: cityCtx?.state ?? null }
+      : undefined
 
     // Tier 1: full address/venue + city context (index.ts:135-151).
     const query = buildGeocodeQuery({
@@ -326,7 +340,7 @@ export async function enrichOne(
     })
 
     if (query) {
-      const geo = await cachedGeocode(query)
+      const geo = await cachedGeocode(query, region)
       if (geo) {
         latitude = geo.latitude
         longitude = geo.longitude
@@ -347,7 +361,7 @@ export async function enrichOne(
                 cityState: cityCtx?.state ?? null,
               })
               if (fallbackQuery) {
-                const fallbackGeo = await cachedGeocode(fallbackQuery)
+                const fallbackGeo = await cachedGeocode(fallbackQuery, region)
                 if (fallbackGeo) {
                   latitude = fallbackGeo.latitude
                   longitude = fallbackGeo.longitude
@@ -371,7 +385,7 @@ export async function enrichOne(
         cityState: null,
       })
       if (venueOnlyQuery && venueOnlyQuery !== query) {
-        const venueGeo = await cachedGeocode(venueOnlyQuery)
+        const venueGeo = await cachedGeocode(venueOnlyQuery, region)
         if (venueGeo) {
           latitude = venueGeo.latitude
           longitude = venueGeo.longitude
@@ -520,10 +534,13 @@ export interface EnrichmentTickSummary {
  * so `this` is `db` there too).
  */
 function withCityContextCache(db: EnrichmentDb): EnrichmentDb {
-  const cache = new Map<string, { name: string; state: string | null } | null>()
+  const cache = new Map<
+    string,
+    { name: string; state: string | null; country: string | null } | null
+  >()
   const cachedGetCityContext = async (
     cityId: string
-  ): Promise<{ name: string; state: string | null } | null> => {
+  ): Promise<{ name: string; state: string | null; country: string | null } | null> => {
     if (cache.has(cityId)) return cache.get(cityId) ?? null
     const result = await db.getCityContext(cityId)
     cache.set(cityId, result)
