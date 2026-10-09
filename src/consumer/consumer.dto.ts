@@ -5,6 +5,8 @@ import type {
   City,
   EnrichedEvent,
   PlannedEvent,
+  ParentTip,
+  PublicImageAttribution,
   PublicEventComment,
   SimilarEvent,
   Tag,
@@ -44,6 +46,40 @@ const FAMILY_NEEDS_PROPERTY: ApiPropertyOptions = {
       },
     },
   ],
+}
+
+export class ParentTipDto implements ParentTip {
+  @ApiProperty({ minLength: 1 })
+  category!: string
+
+  @ApiProperty({ minLength: 1 })
+  text!: string
+}
+
+export class PublicImageAttributionDto implements PublicImageAttribution {
+  @ApiProperty()
+  provider!: string
+
+  @ApiProperty()
+  image_url!: string
+
+  @ApiProperty({ type: String, nullable: true })
+  matched_tag!: string | null
+
+  @ApiProperty({ type: String, nullable: true })
+  photo_id!: string | null
+
+  @ApiProperty({ type: String, nullable: true })
+  photographer_name!: string | null
+
+  @ApiProperty({ type: String, nullable: true })
+  photographer_username!: string | null
+
+  @ApiProperty({ type: String, nullable: true })
+  photographer_profile_url!: string | null
+
+  @ApiProperty({ type: String, nullable: true })
+  photo_url!: string | null
 }
 
 export class EnrichedEventDto implements EnrichedEvent {
@@ -123,6 +159,22 @@ export class EnrichedEventDto implements EnrichedEvent {
 
   @ApiProperty(JSON_VALUE_PROPERTY)
   images!: Json
+
+  @ApiProperty({ type: [PublicImageAttributionDto] })
+  image_attributions!: PublicImageAttributionDto[]
+
+  @ApiProperty({
+    type: [ParentTipDto],
+    nullable: true,
+    description: "Generated planning suggestions, not organizer-confirmed event facts",
+  })
+  parent_tips!: ParentTipDto[] | null
+
+  @ApiProperty({ type: String, nullable: true, description: "Raw PostgreSQL generation timestamp" })
+  parent_tips_generated_at!: string | null
+
+  @ApiProperty({ type: Boolean, nullable: true })
+  is_outdoor!: boolean | null
 
   @ApiProperty()
   status!: string

@@ -501,6 +501,126 @@ describe("consumer read HTTP API", () => {
     expect(unknownResponse.body.source_details_fetched_at).toBeNull()
   })
 
+  it("returns retained parent tips and public photo credits through detail and discovery", async () => {
+    const id = await insertEvent({ title: "Retained event content" })
+    const tips = [{ category: "bring", text: "Bring a water bottle.", internal_trace: "hidden" }]
+    const image = "https://images.unsplash.com/photo-example"
+    await db.query(
+      "UPDATE public.events SET parent_tips=$2::jsonb, parent_tips_generated_at=$3::timestamptz, is_outdoor=true, images=$4::jsonb WHERE id=$1",
+      [id, JSON.stringify(tips), "2026-08-14T12:34:56.123456+00:00", JSON.stringify([image])]
+    )
+    await db.query(
+      `INSERT INTO public.event_image_attributions (
+        event_id,image_url,provider,matched_tag,unsplash_photo_id,
+        unsplash_photographer_name,unsplash_photographer_username,
+        unsplash_photographer_profile_url,unsplash_photo_url,unsplash_download_location,
+        download_tracking_last_error
+      ) VALUES ($1,$2,'unsplash','outdoor','photo-example','Test Photographer','test-photo',
+        'https://unsplash.com/@test-photo','https://unsplash.com/photos/photo-example',
+        'https://api.unsplash.com/photos/photo-example/download','private provider error')`,
+      [id, image]
+    )
+    await db.query(
+      `INSERT INTO public.event_image_attributions (
+        event_id,image_url,provider,pexels_photo_id,pexels_photographer_name,
+        pexels_photographer_profile_url,pexels_photo_url
+      ) VALUES ($1,'https://images.pexels.com/photo-other','pexels','other','Other Photographer',
+        'https://www.pexels.com/@other','https://www.pexels.com/photo/other')`,
+      [id]
+    )
+    await db.query(
+      `INSERT INTO public.event_image_attributions (
+        event_id,image_url,provider,pixabay_photo_id,pixabay_photographer_name,
+        pixabay_photographer_username,pixabay_photo_url,download_tracking_last_error
+      ) VALUES ($1,'https://cdn.pixabay.com/photo-third','pixabay','third','Third Photographer',
+        'third-photo','https://pixabay.com/photos/photo-third','private pixabay error')`,
+      [id]
+    )
+    const expected = {
+      id,
+      is_outdoor: true,
+      parent_tips: [{ category: "bring", text: "Bring a water bottle." }],
+      parent_tips_generated_at: "2026-08-14 12:34:56.123456+00",
+      image_attributions: [
+        {
+          provider: "unsplash",
+          image_url: image,
+          matched_tag: "outdoor",
+          photo_id: "photo-example",
+          photographer_name: "Test Photographer",
+          photographer_username: "test-photo",
+          photographer_profile_url: "https://unsplash.com/@test-photo",
+          photo_url: "https://unsplash.com/photos/photo-example",
+        },
+        {
+          provider: "pexels",
+          image_url: "https://images.pexels.com/photo-other",
+          matched_tag: null,
+          photo_id: "other",
+          photographer_name: "Other Photographer",
+          photographer_username: null,
+          photographer_profile_url: "https://www.pexels.com/@other",
+          photo_url: "https://www.pexels.com/photo/other",
+        },
+        {
+          provider: "pixabay",
+          image_url: "https://cdn.pixabay.com/photo-third",
+          matched_tag: null,
+          photo_id: "third",
+          photographer_name: "Third Photographer",
+          photographer_username: "third-photo",
+          photographer_profile_url: null,
+          photo_url: "https://pixabay.com/photos/photo-third",
+        },
+      ],
+    }
+    const detail = await request(app.getHttpServer()).get(`/v1/events/${id}/detail`).expect(200)
+    const direct = await request(app.getHttpServer()).get(`/v1/events/${id}`).expect(200)
+    const discovery = await request(app.getHttpServer())
+      .get("/v1/events?range=upcoming")
+      .expect(200)
+    for (const event of [detail.body.event, direct.body, discovery.body.events[0]]) {
+      expect(event).toMatchObject(expected)
+      expect(event.parent_tips).toEqual(expected.parent_tips)
+      expect(event.image_attributions).toEqual(expected.image_attributions)
+      expect(JSON.stringify(event)).not.toContain("internal_trace")
+      expect(JSON.stringify(event)).not.toContain("download_location")
+      expect(JSON.stringify(event)).not.toContain("private provider error")
+      expect(JSON.stringify(event)).not.toContain("private pixabay error")
+    }
+  })
+
+  it("keeps missing or malformed parent content unknown and filters invalid tip entries", async () => {
+    const id = await insertEvent({ title: "Unknown event content" })
+    const get = () => request(app.getHttpServer()).get(`/v1/events/${id}`).expect(200)
+    expect((await get()).body).toMatchObject({
+      is_outdoor: null,
+      parent_tips: null,
+      parent_tips_generated_at: null,
+      image_attributions: [],
+    })
+    for (const value of [
+      "not tips",
+      { text: "unstructured" },
+      [null, { category: "bring", text: 42 }],
+    ]) {
+      await db.query("UPDATE public.events SET parent_tips=$2::jsonb WHERE id=$1", [
+        id,
+        JSON.stringify(value),
+      ])
+      expect((await get()).body.parent_tips).toBeNull()
+    }
+    await db.query("UPDATE public.events SET parent_tips=$2::jsonb WHERE id=$1", [
+      id,
+      JSON.stringify([
+        null,
+        { category: "", text: "empty category" },
+        { category: "bring", text: "Bring water.", debug: "hidden" },
+      ]),
+    ])
+    expect((await get()).body.parent_tips).toEqual([{ category: "bring", text: "Bring water." }])
+  })
+
   it("personalizes detail for a mapped Clerk identity", async () => {
     const id = await insertEvent({ title: "Favorite" })
     await db.query("INSERT INTO public.favorites (user_id, event_id) VALUES ($1, $2)", [

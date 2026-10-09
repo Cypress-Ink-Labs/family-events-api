@@ -1,8 +1,3 @@
-// Consumer wire shapes, kept field-for-field identical to the app's server
-// data layer (family-events-app src/server/*.ts, U6).
-// snake_case is deliberate: these rows ARE the contract the app already
-// serves; the OpenAPI DTOs (U21/U24) freeze them, they do not rename them.
-//
 // Postgres numeric columns arrive as strings (node-pg default, same as the
 // app's driver) and timestamptz as microsecond-precision text (db.service.ts).
 
@@ -14,6 +9,22 @@ export type AgeMode = "all" | "any"
 export type AdmissionCostState = "free" | "paid" | "unknown"
 export type AdmissionCostFilter = "any" | AdmissionCostState
 export type FamilyNeeds = Record<FamilyNeedClaim, FamilyNeedState>
+
+export interface ParentTip {
+  category: string
+  text: string
+}
+
+export interface PublicImageAttribution {
+  provider: string
+  image_url: string
+  matched_tag: string | null
+  photo_id: string | null
+  photographer_name: string | null
+  photographer_username: string | null
+  photographer_profile_url: string | null
+  photo_url: string | null
+}
 
 export interface EnrichedEvent {
   id: string
@@ -40,6 +51,10 @@ export interface EnrichedEvent {
   source_name: string | null
   source_details_fetched_at: string | null
   images: Json
+  image_attributions: PublicImageAttribution[]
+  parent_tips: ParentTip[] | null
+  parent_tips_generated_at: string | null
+  is_outdoor: boolean | null
   status: string
   recurrence_info: Json
   is_featured: boolean
