@@ -1,8 +1,13 @@
 # NestJS backend rewrite plan (reconstructed) — units U20–U33
 
-**Status:** U20–U30 done. Reminder email/in-app/push, digest email/Telegram, and
+**Status:** U20–U30 done; U31 covered in code. Reminder email/in-app/push, digest email/Telegram, and
 event-change email/in-app/Web Push/FCM are merged. Only direct APNs is deferred
-within U30; U31–U33 follow.
+within U30. U31 is covered in code by the legacy backend parity work (PR #59,
+migration #25): API-owned Clerk lifecycle, invitation onboarding and transactional
+invitation email, coordinated account deletion, the remaining consumer and
+admin/operator endpoints, public exports, and daily maintenance. U32 and U33
+follow; production rollout, flags, credentials, and ownership transfer for the
+parity work remain separate, unverified prerequisites.
 Railway configuration is merged and empty `api` / `app` shadow services exist,
 but neither service is deployed because production database and Clerk variables
 have not been supplied.
@@ -228,13 +233,42 @@ Vault credentials take precedence over environment fallbacks. Scheduled digests
 resolve the validated Telegram token once per run; `testEmail` stays email-only,
 without token lookup or pacing. See [deployment details](../DEPLOYMENT.md).
 
-### U31 — Admin API port
+Notification delivery readiness evidence (local fixtures, real-PostgreSQL worker tests,
+and flag-off registration checks) is recorded in
+[notification readiness](./2026-10-08-notification-readiness.md). It changes no runtime
+behavior; real recipients, provider credentials, production flags, and ownership state
+remain unverified prerequisites.
+
+### U31 — Admin API port ✅ (covered in code, PR #59)
 The ~30 `admin_*` RPCs as operator-guarded endpoints: review queue (cursor
 `(created_at, id)`, limit 200/max 500), facets, status/batch/delete, event editor +
 unlock, sources CRUD + scrape-now + bulk processing mode, dead-letter retry/delete
 (incl. U2 redrive), users/access/invites, AI settings, dashboards/stats, cron
 admin (list/toggle/schedule/history — now backed by pg-boss). Decide realtime
 replacement here (poll vs SSE); the old SPA's four Supabase channels are reference.
+
+**Legacy backend parity (PR #59, migration #25):** the API now also covers:
+
+- **Clerk lifecycle:** webhook handling (`POST /webhooks/clerk`), verified Clerk→retained
+  UUID mappings, and database profile roles as authoritative. See
+  [Clerk lifecycle](../CLERK_LIFECYCLE.md).
+- **Invitations:** API-owned onboarding and transactional invitation email. See
+  [invitation onboarding](../INVITATION_ONBOARDING.md) and
+  [transactional invitation email](../TRANSACTIONAL_INVITATION_EMAIL.md).
+- **Account deletion:** coordinated deletion with replayable cleanup. See the
+  [account deletion runbook](../account-deletion-runbook.md).
+- **Consumer endpoints:** profile (including theme preference), notification
+  preferences and notifications inbox, saved events, next-plan, and push subscription
+  device registration.
+- **Admin/operator endpoints:** AI, city, contribution, cron controls, source and
+  review diagnostics, and operator presence.
+- **Public exports and daily maintenance:** see
+  [daily maintenance](../operations/daily-maintenance.md).
+
+This is covered in code and local tests only. Applying the API migrations, enabling
+flags, provider callbacks and credentials, deploying, and transferring worker-family
+ownership remain separate, unverified prerequisites; external deliveries and Clerk
+account deletion cannot be undone.
 
 ### U32 — Observability + deployment
 Sentry, structured logs, pg-boss upgrade, and read-only dashboard
@@ -278,6 +312,13 @@ was disabled only after queue, DLQ, schedule, and gated-dispatch verification.
 Controlled tasks and catch-up runs succeeded; the scrape drain and eligible
 review backlog completed without family DLQ work. Digest, reminders, and notify
 remain disabled pending delivery credentials and controlled-recipient smokes.
+
+**Daily maintenance (PR #59):** the API registers a `maintenance` queue running
+`public.run_daily_maintenance()` at `15 3 * * *` UTC, installed in production only when
+`CUTOVER_MAINTENANCE` is exactly `true` and gated by the `cron-db-maintenance` /
+`nestjs:cron-db-maintenance` ownership bits. It is covered in code only; handoff from
+the legacy owner is not verified and remains operator-gated. See
+[daily maintenance](../operations/daily-maintenance.md).
 
 ## Sequencing and parallelism
 
