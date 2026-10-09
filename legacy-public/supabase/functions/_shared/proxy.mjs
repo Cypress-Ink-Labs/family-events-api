@@ -157,7 +157,7 @@ export function createLegacyPublicHandler(
     const target = destination(name, new URL(request.url), publicOrigin)
     if (!target) return errorResponse(404, "not found")
     if (request.method === "OPTIONS") return new Response(null, { headers: CORS })
-    if (name === "share-og") {
+    if (name === "share-og" || (name === "sitemap" && target.pathname === "/sitemap.xml")) {
       return new Response(null, {
         status: 307,
         headers: { ...CORS, Location: target.href, "Cache-Control": "no-store" },

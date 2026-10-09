@@ -67,14 +67,65 @@ for (const [name, suffix, destination] of [
   ["sitemap", "/sitemap.xml", "/sitemap.xml"],
   ["sitemap", "?type=robots", "/robots.txt?type=robots"],
   ["sitemap", "/robots.txt", "/robots.txt"],
+  ["sitemap", "/sitemap.xml?type=robots", "/robots.txt?type=robots"],
 ]) {
   test(`${name}${suffix} reaches only its canonical public route`, async (t) => {
     const origin = await upstream(t, (req, res) => {
       res.setHeader("Content-Type", "application/json")
       res.end(JSON.stringify({ path: req.url }))
     })
-    const response = await createLegacyPublicHandler(name, { origin })(request(name, suffix))
+    let response = await createLegacyPublicHandler(name, { origin })(request(name, suffix))
+    if (destination === "/sitemap.xml") {
+      assert.equal(response.status, 307)
+      assert.equal(response.headers.get("Location"), `${origin}${destination}`)
+      response = await fetch(response.headers.get("Location"))
+    }
     assert.deepEqual(await response.json(), { path: destination })
+  })
+}
+
+for (const suffix of [
+  "",
+  "/",
+  "/sitemap.xml",
+  "/sitemap.xml/",
+  "?type=xml&url=https://evil.test&apikey=private",
+  "/sitemap%2Exml?type=sitemap&type=other",
+]) {
+  test(`sitemap XML ${suffix} redirects without fetching through the gateway`, async () => {
+    const handler = createLegacyPublicHandler("sitemap", {
+      origin: "https://family-events.org",
+      fetchImpl: () => assert.fail("must not fetch XML"),
+    })
+    const response = await handler(
+      request("sitemap", suffix, {
+        headers: {
+          Authorization: "Bearer private",
+          Cookie: "session=private",
+          Apikey: "private",
+          Host: "evil.test",
+          "X-Forwarded-Host": "evil.test",
+        },
+      })
+    )
+    assert.equal(response.status, 307)
+    const target = new URL(response.headers.get("Location"))
+    assert.equal(target.origin, "https://family-events.org")
+    assert.equal(target.pathname, "/sitemap.xml")
+    assert.deepEqual(
+      [...target.searchParams],
+      [...new URL(request("sitemap", suffix).url).searchParams].filter(([name]) => name === "type")
+    )
+    assert.equal(response.headers.get("Cache-Control"), "no-store")
+    assert.equal(response.headers.get("Access-Control-Allow-Origin"), "*")
+    assert.equal(response.headers.get("Access-Control-Allow-Credentials"), null)
+    assert.equal(response.headers.get("Set-Cookie"), null)
+    assert.equal(response.headers.get("Content-Type"), null)
+    assert.equal(await response.text(), "")
+    const preflight = await handler(request("sitemap", suffix, { method: "OPTIONS" }))
+    assert.equal(preflight.status, 200)
+    assert.equal(preflight.headers.get("Location"), null)
+    assert.equal(await preflight.text(), "")
   })
 }
 
@@ -96,6 +147,9 @@ for (const [name, suffix] of [
   ["events-api", "/%ZZ"],
   ["events-feed", "/other"],
   ["sitemap", "/admin"],
+  ["sitemap", "/sitemap.xml/extra"],
+  ["sitemap", "/%2Fsitemap.xml"],
+  ["sitemap", "/%ZZ"],
   ["share-og", `/${ID}/extra`],
   ["share-og", "/%252Fadmin"],
 ]) {
@@ -212,7 +266,7 @@ for (const [name, suffix, type, body] of [
     "User-agent: *\nSitemap: https://family-events.org/sitemap.xml",
   ],
 ]) {
-  test(`${name} preserves public bytes, MIME and cache, discarding private response headers`, async (t) => {
+  test(`${name} ${name === "sitemap" && suffix === "" ? "redirect reaches canonical" : "preserves public"} bytes, MIME and cache without copying private response headers`, async (t) => {
     const origin = await upstream(t, (_req, res) => {
       res.writeHead(200, {
         "Content-Type": type,
@@ -227,7 +281,17 @@ for (const [name, suffix, type, body] of [
       })
       res.end(body)
     })
-    const response = await createLegacyPublicHandler(name, { origin })(request(name, suffix))
+    const legacy = await createLegacyPublicHandler(name, { origin })(request(name, suffix))
+    const xml = name === "sitemap" && suffix === ""
+    let response = legacy
+    if (xml) {
+      assert.equal(legacy.status, 307)
+      assert.equal(legacy.headers.get("Location"), `${origin}/sitemap.xml`)
+      assert.equal(legacy.headers.get("Cache-Control"), "no-store")
+      assert.equal(legacy.headers.get("ETag"), null)
+      assert.equal(legacy.headers.get("Content-Disposition"), null)
+      response = await fetch(legacy.headers.get("Location"))
+    }
     assert.equal(response.status, 200)
     assert.equal(await response.text(), body)
     assert.equal(response.headers.get("Content-Type"), type)
@@ -244,7 +308,7 @@ for (const [name, suffix, type, body] of [
       "Vary",
       "Content-Security-Policy",
     ]) {
-      assert.equal(response.headers.get(header), null)
+      assert.equal((xml ? legacy : response).headers.get(header), null)
     }
   })
 }
