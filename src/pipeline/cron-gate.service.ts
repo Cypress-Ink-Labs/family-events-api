@@ -29,8 +29,8 @@ export function nestGateLabel(legacyLabel: string): string {
  *   http_status stays NULL: there is no HTTP hop anymore, the worker runs
  *   in-process.
  *
- * Only legacy-replacement schedules are gated. Internal schedules such as
- * notification_queue polling have no legacy label and never enter this API.
+ * Internal schedules use runInternal with an independent operational gate
+ * and history label; they have no legacy owner.
  */
 @Injectable()
 export class CronGateService {
@@ -63,6 +63,36 @@ export class CronGateService {
       "INSERT INTO private.railway_cron_runs (label, status, duration_s, body) VALUES ($1, $2, $3, $4)",
       [legacyLabel, status, Math.max(0, Math.round(durationS)), body]
     )
+  }
+
+  async runInternal(
+    gateLabel: string,
+    historyLabel: string,
+    fn: () => Promise<string | void>
+  ): Promise<void> {
+    const rows = await this.db.query<{ enabled: boolean }>(
+      "SELECT COALESCE((SELECT enabled FROM private.cron_enabled WHERE label=$1),true) AS enabled",
+      [gateLabel]
+    )
+    if (rows[0]?.enabled !== true) return
+    const started = Date.now()
+    try {
+      const summary = await fn()
+      await this.recordRun(
+        historyLabel,
+        "succeeded",
+        (Date.now() - started) / 1000,
+        summary ?? null
+      )
+    } catch (error) {
+      await this.recordRun(
+        historyLabel,
+        "failed",
+        (Date.now() - started) / 1000,
+        error instanceof Error ? error.message : String(error)
+      )
+      throw error
+    }
   }
 
   /**

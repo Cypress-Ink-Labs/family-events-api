@@ -56,14 +56,29 @@ export interface EnrichedEvent {
   family_needs: FamilyNeeds
 }
 
+export type DiscoverySort = "soonest" | "latest" | "price-asc" | "rating-desc"
 export interface EventCursor {
+  sort?: Exclude<DiscoverySort, "soonest">
+  price?: string | null
+  rating?: string
+  ratingCount?: number
   startDatetime: string
   id: string
 }
 
-export type DiscoveryRange = "today" | "weekend" | "upcoming"
+export type DiscoveryRange = "today" | "weekend" | "upcoming" | "week" | "month" | "past"
 
-export interface DiscoverEventsInput {
+export interface DiscoveryControls {
+  sort?: DiscoverySort
+  dateStart?: string
+  dateEnd?: string
+  tagSlugs?: string[]
+  lat?: number
+  lng?: number
+  radiusKm?: number
+}
+export interface DiscoverEventsInput extends DiscoveryControls {
+  hidePast?: boolean
   range: DiscoveryRange | null
   now: string
   cityId?: string | null
@@ -96,9 +111,12 @@ export interface ListEventsInput {
   dateTo?: string | null
 }
 
-export interface ListMapEventsInput {
+export interface ListMapEventsInput extends DiscoveryControls {
+  keyword?: string
+  dateFrom?: string
+  dateTo?: string
   cityId?: string | null
-  range: DiscoveryRange
+  range: DiscoveryRange | null
   now: string
   ages: number[]
   ageMode: AgeMode
@@ -242,6 +260,7 @@ export interface EventComment {
 
 /** Public detail-page projection; moderation and ownership fields stay server-side. */
 export interface PublicEventComment {
+  can_delete: boolean
   id: string
   body: string
   created_at: string

@@ -12,7 +12,7 @@ import type { Env } from "./config/env.js"
 import { buildOpenApiDocument } from "./openapi.js"
 
 async function bootstrap(): Promise<void> {
-  const app = await NestFactory.create(AppModule)
+  const app = await NestFactory.create(AppModule, { rawBody: true })
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }))
   // The adapter reference is required so BaseExceptionFilter can answer the
   // errors this filter does not map itself; Nest does not inject httpAdapterHost

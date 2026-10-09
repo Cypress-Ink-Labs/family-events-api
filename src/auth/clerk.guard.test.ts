@@ -1,5 +1,5 @@
 import { UnauthorizedException } from "@nestjs/common"
-import { ConfigService } from "@nestjs/config"
+import type { ConfigService } from "@nestjs/config"
 import type { ExecutionContext } from "@nestjs/common"
 import { describe, expect, it, vi } from "vitest"
 
@@ -26,8 +26,8 @@ function makeContext(authorization?: string): {
 }
 
 function makeGuard(secretKey?: string): ClerkAuthGuard {
-  const config = new ConfigService({ CLERK_SECRET_KEY: secretKey })
-  return new ClerkAuthGuard(config as unknown as ConfigService<never, true>)
+  const config = { get: vi.fn(() => secretKey) } as unknown as ConfigService<never, true>
+  return new ClerkAuthGuard(config)
 }
 
 describe("ClerkAuthGuard", () => {
@@ -37,11 +37,14 @@ describe("ClerkAuthGuard", () => {
     await expect(guard.canActivate(context)).rejects.toThrow(UnauthorizedException)
   })
 
-  it("fails closed when CLERK_SECRET_KEY is not configured", async () => {
-    const guard = makeGuard(undefined)
-    const { context } = makeContext("Bearer valid-token")
-    await expect(guard.canActivate(context)).rejects.toThrow(/not configured/)
-  })
+  it.each([undefined, "", "   "])(
+    "fails closed when CLERK_SECRET_KEY is absent or blank",
+    async (secretKey) => {
+      const guard = makeGuard(secretKey)
+      const { context } = makeContext("Bearer valid-token")
+      await expect(guard.canActivate(context)).rejects.toThrow(/not configured/)
+    }
+  )
 
   it("rejects an invalid token", async () => {
     const guard = makeGuard("sk_test_x")

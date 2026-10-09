@@ -1,3 +1,4 @@
+import { UserAccessModule } from "../user-access/user-access.module.js"
 import { Module } from "@nestjs/common"
 
 import { AuthModule } from "../auth/auth.module.js"
@@ -27,14 +28,24 @@ import { AdminDeadLetterService } from "./admin-dead-letter.service.js"
 import { AdminCronController } from "./admin-cron.controller.js"
 import { AdminCronRepository } from "./admin-cron.repository.js"
 import { AdminCronService } from "./admin-cron.service.js"
+import { AdminCronControlsService } from "./admin-cron-controls.service.js"
+import { AdminCronControlsRepository } from "./admin-cron-controls.repository.js"
 import { AdminFamilyNeedsController } from "../evidence/admin-family-needs.controller.js"
 import { AdminFamilyNeedsRepository } from "../evidence/admin-family-needs.repository.js"
 import { AdminFamilyNeedsService } from "../evidence/admin-family-needs.service.js"
 import { AdminCorrectionReportController } from "./admin-correction-report.controller.js"
 import { AdminCorrectionReportRepository } from "./admin-correction-report.repository.js"
+import { AdminCityController } from "./admin-city.controller.js"
+import { AdminCityRepository } from "./admin-city.repository.js"
+
+import { AdminContributionController } from "./admin-contribution.controller.js"
+import { AdminContributionRepository } from "./admin-contribution.repository.js"
+
+import { AdminAiController } from "./admin-ai.controller.js"
+import { AdminAiRepository } from "./admin-ai.repository.js"
 
 @Module({
-  imports: [AuthModule, DbModule, JobsModule],
+  imports: [AuthModule, DbModule, JobsModule, UserAccessModule],
   controllers: [
     AdminReviewController,
     AdminEventEditorController,
@@ -46,8 +57,13 @@ import { AdminCorrectionReportRepository } from "./admin-correction-report.repos
     AdminCronController,
     AdminFamilyNeedsController,
     AdminCorrectionReportController,
+    AdminCityController,
+    AdminContributionController,
+    AdminAiController,
   ],
   providers: [
+    AdminCronControlsService,
+    AdminCronControlsRepository,
     AdminReviewService,
     AdminReviewRepository,
     AdminEventEditorService,
@@ -67,6 +83,9 @@ import { AdminCorrectionReportRepository } from "./admin-correction-report.repos
     AdminFamilyNeedsService,
     AdminFamilyNeedsRepository,
     AdminCorrectionReportRepository,
+    AdminCityRepository,
+    AdminContributionRepository,
+    AdminAiRepository,
   ],
 })
 export class AdminModule {}

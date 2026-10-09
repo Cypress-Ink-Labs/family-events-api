@@ -212,6 +212,7 @@ describe("application bootstrap", () => {
       ["/v1/admin/sources/{id}/processing-mode", "put", "adminSetSourceProcessingMode"],
       ["/v1/admin/sources/bulk-processing-mode", "post", "adminBulkSetSourceProcessingMode"],
       ["/v1/admin/users", "get", "adminListUsers"],
+      ["/v1/admin/users/deletions", "get", "adminListAccountDeletions"],
       ["/v1/admin/users/{id}/access", "put", "adminSetUserAccess"],
       ["/v1/admin/users/{id}", "delete", "adminDeleteUser"],
       ["/v1/admin/invites/required", "get", "adminGetInvitesRequired"],
@@ -238,8 +239,11 @@ describe("application bootstrap", () => {
     for (const [path, method, operationId] of operations) {
       const operation = document.paths[path]?.[method]
       expect(operation).toMatchObject({ operationId, tags: ["admin"], security: [{ clerk: [] }] })
-      expect(Object.keys(operation?.responses ?? {})).toEqual(["200", "400", "401", "403", "404"])
-      for (const status of ["400", "401", "403", "404"]) {
+      const errors = ["400", "401", "403", "404"]
+      if (operationId === "adminDeleteUser") errors.push("409")
+      if (path.startsWith("/v1/admin/users")) errors.push("503")
+      expect(Object.keys(operation?.responses ?? {})).toEqual(["200", ...errors])
+      for (const status of errors) {
         expect(operation?.responses[status]).toMatchObject({
           content: {
             "application/json": {
@@ -334,6 +338,8 @@ describe("application bootstrap", () => {
       .filter(([path]) => path.startsWith("/v1/admin/crons"))
       .map(([path, item]) => [path, Object.keys(item!).filter((key) => key !== "parameters")])
     expect(cronPaths).toEqual([
+      ["/v1/admin/crons/{label}/owner", ["put"]],
+      ["/v1/admin/crons/{label}/run", ["post"]],
       ["/v1/admin/crons", ["get"]],
       ["/v1/admin/crons/runs", ["get"]],
       ["/v1/admin/crons/runs/{id}", ["get"]],
@@ -748,6 +754,8 @@ describe("application bootstrap", () => {
       event: editable,
       tags: [],
       available_tags: [],
+      cities: [],
+      sources: [],
     }
     expect(matchesContract(editorDetail, schemas.AdminEventEditorDetailDto!, schemas)).toBe(true)
     expect(
@@ -909,7 +917,7 @@ describe("application bootstrap", () => {
         expect.objectContaining({ name: "limit", required: false }),
       ])
     )
-    const listFields = Object.keys(schemas.CorrectionReportRowDto!.properties!)
+    const listFields = Object.keys(schemas.CorrectionReportQueueRowDto!.properties!)
     for (const field of ["details", "reporter_user_id", "contact", "evidence", "resolution_note"]) {
       expect(listFields).not.toContain(field)
     }

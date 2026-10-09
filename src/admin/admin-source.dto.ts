@@ -1,5 +1,21 @@
 import { ApiProperty, type ApiBodyOptions } from "@nestjs/swagger"
 
+export class AdminSourceCityDto {
+  @ApiProperty({ format: "uuid" })
+  id!: string
+
+  @ApiProperty()
+  name!: string
+}
+
+export class AdminSourceChoicesDto {
+  @ApiProperty({
+    type: [AdminSourceCityDto],
+    description: "All cities, including inactive rows, ordered by name and ID.",
+  })
+  cities!: AdminSourceCityDto[]
+}
+
 import {
   ADMIN_EXTRACTION_MODES,
   ADMIN_PROCESSING_MODES,

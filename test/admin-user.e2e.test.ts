@@ -1,3 +1,4 @@
+import { AccountDeletionService } from "../src/user-access/account-deletion.service.js"
 import type { INestApplication } from "@nestjs/common"
 import { ConfigModule } from "@nestjs/config"
 import { Test } from "@nestjs/testing"
@@ -34,6 +35,7 @@ const row = {
   updated_at: "2026-09-08 10:00:00.123456+00",
 }
 const identity = {
+  hasEnabledAccess: vi.fn(async () => true),
   resolve: vi.fn(async (clerkUserId: string) =>
     clerkUserId === "user_unmapped"
       ? null
@@ -76,6 +78,12 @@ describe("admin user HTTP with real guards", () => {
         AdminModule,
       ],
     })
+      .overrideProvider(AccountDeletionService)
+      .useValue({
+        delete: repository.delete,
+        list: async () => [],
+        managed: async (_actor: string, rows: unknown[]) => rows,
+      })
       .overrideProvider(IdentityService)
       .useValue(identity)
       .overrideProvider(DbService)

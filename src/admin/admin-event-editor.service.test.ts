@@ -14,7 +14,7 @@ const INPUT: AdminUpdateEventInput = {
 }
 
 function setup() {
-  const detail = { event: { id: "event" }, tags: [], availableTags: [] }
+  const detail = { event: { id: "event" }, tags: [], availableTags: [], cities: [], sources: [] }
   const repository = {
     get: vi.fn().mockResolvedValue(detail),
     update: vi.fn().mockResolvedValue(detail),

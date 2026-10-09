@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest"
 
+import { scheduledOperations } from "../pipeline/scheduled-operations.js"
 import { CRON_LABELS } from "./admin-cron.input.js"
 import { AdminCronRepository } from "./admin-cron.repository.js"
 
@@ -29,7 +30,10 @@ describe("AdminCronRepository", () => {
     expect(
       query.mock.calls.filter(([sql]) => String(sql).includes("private.is_admin"))
     ).toHaveLength(3)
-    expect(query.mock.calls[2]?.[1]).toEqual([CRON_LABELS])
+    expect(query.mock.calls[2]?.[1]).toEqual([
+      CRON_LABELS,
+      scheduledOperations().map((operation) => operation.gateLabel),
+    ])
     expect(query.mock.calls[5]?.[1]).toEqual([CRON_LABELS, null, 50])
     expect(query.mock.calls[8]?.[1]).toEqual(["9223372036854775807", CRON_LABELS])
     expect(query.mock.calls[8]?.[0]).toContain("e.run_key = r.run_key")

@@ -1,7 +1,9 @@
-import { Injectable } from "@nestjs/common"
+import { ForbiddenException, Injectable } from "@nestjs/common"
+
+import type { PoolClient } from "pg"
 
 import { DbService } from "../db/db.service.js"
-import { requireDatabaseAdmin, withAdminActor } from "./admin-database.js"
+import { isDatabaseAdminDenial, requireDatabaseAdmin, withAdminActor } from "./admin-database.js"
 
 export interface CorrectionReportRow {
   id: string
@@ -25,7 +27,7 @@ export interface CorrectionReportRow {
 export type CorrectionReportListRow = Omit<
   CorrectionReportRow,
   "reporter_user_id" | "details" | "resolution_note"
->
+> & { event_title: string }
 
 export interface ListingCorrectionRow {
   id: string
@@ -40,20 +42,30 @@ export interface ListingCorrectionRow {
 export class AdminCorrectionReportRepository {
   constructor(private readonly db: DbService) {}
 
+  private async withActor<T>(actor: string, work: (client: PoolClient) => Promise<T>): Promise<T> {
+    try {
+      return await withAdminActor(this.db, actor, work)
+    } catch (error) {
+      if (isDatabaseAdminDenial(error))
+        throw new ForbiddenException("admin access is not provisioned")
+      throw error
+    }
+  }
+
   list(
     actor: string,
     status: string | undefined,
     limit: number
   ): Promise<CorrectionReportListRow[]> {
-    return withAdminActor(this.db, actor, async (client) => {
+    return this.withActor(actor, async (client) => {
       await requireDatabaseAdmin(client)
       const result = await client.query<CorrectionReportListRow>(
-        `SELECT id,event_id,category,priority,status,version,
-                claimed_by,claimed_at,resolved_by,resolved_at,correction_id,
-                created_at,updated_at
-         FROM public.correction_reports
-         WHERE ($1::correction_report_status IS NULL OR status = $1)
-         ORDER BY priority, created_at, id LIMIT $2`,
+        `SELECT r.id,r.event_id,e.title AS event_title,r.category,r.priority,r.status,r.version,
+                r.claimed_by,r.claimed_at,r.resolved_by,r.resolved_at,r.correction_id,
+                r.created_at,r.updated_at
+         FROM public.correction_reports r JOIN public.events e ON e.id=r.event_id
+         WHERE ($1::correction_report_status IS NULL OR r.status = $1)
+         ORDER BY r.priority, r.created_at, r.id LIMIT $2`,
         [status ?? null, limit]
       )
       return result.rows
@@ -65,20 +77,23 @@ export class AdminCorrectionReportRepository {
     id: string
   ): Promise<
     | (CorrectionReportRow & {
+        event_title: string
         contact: { email?: string; phone?: string } | null
         evidence: string[] | null
       })
     | null
   > {
-    return withAdminActor(this.db, actor, async (client) => {
+    return this.withActor(actor, async (client) => {
       await requireDatabaseAdmin(client)
       const result = await client.query<
         CorrectionReportRow & {
+          event_title: string
           contact: { email?: string; phone?: string } | null
           evidence: string[] | null
         }
       >(
-        `SELECT r.*, p.contact, p.evidence FROM public.correction_reports r
+        `SELECT r.*, e.title AS event_title, p.contact, p.evidence FROM public.correction_reports r
+         JOIN public.events e ON e.id=r.event_id
          LEFT JOIN private.correction_report_private p ON p.report_id=r.id WHERE r.id=$1`,
         [id]
       )
@@ -87,7 +102,7 @@ export class AdminCorrectionReportRepository {
   }
 
   claim(actor: string, id: string, version: number): Promise<CorrectionReportRow> {
-    return withAdminActor(this.db, actor, async (client) => {
+    return this.withActor(actor, async (client) => {
       await requireDatabaseAdmin(client)
       const result = await client.query<CorrectionReportRow>(
         "SELECT * FROM private.claim_correction_report($1,$2,$3)",
@@ -105,7 +120,7 @@ export class AdminCorrectionReportRepository {
     auditLogId: string,
     note: string
   ): Promise<ListingCorrectionRow | null> {
-    return withAdminActor(this.db, actor, async (client) => {
+    return this.withActor(actor, async (client) => {
       await requireDatabaseAdmin(client)
       const report = await client.query<{ event_id: string }>(
         "SELECT event_id FROM public.correction_reports WHERE id = $1 FOR UPDATE",
@@ -129,7 +144,7 @@ export class AdminCorrectionReportRepository {
     note: string,
     correctionId: string | null
   ): Promise<CorrectionReportRow> {
-    return withAdminActor(this.db, actor, async (client) => {
+    return this.withActor(actor, async (client) => {
       await requireDatabaseAdmin(client)
       const result = await client.query<CorrectionReportRow>(
         "SELECT * FROM private.resolve_correction_report($1,$2,$3,$4,$5,$6)",
@@ -142,7 +157,7 @@ export class AdminCorrectionReportRepository {
   }
 
   restrict(actor: string, reporterId: string, reason: string, expiresAt: string): Promise<void> {
-    return withAdminActor(this.db, actor, async (client) => {
+    return this.withActor(actor, async (client) => {
       await requireDatabaseAdmin(client)
       await client.query(
         `INSERT INTO private.correction_reporter_restrictions

@@ -48,7 +48,7 @@ describe("admin invite codes", () => {
   it("returns plaintext once while persisting and auditing no plaintext or hash", async () => {
     const created = await service.createCode(actor, {
       maxUses: 2,
-      expiresAt: "2026-10-08T00:00:00.123456Z",
+      expiresAt: new Date(Date.now() + 86400000).toISOString().replace(/\d{3}Z$/, "123456Z"),
       notes: "Family referral",
     })
     expect(created.code).toMatch(/^[A-HJ-NP-Z2-9]{24}$/)

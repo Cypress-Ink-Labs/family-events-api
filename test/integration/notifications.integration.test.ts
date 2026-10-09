@@ -1,14 +1,18 @@
 import { randomUUID } from "node:crypto"
 
-import { ConfigModule } from "@nestjs/config"
+import { ConfigModule, ConfigService } from "@nestjs/config"
 import { Test, type TestingModule } from "@nestjs/testing"
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest"
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { DbModule } from "../../src/db/db.module.js"
 import { DbService } from "../../src/db/db.service.js"
+import type { Env } from "../../src/config/env.js"
 import { DigestRepository } from "../../src/notifications/digest.repository.js"
+import type { MailService } from "../../src/notifications/mail.service.js"
 import { NotificationQueueRepository } from "../../src/notifications/notification-queue.repository.js"
+import { NotificationQueueService } from "../../src/notifications/notification-queue.service.js"
 import { PushRepository } from "../../src/notifications/push.repository.js"
+import type { PushService } from "../../src/notifications/push.service.js"
 import { ReminderRepository } from "../../src/notifications/reminder.repository.js"
 import { zonedDayStartUtc } from "../../src/pipeline/zoned-time.js"
 import { ensureCatalogSchema, truncateCatalog } from "./catalog.js"
@@ -562,6 +566,93 @@ describe("notification repositories", () => {
       )
     ).resolves.toEqual([{ processed: true, processedAt: expect.any(String) }])
   })
+
+  it.each([
+    [false, false],
+    [false, true],
+    [true, false],
+    [true, true],
+  ])(
+    "processes stored change preferences email=%s push=%s while providers are unavailable",
+    async (changeEmail, changePush) => {
+      const cityId = randomUUID()
+      const userId = randomUUID()
+      const eventId = randomUUID()
+      await db.query(
+        `INSERT INTO public.cities (id, name, slug, timezone)
+         VALUES ($1, 'Fixture city', $2, 'America/Chicago')`,
+        [cityId, `fixture-${cityId}`]
+      )
+      await db.query(
+        "INSERT INTO public.user_profiles (id, email) VALUES ($1, 'fixture@example.com')",
+        [userId]
+      )
+      await db.query(
+        `INSERT INTO public.events (id, title, start_datetime, city_id, status)
+         VALUES ($1, 'Fixture event', '2026-09-06T16:30:00Z', $2, 'published')`,
+        [eventId, cityId]
+      )
+      await db.query(
+        `INSERT INTO public.user_notification_preferences (user_id, change_email, change_push)
+         VALUES ($1, $2, $3)`,
+        [userId, changeEmail, changePush]
+      )
+      await db.query(
+        `INSERT INTO public.notification_queue (user_id, event_id, change_type, created_at)
+         VALUES ($1, $2, 'cancelled', '2026-09-05T13:00:00Z')`,
+        [userId, eventId]
+      )
+      const mail = { send: vi.fn(async () => ({ sent: false, dev: true })) }
+      const push = {
+        send: vi.fn(async () => ({
+          requestedRecipients: 1,
+          matchedRecipients: 1,
+          unmatchedRecipients: 0,
+          sent: 0,
+          failed: 0,
+          skipped: 1,
+          pruned: 0,
+          failedBatches: 0,
+          failedBatchRecipients: 0,
+        })),
+      }
+      const worker = new NotificationQueueService(
+        notificationQueue,
+        mail as unknown as MailService,
+        push as unknown as PushService,
+        new ConfigService({ APP_URL: "https://events.example.com" }) as ConfigService<Env, true>
+      )
+
+      await expect(worker.processRun(new Date("2026-09-05T15:00:00Z"))).resolves.toMatchObject({
+        ok: true,
+        processed: 1,
+        persistenceFailed: false,
+        channels: {
+          email: { sent: 0, failed: 0, skipped: 1 },
+          inApp: { sent: 1, failed: 0, skipped: 0 },
+          push: { sent: 0, failed: 0, skipped: 1 },
+        },
+      })
+      expect(mail.send).toHaveBeenCalledTimes(Number(changeEmail))
+      expect(push.send).toHaveBeenCalledTimes(Number(changePush))
+      await expect(
+        db.query("SELECT user_id, type, title, event_id FROM public.user_notifications")
+      ).resolves.toEqual([
+        { user_id: userId, type: "change", title: "Cancelled: Fixture event", event_id: eventId },
+      ])
+      await expect(
+        db.query("SELECT processed, processed_at FROM public.notification_queue")
+      ).resolves.toEqual([{ processed: true, processed_at: expect.any(String) }])
+
+      await expect(worker.processRun(new Date("2026-09-05T15:05:00Z"))).resolves.toMatchObject({
+        processed: 0,
+        channels: { inApp: { sent: 0 } },
+      })
+      expect(mail.send).toHaveBeenCalledTimes(Number(changeEmail))
+      expect(push.send).toHaveBeenCalledTimes(Number(changePush))
+      await expect(db.query("SELECT id FROM public.user_notifications")).resolves.toHaveLength(1)
+    }
+  )
 
   it("allows only one notification queue worker to hold the session lock", async () => {
     let releaseFirst!: () => void

@@ -32,7 +32,7 @@ export class ClerkAuthGuard implements CanActivate {
       throw new UnauthorizedException("missing bearer token")
     }
     const secretKey = this.config.get("CLERK_SECRET_KEY", { infer: true })
-    if (secretKey === undefined) {
+    if (!secretKey?.trim()) {
       // Fail closed: an instance without Clerk configured serves no authenticated routes.
       this.logger.warn("CLERK_SECRET_KEY not configured; rejecting authenticated request")
       throw new UnauthorizedException("authentication not configured")

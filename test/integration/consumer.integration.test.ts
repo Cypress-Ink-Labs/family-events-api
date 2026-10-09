@@ -115,6 +115,10 @@ describe("consumer read HTTP API", () => {
        ($2, 'other@example.com', 'Other')`,
       [USER_READER, USER_OTHER]
     )
+    await db.query("INSERT INTO public.user_access(user_id,is_enabled) VALUES($1,true),($2,true)", [
+      USER_READER,
+      USER_OTHER,
+    ])
   })
 
   afterAll(async () => {
@@ -542,12 +546,33 @@ describe("consumer read HTTP API", () => {
       {
         id: expect.any(String),
         body: "Approved comment",
+        can_delete: false,
         created_at: expect.any(String),
         updated_at: expect.any(String),
         display_name: "Other",
         avatar_url: null,
       },
     ])
+  })
+
+  it("exposes deletion capability only to the mapped comment owner", async () => {
+    const id = await insertEvent({ title: "Comment ownership" })
+    await db.query(
+      "INSERT INTO public.comments (user_id, event_id, body, is_approved) VALUES ($1, $2, 'Mine', true)",
+      [USER_READER, id]
+    )
+    for (const [token, canDelete] of [
+      [null, false],
+      ["other-token", false],
+      ["mapped-token", true],
+    ] as const) {
+      const pending = request(app.getHttpServer()).get(`/v1/events/${id}/detail`)
+      if (token !== null) pending.set("Authorization", `Bearer ${token}`)
+      const response = await pending.expect(200)
+      expect(response.body.comments).toHaveLength(1)
+      expect(response.body.comments[0].can_delete).toBe(canDelete)
+      expect(response.body.comments[0]).not.toHaveProperty("user_id")
+    }
   })
 
   it("does not leak related user data for an unpublished event", async () => {
@@ -682,6 +707,55 @@ describe("consumer read HTTP API", () => {
   it("rejects a malformed cursor", async () => {
     await request(app.getHttpServer()).get("/v1/events").query({ cursor: "%%%" }).expect(400)
   })
+
+  it.each(["disabled", "expired", "missing"])(
+    "denies %s member account reads and writes while anonymous discovery remains public",
+    async (state) => {
+      const eventId = await insertEvent({ title: "Protected account action" })
+      if (state === "missing")
+        await db.query("DELETE FROM public.user_access WHERE user_id=$1", [USER_READER])
+      else
+        await db.query(
+          "UPDATE public.user_access SET is_enabled=$2,access_expires_at=CASE WHEN $2 THEN '2026-01-01'::timestamptz ELSE NULL END WHERE user_id=$1",
+          [USER_READER, state === "expired"]
+        )
+      const server = request(app.getHttpServer())
+      expect(
+        (await server.get("/v1/me/favorites").set("Authorization", "Bearer mapped-token")).status
+      ).toBe(403)
+      expect(
+        (
+          await server
+            .put(`/v1/events/${eventId}/favorite`)
+            .set("Authorization", "Bearer mapped-token")
+            .send({ on: true })
+        ).status
+      ).toBe(403)
+      expect(
+        (await server.get(`/v1/events/${eventId}`).set("Authorization", "Bearer mapped-token"))
+          .status
+      ).toBe(403)
+      expect(
+        (
+          await server
+            .post("/v1/correction-report-capability")
+            .set("Authorization", "Bearer mapped-token")
+        ).status
+      ).toBe(403)
+      expect(
+        (
+          await server
+            .post(`/v1/events/${eventId}/correction-reports`)
+            .set("Authorization", "Bearer mapped-token")
+            .send({ category: "wrong_location", details: "A correction" })
+        ).status
+      ).toBe(403)
+      expect((await server.get(`/v1/events/${eventId}`)).status).toBe(200)
+      expect(
+        await db.query("SELECT event_id FROM public.favorites WHERE user_id=$1", [USER_READER])
+      ).toEqual([])
+    }
+  )
 
   it("requires a provisioned Clerk identity for favorite and calendar page reads", async () => {
     for (const path of ["/v1/me/favorites", "/v1/me/calendar"]) {
@@ -834,6 +908,37 @@ describe("consumer read HTTP API", () => {
       .delete(`/v1/comments/${posted.body.id}`)
       .set("Authorization", "Bearer mapped-token")
       .expect(200, { removed: true })
+  })
+
+  it("persists nullable submission end times and age bounds without changing moderation state", async () => {
+    for (const values of [
+      { endDatetime: null, ageMin: null, ageMax: null },
+      { endDatetime: "2026-08-19T16:00:00Z", ageMin: 0, ageMax: 8 },
+    ]) {
+      const response = await request(app.getHttpServer())
+        .post("/v1/events")
+        .set("Authorization", "Bearer mapped-token")
+        .send({
+          title: "Submission fields",
+          startDatetime: "2026-08-19T15:00:00Z",
+          cityId: CITY,
+          ...values,
+        })
+        .expect(201)
+      const [row] = await db.query(
+        "SELECT end_datetime::text, age_min, age_max, status::text, submitted_by::text FROM public.events WHERE id = $1",
+        [response.body.id]
+      )
+      expect(row).toMatchObject({
+        age_min: values.ageMin,
+        age_max: values.ageMax,
+        status: "draft",
+        submitted_by: USER_READER,
+      })
+      expect(
+        row?.end_datetime === null ? null : new Date(row?.end_datetime as string).toISOString()
+      ).toBe(values.endDatetime === null ? null : "2026-08-19T16:00:00.000Z")
+    }
   })
 
   it("inserts draft submissions and rejects the sixth in 24 hours", async () => {

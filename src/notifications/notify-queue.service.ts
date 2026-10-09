@@ -1,6 +1,8 @@
 import { Injectable, Logger, Optional, type OnModuleInit } from "@nestjs/common"
 
 import { JobsService } from "../jobs/jobs.service.js"
+import { CronGateService } from "../pipeline/cron-gate.service.js"
+import { internalGateLabel } from "../pipeline/scheduled-operations.js"
 import { FAMILIES } from "../pipeline/families.js"
 import { isFamilyEnabled } from "../pipeline/flags.js"
 import { NotificationQueueService } from "./notification-queue.service.js"
@@ -16,6 +18,7 @@ export class NotifyQueueService implements OnModuleInit {
   constructor(
     private readonly jobs: JobsService,
     private readonly notifications: NotificationQueueService,
+    private readonly gate: CronGateService,
     @Optional() private readonly env?: Record<string, string | undefined>
   ) {}
 
@@ -54,6 +57,14 @@ export class NotifyQueueService implements OnModuleInit {
       throw new Error("notify family disabled")
     }
     if (data.task !== "process") throw new Error("unknown notify task")
+    return this.gate.runInternal(
+      internalGateLabel("notify", "process-notification-queue"),
+      "cron-process-notification-queue",
+      async () => this.process()
+    )
+  }
+
+  private async process(): Promise<string> {
     const result = await this.notifications.processRun(new Date())
     const counts = result.channels
     const message =
@@ -68,5 +79,7 @@ export class NotifyQueueService implements OnModuleInit {
       `push_unmatched=${counts.push.unmatchedRecipients}`
     if (result.ok) this.logger.log(message)
     else this.logger.error(message)
+    if (!result.ok) throw new Error("notification processing failed")
+    return message
   }
 }

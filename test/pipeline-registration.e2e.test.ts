@@ -1,4 +1,6 @@
 import type { INestApplication } from "@nestjs/common"
+import { ConfigService } from "@nestjs/config"
+import { validateEnv } from "../src/config/env.js"
 import { Test } from "@nestjs/testing"
 import { afterEach, describe, expect, it } from "vitest"
 
@@ -47,6 +49,7 @@ const originalEnv = {
   CUTOVER_DIGEST: process.env.CUTOVER_DIGEST,
   CUTOVER_REMINDERS: process.env.CUTOVER_REMINDERS,
   CUTOVER_NOTIFY: process.env.CUTOVER_NOTIFY,
+  CUTOVER_MAINTENANCE: process.env.CUTOVER_MAINTENANCE,
 }
 
 function restoreEnv(name: keyof typeof originalEnv): void {
@@ -61,6 +64,7 @@ async function boot(flags: {
   digest?: string
   reminders?: string
   notify?: string
+  maintenance?: string
 }): Promise<{
   app: INestApplication
   jobs: FakeJobs
@@ -77,9 +81,13 @@ async function boot(flags: {
   else process.env.CUTOVER_REMINDERS = flags.reminders
   if (flags.notify === undefined) delete process.env.CUTOVER_NOTIFY
   else process.env.CUTOVER_NOTIFY = flags.notify
+  if (flags.maintenance === undefined) delete process.env.CUTOVER_MAINTENANCE
+  else process.env.CUTOVER_MAINTENANCE = flags.maintenance
 
   const jobs = new FakeJobs()
   const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
+    .overrideProvider(ConfigService)
+    .useValue(new ConfigService(validateEnv(process.env)))
     .overrideProvider(JobsService)
     .useValue(jobs)
     .compile()
@@ -96,6 +104,7 @@ afterEach(() => {
   restoreEnv("CUTOVER_DIGEST")
   restoreEnv("CUTOVER_REMINDERS")
   restoreEnv("CUTOVER_NOTIFY")
+  restoreEnv("CUTOVER_MAINTENANCE")
 })
 
 describe.sequential("pipeline family bootstrap", () => {
@@ -103,8 +112,10 @@ describe.sequential("pipeline family bootstrap", () => {
     const { app, jobs } = await boot({})
     try {
       expect(jobs.registered).toEqual([])
-      expect(jobs.scheduleRemovals).toEqual([
+      expect(jobs.scheduleRemovals.toSorted((a, b) => a.queue.localeCompare(b.queue))).toEqual([
+        { queue: "maintenance", key: "daily-maintenance" },
         { queue: "notify", key: "process-notification-queue" },
+        { queue: "transactional-email", key: "transactional-email-outbox" },
       ])
     } finally {
       await app.close()
@@ -151,12 +162,19 @@ describe.sequential("pipeline family bootstrap", () => {
     }
   })
 
-  it("installs only the serial no-retry notify queue and internal schedule after its flag flips", async () => {
+  it("installs serial notification and transactional delivery queues only after notify ownership flips", async () => {
     const { app, jobs } = await boot({ notify: "true" })
     try {
       expect(jobs.registered.map((queue) => queue.name).toSorted()).toEqual([
         "notify",
         "notify.dlq",
+        "transactional-email",
+      ])
+      const transactional = jobs.registered.find((queue) => queue.name === "transactional-email")
+      expect(transactional?.options).toMatchObject({ retryLimit: 0 })
+      expect(transactional?.localConcurrency).toBe(1)
+      expect(transactional?.schedules).toEqual([
+        { cron: "* * * * *", data: { task: "process" }, key: "transactional-email-outbox" },
       ])
       const notify = jobs.registered.find((queue) => queue.name === "notify")
       expect(notify?.options).toMatchObject({
@@ -171,7 +189,28 @@ describe.sequential("pipeline family bootstrap", () => {
           key: "process-notification-queue",
         },
       ])
-      expect(jobs.scheduleRemovals).toEqual([])
+      expect(jobs.scheduleRemovals).toEqual([{ queue: "maintenance", key: "daily-maintenance" }])
+    } finally {
+      await app.close()
+    }
+  })
+  it("installs only the dedicated maintenance family after its explicit production flag", async () => {
+    const { app, jobs } = await boot({ maintenance: "true" })
+    try {
+      expect(jobs.registered.map((queue) => queue.name).toSorted()).toEqual([
+        "maintenance",
+        "maintenance.dlq",
+      ])
+      expect(jobs.registered.find((queue) => queue.name === "maintenance")).toMatchObject({
+        localConcurrency: 1,
+        schedules: [
+          { cron: "15 3 * * *", data: { task: "daily-maintenance" }, key: "daily-maintenance" },
+        ],
+      })
+      expect(jobs.scheduleRemovals.toSorted((a, b) => a.queue.localeCompare(b.queue))).toEqual([
+        { queue: "notify", key: "process-notification-queue" },
+        { queue: "transactional-email", key: "transactional-email-outbox" },
+      ])
     } finally {
       await app.close()
     }

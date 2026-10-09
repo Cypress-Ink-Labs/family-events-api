@@ -110,11 +110,51 @@ WHERE status = $2::text
 ORDER BY start_datetime ASC, id ASC
 `
 
+function extraDiscoveryPredicate(
+  start: number,
+  end: number,
+  tags: number,
+  lat: number,
+  lng: number,
+  radius: number
+): string {
+  return `
+    AND ($${start}::date IS NULL OR d.event_day >= $${start}::date)
+    AND ($${end}::date IS NULL OR d.event_day <= $${end}::date)
+    AND (cardinality($${tags}::text[]) = 0 OR (
+      SELECT count(DISTINCT t.slug) FROM public.event_tags et JOIN public.tags t ON t.id = et.tag_id
+      WHERE et.event_id = e.id AND t.slug = ANY($${tags}::text[])
+    ) = cardinality($${tags}::text[]))
+    AND ($${radius}::float8 IS NULL OR (
+      e.latitude BETWEEN -90 AND 90 AND e.longitude BETWEEN -180 AND 180
+      AND extensions.earth_distance(
+        extensions.ll_to_earth($${lat}::float8, $${lng}::float8),
+        extensions.ll_to_earth(e.latitude::float8, e.longitude::float8)
+      ) <= $${radius}::float8 * 1000
+    ))`
+}
+
+function discoveryOrder(alias: string, sort: number): string {
+  return `
+    CASE WHEN $${sort}::text = 'price-asc' THEN ${alias}.price END ASC NULLS LAST,
+    CASE WHEN $${sort}::text = 'rating-desc' THEN ${alias}.sort_rating END DESC,
+    CASE WHEN $${sort}::text = 'rating-desc' THEN ${alias}.sort_rating_count END DESC,
+    CASE WHEN $${sort}::text = 'latest' THEN ${alias}.start_datetime END DESC,
+    CASE WHEN $${sort}::text <> 'latest' THEN ${alias}.start_datetime END ASC,
+    CASE WHEN $${sort}::text = 'latest' THEN ${alias}.id END DESC,
+    CASE WHEN $${sort}::text <> 'latest' THEN ${alias}.id END ASC`
+}
+const discoveryRatings = `LEFT JOIN LATERAL (
+  SELECT COALESCE(round(avg(score)::numeric, 1), 0)::numeric AS sort_rating, count(*)::int AS sort_rating_count
+  FROM public.ratings WHERE event_id = e.id
+) ratings ON true`
+
 const DISCOVERY_SQL = `
 WITH candidates AS (
-  SELECT e.id, e.start_datetime, ${ageProjectionSql(6, 7)}, ${familyNeedsProjectionSql("e")}
+  SELECT e.id, e.start_datetime, e.price, ratings.sort_rating, ratings.sort_rating_count, ${ageProjectionSql(6, 7)}, ${familyNeedsProjectionSql("e")}
   FROM public.events e
   LEFT JOIN public.cities c ON c.id = e.city_id
+  ${discoveryRatings}
   CROSS JOIN LATERAL (
     SELECT COALESCE(NULLIF(e.timezone, ''), c.timezone, 'America/Chicago') AS zone
   ) z
@@ -134,11 +174,14 @@ WITH candidates AS (
       OR (
         $1::text IS NOT NULL
         AND (
-          (e.end_datetime IS NOT NULL AND e.end_datetime > $2::timestamptz)
+          $1::text = 'past' OR (e.end_datetime IS NOT NULL AND e.end_datetime > $2::timestamptz)
           OR (e.end_datetime IS NULL AND e.start_datetime >= $2::timestamptz)
         )
         AND (
           $1::text = 'upcoming'
+          OR ($1::text = 'past' AND d.event_day < d.local_today)
+          OR ($1::text = 'week' AND d.event_day >= d.local_today AND d.event_day < d.local_today + 7)
+          OR ($1::text = 'month' AND d.event_day >= d.local_today AND d.event_day < (d.local_today + interval '1 month')::date)
           OR ($1::text = 'today' AND d.event_day = d.local_today)
           OR (
             $1::text = 'weekend'
@@ -163,14 +206,19 @@ WITH candidates AS (
       $5::text IS NULL OR $5::text = 'any'
       OR e.admission_cost_state::text = $5::text
     )
+    ${extraDiscoveryPredicate(18, 19, 20, 21, 22, 23)}
     AND ($15::boolean IS NULL OR e.is_free = $15::boolean)
+    AND (NOT $28::boolean OR (e.end_datetime IS NOT NULL AND e.end_datetime > $2::timestamptz) OR (e.end_datetime IS NULL AND e.start_datetime >= $2::timestamptz))
     AND ${agePredicateSql(6, 7, 8)}
     AND ${familyNeedsPredicateSql("e", { familyNeeds: 16, includeUnknown: 17 })}
     AND (
       $11::timestamptz IS NULL
-      OR (e.start_datetime, e.id) > ($11::timestamptz, $12::uuid)
+      OR ($24::text = 'soonest' AND (e.start_datetime, e.id) > ($11::timestamptz, $12::uuid))
+      OR ($24::text = 'latest' AND (e.start_datetime, e.id) < ($11::timestamptz, $12::uuid))
+      OR ($24::text = 'price-asc' AND (COALESCE(e.price,'Infinity'::numeric),e.start_datetime,e.id) > (COALESCE($25::numeric,'Infinity'::numeric),$11::timestamptz,$12::uuid))
+      OR ($24::text = 'rating-desc' AND (-ratings.sort_rating,-ratings.sort_rating_count,e.start_datetime,e.id) > (-$26::numeric,-$27::int,$11::timestamptz,$12::uuid))
     )
-  ORDER BY e.start_datetime ASC, e.id ASC
+  ORDER BY ${discoveryOrder("e", 24).replaceAll("e.sort_rating", "ratings.sort_rating")}
   LIMIT LEAST(GREATEST($13::int, 1), 500)
 )
 SELECT
@@ -188,17 +236,18 @@ JOIN public.events_enriched(
   p_user_id => $14::uuid,
   p_event_ids => ARRAY(SELECT id FROM candidates)::uuid[]
 ) ee ON ee.id = candidate.id
-ORDER BY candidate.start_datetime ASC, candidate.id ASC
+ORDER BY ${discoveryOrder("candidate", 24)}
 `
 
 const MAP_SQL = `
 WITH matching AS MATERIALIZED (
 SELECT
   e.id, e.title, e.latitude, e.longitude, e.start_datetime, e.timezone,
-  e.venue_name, e.is_free, e.admission_cost_state, e.admission_amount,
+  e.venue_name, e.is_free, e.admission_cost_state, e.admission_amount, e.price, ratings.sort_rating, ratings.sort_rating_count,
   ${ageProjectionSql(4, 5)}, ${familyNeedsProjectionSql("e")}
 FROM public.events e
 LEFT JOIN public.cities c ON c.id = e.city_id
+${discoveryRatings}
 CROSS JOIN LATERAL (
   SELECT COALESCE(NULLIF(e.timezone, ''), c.timezone, 'America/Chicago') AS zone
 ) z
@@ -209,12 +258,15 @@ CROSS JOIN LATERAL (
 ) d
 WHERE e.status = 'published'::public.event_status
   AND ($1::uuid IS NULL OR e.city_id = $1::uuid)
-  AND (
+  AND ($2::text IS NULL OR $2::text = 'past' OR (
     (e.end_datetime IS NOT NULL AND e.end_datetime > $3::timestamptz)
     OR (e.end_datetime IS NULL AND e.start_datetime >= $3::timestamptz)
-  )
+  ))
   AND (
-    $2::text = 'upcoming'
+    $2::text IS NULL OR $2::text = 'upcoming'
+    OR ($2::text = 'past' AND d.event_day < d.local_today)
+    OR ($2::text = 'week' AND d.event_day >= d.local_today AND d.event_day < d.local_today + 7)
+    OR ($2::text = 'month' AND d.event_day >= d.local_today AND d.event_day < (d.local_today + interval '1 month')::date)
     OR ($2::text = 'today' AND d.event_day = d.local_today)
     OR (
       $2::text = 'weekend'
@@ -229,6 +281,10 @@ WHERE e.status = 'published'::public.event_status
         END
     )
   )
+  ${extraDiscoveryPredicate(10, 11, 12, 13, 14, 15)}
+  AND ($16::text IS NULL OR e.search_vector @@ websearch_to_tsquery('english', $16::text))
+  AND ($17::timestamptz IS NULL OR e.start_datetime >= $17::timestamptz)
+  AND ($18::timestamptz IS NULL OR e.start_datetime <= $18::timestamptz)
   AND ${agePredicateSql(4, 5, 6)}
   AND ${familyNeedsPredicateSql("e", { familyNeeds: 8, includeUnknown: 9 })}
   AND (
@@ -250,13 +306,13 @@ limited AS (
   WHERE latitude IS NOT NULL AND longitude IS NOT NULL
     AND latitude BETWEEN -90 AND 90
     AND longitude BETWEEN -180 AND 180
-  ORDER BY start_datetime ASC, id ASC
+  ORDER BY ${discoveryOrder("matching", 19)}
   LIMIT 200
 )
 SELECT limited.*, coordinate_counts.omitted_without_coordinates
 FROM coordinate_counts
 LEFT JOIN limited ON true
-ORDER BY limited.start_datetime ASC, limited.id ASC
+ORDER BY ${discoveryOrder("limited", 19)}
 `
 
 const SEARCH_SQL = `
@@ -333,6 +389,17 @@ export class EventsRepository {
       input.isFree ?? null,
       input.familyNeeds ?? [],
       input.includeUnknownFamilyNeeds ?? false,
+      input.dateStart ?? null,
+      input.dateEnd ?? null,
+      input.tagSlugs ?? [],
+      input.lat ?? null,
+      input.lng ?? null,
+      input.radiusKm ?? null,
+      input.sort ?? "soonest",
+      input.after?.price ?? null,
+      input.after?.rating ?? null,
+      input.after?.ratingCount ?? null,
+      input.hidePast ?? false,
     ])
   }
 
@@ -349,6 +416,16 @@ export class EventsRepository {
         input.cost ?? "any",
         input.familyNeeds ?? [],
         input.includeUnknownFamilyNeeds ?? false,
+        input.dateStart ?? null,
+        input.dateEnd ?? null,
+        input.tagSlugs ?? [],
+        input.lat ?? null,
+        input.lng ?? null,
+        input.radiusKm ?? null,
+        input.keyword ?? null,
+        input.dateFrom ?? null,
+        input.dateTo ?? null,
+        input.sort ?? "soonest",
       ]
     )
     return {

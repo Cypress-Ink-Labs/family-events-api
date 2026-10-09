@@ -1,7 +1,8 @@
 import { ForbiddenException, Injectable, NotFoundException } from "@nestjs/common"
 import { z } from "zod"
 
-import { FAMILIES, JOB_FAMILIES } from "../pipeline/families.js"
+import { isFamilyEnabled } from "../pipeline/flags.js"
+import { scheduledOperations } from "../pipeline/scheduled-operations.js"
 import { isDatabaseAdminDenial } from "./admin-database.js"
 import { CRON_LABELS } from "./admin-cron.input.js"
 import { AdminCronRepository } from "./admin-cron.repository.js"
@@ -61,30 +62,44 @@ export class AdminCronService {
       .parse(await this.safe(() => this.repository.gatesAndLatest(actor, CRON_LABELS)))
     const byLabel = new Map(rows.map((row) => [row.label, row]))
     return {
-      items: JOB_FAMILIES.flatMap((family) =>
-        FAMILIES[family].schedules.map((schedule) => {
-          const row = schedule.replaces === null ? undefined : byLabel.get(schedule.replaces)
-          return {
-            family,
-            queue: FAMILIES[family].queue,
-            task: schedule.task,
-            cron: schedule.cron,
-            replaces: schedule.replaces,
-            legacy_enabled: schedule.replaces === null ? null : (row?.legacy_enabled ?? true),
-            nest_enabled: schedule.replaces === null ? null : (row?.nest_enabled ?? true),
-            latest_run: row?.id
-              ? {
-                  id: row.id,
-                  label: schedule.replaces,
-                  status: row.status,
-                  ran_at: row.ran_at,
-                  duration_s: row.duration_s,
-                  http_status: row.http_status,
-                }
-              : null,
-          }
-        })
-      ),
+      items: scheduledOperations().map((operation) => {
+        const row = byLabel.get(operation.label)
+        const legacy = operation.replaces === null ? null : (row?.legacy_enabled ?? true)
+        const nest = row?.nest_enabled ?? true
+        const cutover = isFamilyEnabled(operation.family, process.env)
+        return {
+          family: operation.family,
+          queue: operation.queue,
+          task: operation.task,
+          key: operation.key,
+          label: operation.label,
+          cron: operation.cron,
+          timezone: "UTC" as const,
+          replaces: operation.replaces,
+          legacy_enabled: legacy,
+          nest_enabled: operation.replaces === null ? null : nest,
+          cutover_enabled: cutover,
+          effective_enabled: cutover && legacy !== true && nest,
+          owner:
+            legacy === true
+              ? ("legacy" as const)
+              : !nest
+                ? ("paused" as const)
+                : legacy === null
+                  ? ("internal" as const)
+                  : ("api" as const),
+          latest_run: row?.id
+            ? {
+                id: row.id,
+                label: operation.label,
+                status: row.status,
+                ran_at: row.ran_at,
+                duration_s: row.duration_s,
+                http_status: row.http_status,
+              }
+            : null,
+        }
+      }),
     }
   }
   async runs(actor: string, label: string | undefined, limit: number) {

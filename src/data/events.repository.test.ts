@@ -79,6 +79,16 @@ describe("EventsRepository.listMapEvents", () => {
       "any",
       [],
       false,
+      null,
+      null,
+      [],
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      "soonest",
     ])
   })
 
@@ -108,6 +118,16 @@ describe("EventsRepository.listMapEvents", () => {
       "any",
       [],
       false,
+      null,
+      null,
+      [],
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      "soonest",
     ])
   })
 
@@ -177,6 +197,17 @@ describe("EventsRepository.discoverEvents", () => {
       null,
       null,
       [],
+      false,
+      null,
+      null,
+      [],
+      null,
+      null,
+      null,
+      "soonest",
+      null,
+      null,
+      null,
       false,
     ])
   })

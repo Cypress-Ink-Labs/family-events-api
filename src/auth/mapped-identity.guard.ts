@@ -12,11 +12,6 @@ export interface IdentifiedRequest extends AuthenticatedRequest {
   identity: MappedIdentity
 }
 
-/**
- * Runs after ClerkAuthGuard. A verified but unprovisioned Clerk user is
- * forbidden: pre-cutover, only users written to clerk_user_mapping by the
- * U19 provisioning script have any data rows to act on.
- */
 @Injectable()
 export class MappedIdentityGuard implements CanActivate {
   constructor(private readonly identity: IdentityService) {}
@@ -26,6 +21,9 @@ export class MappedIdentityGuard implements CanActivate {
     const mapped = await this.identity.resolve(request.user.clerkUserId)
     if (mapped === null) {
       throw new ForbiddenException("user is not provisioned")
+    }
+    if (!(await this.identity.hasEnabledAccess(mapped.supabaseUuid))) {
+      throw new ForbiddenException("account access is not enabled")
     }
     request.identity = mapped
     return true

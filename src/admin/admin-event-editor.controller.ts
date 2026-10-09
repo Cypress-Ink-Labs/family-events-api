@@ -43,6 +43,8 @@ function toDto(detail: AdminEventEditorDetail): AdminEventEditorDetailDto {
     event: detail.event,
     tags: detail.tags,
     available_tags: detail.availableTags,
+    cities: detail.cities,
+    sources: detail.sources,
   }
 }
 

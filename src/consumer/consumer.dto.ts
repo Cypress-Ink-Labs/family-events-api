@@ -222,6 +222,9 @@ export class SimilarEventDto implements SimilarEvent {
 }
 
 export class EventCommentDto implements PublicEventComment {
+  @ApiProperty({ description: "Whether the verified caller owns this comment" })
+  can_delete!: boolean
+
   @ApiProperty({ format: "uuid" })
   id!: string
 
@@ -312,6 +315,9 @@ export enum DiscoveryRangeDto {
   Today = "today",
   Weekend = "weekend",
   Upcoming = "upcoming",
+  Week = "week",
+  Month = "month",
+  Past = "past",
 }
 
 export enum AdmissionCostFilterDto {
@@ -321,7 +327,64 @@ export enum AdmissionCostFilterDto {
   Unknown = "unknown",
 }
 
-export class MapQueryDto {
+class DiscoveryControlsDto {
+  @ApiPropertyOptional({
+    type: String,
+    format: "date",
+    description:
+      "Inclusive event-local first calendar date; cannot be combined with range or timestamp bounds",
+  })
+  date_start?: string
+
+  @ApiPropertyOptional({
+    type: String,
+    format: "date",
+    description: "Inclusive event-local last calendar date",
+  })
+  date_end?: string
+
+  @ApiPropertyOptional({
+    description: "Comma-separated unique tag slugs, all required (maximum 20)",
+    maxLength: 1000,
+  })
+  tags?: string
+
+  @ApiPropertyOptional({
+    type: Number,
+    minimum: -90,
+    maximum: 90,
+    description: "Location latitude; requires longitude and radius",
+  })
+  lat?: number
+
+  @ApiPropertyOptional({ type: Number, minimum: -180, maximum: 180 })
+  lng?: number
+
+  @ApiPropertyOptional({
+    type: Number,
+    minimum: 0,
+    maximum: 50,
+    description: "Positive radius in kilometres; requires latitude and longitude",
+  })
+  radius_km?: number
+
+  @ApiPropertyOptional({
+    enum: ["soonest", "latest", "price-asc", "rating-desc"],
+    default: "soonest",
+  })
+  sort?: string
+}
+
+export class MapQueryDto extends DiscoveryControlsDto {
+  @ApiPropertyOptional({ maxLength: 100 })
+  keyword?: string
+
+  @ApiPropertyOptional({ format: "date-time" })
+  date_from?: string
+
+  @ApiPropertyOptional({ format: "date-time" })
+  date_to?: string
+
   @ApiPropertyOptional({ format: "uuid" })
   city_id?: string
 
@@ -443,7 +506,12 @@ export class PlanQueryDto {
   kid_age?: number
 }
 
-export class EventsQueryDto {
+export class EventsQueryDto extends DiscoveryControlsDto {
+  @ApiPropertyOptional({
+    description: "Hide finished events inside an explicit calendar date span",
+    default: false,
+  })
+  hide_past?: boolean
   @ApiPropertyOptional({ format: "uuid" })
   city_id?: string
 

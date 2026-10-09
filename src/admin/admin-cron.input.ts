@@ -1,13 +1,9 @@
 import { BadRequestException, HttpStatus } from "@nestjs/common"
 import { z } from "zod"
 
-import { FAMILIES, JOB_FAMILIES } from "../pipeline/families.js"
+import { scheduledOperations } from "../pipeline/scheduled-operations.js"
 
-export const CRON_LABELS = JOB_FAMILIES.flatMap((family) =>
-  FAMILIES[family].schedules.flatMap((schedule) =>
-    schedule.replaces === null ? [] : [schedule.replaces]
-  )
-)
+export const CRON_LABELS = scheduledOperations().map((operation) => operation.label)
 
 const BIGINT_MAX = 9_223_372_036_854_775_807n
 const label = z.string().refine((value) => CRON_LABELS.includes(value), "unknown cron label")
@@ -29,7 +25,11 @@ const runsQuery = z.strictObject({ label: label.optional(), limit: limit.optiona
 function parse<T>(
   schema: z.ZodType<T>,
   input: unknown,
-  message: "invalid query parameters" | "invalid cron run id"
+  message:
+    | "invalid query parameters"
+    | "invalid cron run id"
+    | "invalid request body"
+    | "invalid cron label"
 ): T {
   const result = schema.safeParse(input)
   if (!result.success) {
@@ -61,4 +61,18 @@ export function parseCronRunsQuery(query: unknown): { label?: string; limit: num
 
 export function parseCronRunId(raw: unknown): string {
   return parse(runId, raw, "invalid cron run id")
+}
+
+export function parseCronLabel(raw: unknown): string {
+  return parse(label, raw, "invalid cron label")
+}
+export function parseCronOwner(body: unknown) {
+  return parse(
+    z.strictObject({ owner: z.enum(["api", "legacy", "paused"]) }),
+    body,
+    "invalid request body"
+  ).owner
+}
+export function parseCronRunBody(body: unknown): void {
+  parse(emptyQuery, body, "invalid request body")
 }

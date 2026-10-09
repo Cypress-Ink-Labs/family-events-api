@@ -62,6 +62,8 @@ describe("AdminEventEditorRepository", () => {
       event: { id: EVENT },
       tags: [{ id: TAG }],
       availableTags: [{ id: TAG }],
+      cities: [],
+      sources: [],
     })
     expect(withTransaction).toHaveBeenCalledTimes(1)
     expect(query.mock.calls[0]).toEqual([

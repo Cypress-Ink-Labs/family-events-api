@@ -1,5 +1,6 @@
 import { verifyToken } from "@clerk/backend"
 import {
+  ForbiddenException,
   Injectable,
   Logger,
   UnauthorizedException,
@@ -34,7 +35,7 @@ export class OptionalClerkAuthGuard implements CanActivate {
     }
 
     const secretKey = this.config.get("CLERK_SECRET_KEY", { infer: true })
-    if (secretKey === undefined) {
+    if (!secretKey?.trim()) {
       this.logger.warn("CLERK_SECRET_KEY not configured; rejecting authenticated request")
       throw new UnauthorizedException("authentication not configured")
     }
@@ -48,7 +49,12 @@ export class OptionalClerkAuthGuard implements CanActivate {
     }
 
     const mapped = await this.identity.resolve(clerkUserId)
-    if (mapped !== null) request.identity = mapped
+    if (mapped !== null) {
+      if (!(await this.identity.hasEnabledAccess(mapped.supabaseUuid))) {
+        throw new ForbiddenException("account access is not enabled")
+      }
+      request.identity = mapped
+    }
     return true
   }
 }

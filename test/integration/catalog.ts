@@ -45,7 +45,7 @@ export async function ensureCatalogSchema(db: DbService): Promise<void> {
   `)
   await db.query(`
     DROP TABLE IF EXISTS
-      public.comments, public.user_preferred_cities, public.user_profiles,
+      public.user_access, public.comments, public.user_preferred_cities, public.user_profiles,
       public.event_image_attributions, public.user_calendar_events, public.favorites,
       public.ratings, public.event_tags, public.tags, public.events, public.cities
     CASCADE
@@ -76,7 +76,7 @@ export async function ensureCatalogSchema(db: DbService): Promise<void> {
   )
   await db.query(`
     CREATE TABLE public.cities (
-      id uuid PRIMARY KEY,
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
       name text NOT NULL,
       state text,
       slug text NOT NULL UNIQUE,
@@ -305,6 +305,12 @@ export async function ensureCatalogSchema(db: DbService): Promise<void> {
     )
   `)
   await db.query(`
+    CREATE TABLE public.user_access (
+      user_id uuid PRIMARY KEY REFERENCES public.user_profiles(id) ON DELETE CASCADE,
+      is_enabled boolean NOT NULL DEFAULT false, access_expires_at timestamptz,
+      enabled_at timestamptz, disabled_at timestamptz, disabled_reason text,
+      created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now()
+    );
     CREATE TABLE public.comments (
       id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
       user_id uuid NOT NULL REFERENCES public.user_profiles (id) ON DELETE CASCADE,

@@ -6,6 +6,7 @@ import {
   NotFoundException,
 } from "@nestjs/common"
 
+import type { SourceRunsQuery, SourceQueuesQuery } from "./admin-source-diagnostics.input.js"
 import { JobsService } from "../jobs/jobs.service.js"
 import { isFamilyEnabled } from "../pipeline/flags.js"
 import { sendSourceQueueDrain } from "../pipeline/ingestion/scrape-queue.service.js"
@@ -77,8 +78,22 @@ export class AdminSourceService {
     }
   }
 
+  runs(actor: string, query: SourceRunsQuery) {
+    return this.call(() => this.repository.runs(actor, query))
+  }
+  runDetail(actor: string, id: string) {
+    return this.call(() => this.repository.runDetail(actor, id))
+  }
+  queues(actor: string, query: SourceQueuesQuery) {
+    return this.call(() => this.repository.queues(actor, query))
+  }
+
   list(actor: string): Promise<AdminSourceRow[]> {
     return this.call(() => this.repository.list(actor))
+  }
+
+  choices(actor: string): Promise<{ cities: Array<{ id: string; name: string }> }> {
+    return this.call(() => this.repository.choices(actor))
   }
 
   create(actor: string, input: AdminCreateSourceInput): Promise<AdminSourceRow> {

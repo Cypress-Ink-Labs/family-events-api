@@ -15,6 +15,7 @@ export const envSchema = z.object({
   PGBOSS_SCHEMA: z.string().default("pgboss"),
   /** Clerk secret key. Required outside tests; endpoints behind ClerkAuthGuard fail closed without it. */
   CLERK_SECRET_KEY: z.string().optional(),
+  CLERK_WEBHOOK_SIGNING_SECRET: optionalNonEmptyString,
   /** Per-job-family cutover flags. Semantics live in src/pipeline/flags.ts. */
   CUTOVER_SCRAPE: cutoverFlag,
   CUTOVER_TAG: cutoverFlag,
@@ -22,6 +23,7 @@ export const envSchema = z.object({
   CUTOVER_DIGEST: cutoverFlag,
   CUTOVER_REMINDERS: cutoverFlag,
   CUTOVER_NOTIFY: cutoverFlag,
+  CUTOVER_MAINTENANCE: cutoverFlag,
   /** Shared by user digest delivery and operator failure pings. Vault wins for digests. */
   TELEGRAM_BOT_TOKEN: z.string().optional(),
   /** Operator chat/channel for pipeline failure pings (U3). */
@@ -32,6 +34,10 @@ export const envSchema = z.object({
   RESEND_API_KEY: z.string().optional(),
   /** Verified sender identity; MailService applies the legacy sandbox default when unset. */
   RESEND_FROM: z.string().optional(),
+  ADMIN_NOTIFY_EMAIL: z.preprocess(
+    (value) => (value === "" ? undefined : value),
+    z.email().optional()
+  ),
   /** Public app URL used in notification links; notification services apply the legacy default. */
   APP_URL: z.string().optional(),
   /** Web Push VAPID credentials. PushService applies the legacy subject default when unset. */
