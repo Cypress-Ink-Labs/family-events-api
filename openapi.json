@@ -11571,6 +11571,68 @@
           "longitude"
         ]
       },
+      "PublicImageAttributionDto": {
+        "type": "object",
+        "properties": {
+          "provider": {
+            "type": "string"
+          },
+          "image_url": {
+            "type": "string"
+          },
+          "matched_tag": {
+            "type": "string",
+            "nullable": true
+          },
+          "photo_id": {
+            "type": "string",
+            "nullable": true
+          },
+          "photographer_name": {
+            "type": "string",
+            "nullable": true
+          },
+          "photographer_username": {
+            "type": "string",
+            "nullable": true
+          },
+          "photographer_profile_url": {
+            "type": "string",
+            "nullable": true
+          },
+          "photo_url": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "provider",
+          "image_url",
+          "matched_tag",
+          "photo_id",
+          "photographer_name",
+          "photographer_username",
+          "photographer_profile_url",
+          "photo_url"
+        ]
+      },
+      "ParentTipDto": {
+        "type": "object",
+        "properties": {
+          "category": {
+            "type": "string",
+            "minLength": 1
+          },
+          "text": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "category",
+          "text"
+        ]
+      },
       "EnrichedEventDto": {
         "type": "object",
         "properties": {
@@ -11692,6 +11754,29 @@
                 "type": "boolean"
               }
             ],
+            "nullable": true
+          },
+          "image_attributions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PublicImageAttributionDto"
+            }
+          },
+          "parent_tips": {
+            "nullable": true,
+            "description": "Generated planning suggestions, not organizer-confirmed event facts",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ParentTipDto"
+            }
+          },
+          "parent_tips_generated_at": {
+            "type": "string",
+            "nullable": true,
+            "description": "Raw PostgreSQL generation timestamp"
+          },
+          "is_outdoor": {
+            "type": "boolean",
             "nullable": true
           },
           "status": {
@@ -11860,6 +11945,10 @@
           "source_name",
           "source_details_fetched_at",
           "images",
+          "image_attributions",
+          "parent_tips",
+          "parent_tips_generated_at",
+          "is_outdoor",
           "status",
           "recurrence_info",
           "is_featured",
@@ -12922,6 +13011,29 @@
             ],
             "nullable": true
           },
+          "image_attributions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PublicImageAttributionDto"
+            }
+          },
+          "parent_tips": {
+            "nullable": true,
+            "description": "Generated planning suggestions, not organizer-confirmed event facts",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ParentTipDto"
+            }
+          },
+          "parent_tips_generated_at": {
+            "type": "string",
+            "nullable": true,
+            "description": "Raw PostgreSQL generation timestamp"
+          },
+          "is_outdoor": {
+            "type": "boolean",
+            "nullable": true
+          },
           "status": {
             "type": "string"
           },
@@ -13103,6 +13215,10 @@
           "source_name",
           "source_details_fetched_at",
           "images",
+          "image_attributions",
+          "parent_tips",
+          "parent_tips_generated_at",
+          "is_outdoor",
           "status",
           "recurrence_info",
           "is_featured",

@@ -194,6 +194,38 @@ describe("application bootstrap", () => {
     expect(document.info.title).toBe("family-events-api")
   })
 
+  it("documents typed public tips and nullable photo credit metadata", () => {
+    const document = buildOpenApiDocument(app)
+    const schemas = document.components!.schemas! as Record<string, ContractSchema>
+    const event = schemas.EnrichedEventDto!
+    expect(event.required).toEqual(
+      expect.arrayContaining([
+        "is_outdoor",
+        "parent_tips",
+        "parent_tips_generated_at",
+        "image_attributions",
+      ])
+    )
+    const tips = event.properties!.parent_tips!
+    const credits = event.properties!.image_attributions!
+    expect(matchesContract(null, tips, schemas)).toBe(true)
+    expect(matchesContract([{ category: "bring", text: "Bring water." }], tips, schemas)).toBe(true)
+    expect(matchesContract([{ category: "bring", text: 42 }], tips, schemas)).toBe(false)
+    expect(matchesContract([{ category: "", text: "Bring water." }], tips, schemas)).toBe(false)
+    const credit = {
+      provider: "pexels",
+      image_url: "https://images.pexels.com/photo-example",
+      matched_tag: null,
+      photo_id: null,
+      photographer_name: null,
+      photographer_username: null,
+      photographer_profile_url: null,
+      photo_url: null,
+    }
+    expect(matchesContract([credit], credits, schemas)).toBe(true)
+    expect(matchesContract([{ ...credit, photographer_name: 42 }], credits, schemas)).toBe(false)
+  })
+
   it("documents admin operations with Clerk security and stable errors", () => {
     const document = buildOpenApiDocument(app)
     const operations = [
