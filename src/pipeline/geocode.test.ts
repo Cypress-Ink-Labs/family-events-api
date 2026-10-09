@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { buildGeocodeQuery, geocodeViaNominatim } from "./geocode.js"
+import { buildGeocodeQuery, geocodeViaNominatim, type GeocodeRegion } from "./geocode.js"
 
 // Ported from family-events-backend supabase/functions/_shared/geocode.test.ts (U29).
 // The geocodeViaNominatim coverage below is new (CodeRabbit U29 review): it
@@ -163,12 +163,81 @@ describe("geocodeViaNominatim", () => {
   })
 
   /** Run one mocked lookup, advancing fake timers past the rate-limit queue. */
-  async function geocodeWithMock(payload: unknown): Promise<unknown> {
+  async function geocodeWithMock(payload: unknown, region?: GeocodeRegion): Promise<unknown> {
     stubNominatimResponse(payload)
-    const pending = geocodeViaNominatim("123 Fake St, Springfield")
+    const pending = geocodeViaNominatim("123 Fake St, Springfield", region)
     await vi.advanceTimersByTimeAsync(2_000)
     return pending
   }
+
+  it.each(["United States", "us,ca", "USA", "u1", "", "   ", null])(
+    "rejects malformed country %j before requesting the provider",
+    async (country) => {
+      expect(await geocodeWithMock([], { country, state: "LA" })).toBeNull()
+      expect(fetch).not.toHaveBeenCalled()
+    }
+  )
+
+  it.each([
+    ["California", { country_code: "us", "ISO3166-2-lvl4": "US-CA", state: "California" }],
+    ["Florida", { country_code: "us", "ISO3166-2-lvl4": "US-FL", state: "Florida" }],
+    ["another country", { country_code: "ca", "ISO3166-2-lvl4": "CA-LA", state: "Louisiana" }],
+    ["missing region metadata", undefined],
+    ["missing state", { country_code: "us" }],
+    ["missing country", { "ISO3166-2-lvl4": "US-LA", state: "Louisiana" }],
+  ])("rejects a scoped lookup hit from %s", async (_name, address) => {
+    expect(
+      await geocodeWithMock([{ lat: "37.9800582", lon: "-121.8199481", address }], {
+        country: "US",
+        state: "LA",
+      })
+    ).toBeNull()
+  })
+
+  it("accepts a nearby Louisiana town and requests region metadata", async () => {
+    expect(
+      await geocodeWithMock(
+        [
+          {
+            lat: "30.1446",
+            lon: "-91.9612",
+            address: {
+              country_code: "us",
+              "ISO3166-2-lvl4": "US-LA",
+              state: "Louisiana",
+              town: "Broussard",
+            },
+          },
+        ],
+        { country: " uS ", state: "LA" }
+      )
+    ).toEqual({ latitude: 30.1446, longitude: -91.9612, source: "nominatim" })
+    const url = new URL(vi.mocked(fetch).mock.calls[0]?.[0] as string)
+    expect(url.searchParams.get("addressdetails")).toBe("1")
+    expect(url.searchParams.get("countrycodes")).toBe("us")
+  })
+
+  it("matches a configured full state name case insensitively", async () => {
+    expect(
+      await geocodeWithMock(
+        [
+          {
+            lat: "30.2",
+            lon: "-92",
+            address: {
+              country_code: "us",
+              state: "Louisiana",
+            },
+          },
+        ],
+        { country: "us", state: " louisiana " }
+      )
+    ).toEqual({
+      latitude: 30.2,
+      longitude: -92,
+      source: "nominatim",
+    })
+  })
 
   it("maps a valid hit to a GeocodeResult", async () => {
     const result = await geocodeWithMock([{ lat: "30.2241", lon: "-92.0198" }])

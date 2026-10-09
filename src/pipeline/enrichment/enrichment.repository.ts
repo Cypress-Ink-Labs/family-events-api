@@ -45,7 +45,7 @@ const LIST_IMAGE_ENRICHMENT_IN_SCOPE_SQL = `
 // select (index.ts:127-133), cached per tick by the caller (Task 7's
 // withCityContextCache) — not this method.
 const GET_CITY_CONTEXT_SQL = `
-  SELECT name, state
+  SELECT name, state, country
   FROM public.cities
   WHERE id = $1::uuid
 `
@@ -201,10 +201,14 @@ export class EnrichmentRepository implements EnrichmentDb, EmbeddingsBackfillDb 
     return this.db.query<EnrichmentCandidate>(LIST_IMAGE_ENRICHMENT_IN_SCOPE_SQL, [limit])
   }
 
-  async getCityContext(cityId: string): Promise<{ name: string; state: string | null } | null> {
-    const rows = await this.db.query<{ name: string; state: string | null }>(GET_CITY_CONTEXT_SQL, [
-      cityId,
-    ])
+  async getCityContext(
+    cityId: string
+  ): Promise<{ name: string; state: string | null; country: string | null } | null> {
+    const rows = await this.db.query<{
+      name: string
+      state: string | null
+      country: string | null
+    }>(GET_CITY_CONTEXT_SQL, [cityId])
     return rows[0] ?? null
   }
 

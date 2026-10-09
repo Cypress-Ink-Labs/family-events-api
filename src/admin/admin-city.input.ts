@@ -19,7 +19,12 @@ const create = z.strictObject({
     .nullable()
     .optional()
     .transform((value) => value || null),
-  country: nonempty.default("US"),
+  country: z
+    .string()
+    .trim()
+    .toUpperCase()
+    .regex(/^[A-Z]{2}$/)
+    .default("US"),
   timezone,
 })
 const active = z.strictObject({ is_active: z.boolean() })

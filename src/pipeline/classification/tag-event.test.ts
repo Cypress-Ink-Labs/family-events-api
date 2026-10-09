@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 
+import { geocodeViaNominatim } from "../geocode.js"
 import type { MemoryContextDb } from "../memory-context.js"
 import {
   processTagEvent,
@@ -188,6 +189,62 @@ function eventRow(id: string, title: string, overrides: Partial<FakeEvent> = {})
 // ── processTagEvent ──────────────────────────────────────────────────────────
 
 describe("processTagEvent", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    vi.useRealTimers()
+  })
+
+  it("keeps the Baton Rouge centroid when a missing-coordinate lookup returns Florida", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] })
+    const fetchMock = vi.fn(
+      async () =>
+        ({
+          ok: true,
+          json: async () => [
+            {
+              lat: "27.5",
+              lon: "-82.5",
+              address: {
+                country_code: "us",
+                "ISO3166-2-lvl4": "US-FL",
+                state: "Florida",
+              },
+            },
+          ],
+        }) as Response
+    )
+    vi.stubGlobal("fetch", fetchMock)
+    const db = new FakeTagEventDb()
+    db.events.set(
+      "evt-1",
+      eventRow("evt-1", "Park meetup", {
+        venue_name: "Community Park",
+        latitude: null,
+        longitude: null,
+        city_id: "city-1",
+      })
+    )
+    db.cities.set("city-1", {
+      name: "Baton Rouge",
+      state: "LA",
+      country: "US",
+      latitude: 30.4515,
+      longitude: -91.1871,
+    })
+    const pending = processTagEvent(
+      { event_id: "evt-1", title: "Park meetup" },
+      buildDeps(db, {
+        classify: async () => classifyResult(),
+        geocode: geocodeViaNominatim,
+      })
+    )
+    await vi.advanceTimersByTimeAsync(2_000)
+    await pending
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(db.events.get("evt-1")?.latitude).toBe(30.4515)
+    expect(db.events.get("evt-1")?.longitude).toBe(-91.1871)
+  })
+
   it("rejects requests without a title", async () => {
     const db = new FakeTagEventDb()
     const deps = buildDeps(db)
@@ -224,6 +281,7 @@ describe("processTagEvent", () => {
     db.cities.set("city-1", {
       name: "Baton Rouge",
       state: "LA",
+      country: "US",
       latitude: 30.4515,
       longitude: -91.1871,
     })

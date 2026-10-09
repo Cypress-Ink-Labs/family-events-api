@@ -109,10 +109,14 @@ describe("listEventsNeedingEnrichment / listImageEnrichmentInScope", () => {
 })
 
 describe("getCityContext", () => {
-  it("returns name/state and null for a missing city", async () => {
+  it("returns name/state/country and null for a missing city", async () => {
     const cityId = await seedCity()
 
-    expect(await repo.getCityContext(cityId)).toEqual({ name: "Lafayette", state: "LA" })
+    expect(await repo.getCityContext(cityId)).toEqual({
+      name: "Lafayette",
+      state: "LA",
+      country: "US",
+    })
     expect(await repo.getCityContext(randomUUID())).toBeNull()
   })
 })

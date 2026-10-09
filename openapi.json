@@ -11101,7 +11101,10 @@
           },
           "country": {
             "type": "string",
-            "default": "US"
+            "default": "US",
+            "pattern": "^[A-Za-z]{2}$",
+            "minLength": 2,
+            "maxLength": 2
           },
           "slug": {
             "type": "string"

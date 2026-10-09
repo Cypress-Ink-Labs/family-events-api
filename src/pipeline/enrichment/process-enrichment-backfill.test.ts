@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { buildGeocodeQuery, type GeocodeResult } from "../geocode.js"
 import type { EnvReader } from "../llm-config.js"
@@ -63,7 +63,10 @@ class FakeEnrichmentDb implements EnrichmentDb {
   calls: CallRecord[] = []
   legacyRows: EnrichmentCandidate[] = []
   scopedRows: EnrichmentCandidate[] = []
-  cityContexts = new Map<string, { name: string; state: string | null } | null>()
+  cityContexts = new Map<
+    string,
+    { name: string; state: string | null; country: string | null } | null
+  >()
   nextAttributionId: string | null = "attribution-1"
   markEnrichmentAttemptError: Error | null = null
   pendingTrackingRows: Array<{
@@ -94,7 +97,9 @@ class FakeEnrichmentDb implements EnrichmentDb {
     return this.scopedRows.slice(0, limit)
   }
 
-  async getCityContext(cityId: string): Promise<{ name: string; state: string | null } | null> {
+  async getCityContext(
+    cityId: string
+  ): Promise<{ name: string; state: string | null; country: string | null } | null> {
     this.calls.push({ type: "getCityContext", cityId })
     return this.cityContexts.get(cityId) ?? null
   }
@@ -308,6 +313,168 @@ describe("claimEnrichmentBatch", () => {
   })
 })
 
+describe("enrichOne — region validation", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    vi.useRealTimers()
+  })
+
+  it("does not reuse an unscoped hit when a city's region is unavailable", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] })
+    const fetchMock = vi.fn(
+      async () =>
+        ({
+          ok: true,
+          json: async () => [
+            {
+              lat: "37.9800582",
+              lon: "-121.8199481",
+            },
+          ],
+        }) as Response
+    )
+    vi.stubGlobal("fetch", fetchMock)
+    const db = new FakeEnrichmentDb()
+    const caches = { geocodeCache: new Map<string, GeocodeResult | null>() }
+    const pending = (async () => {
+      const first = await enrichOne(
+        db,
+        candidate({
+          eventId: "unscoped",
+          needsCoords: true,
+          venueName: "Shared Venue",
+        }),
+        baseDeps(),
+        caches
+      )
+      const second = await enrichOne(
+        db,
+        candidate({
+          eventId: "scoped",
+          needsCoords: true,
+          venueName: "Shared Venue",
+          cityId: "unknown",
+        }),
+        baseDeps(),
+        caches
+      )
+      return { first, second }
+    })()
+    await vi.advanceTimersByTimeAsync(4_000)
+    const { first, second } = await pending
+    expect(first.coordsSet).toBe(true)
+    expect(second.coordsSet).toBe(false)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(db.calls).toContainEqual({ type: "markEnrichmentAttempt", eventId: "scoped" })
+  })
+
+  it("does not reuse a Louisiana result for the same query scoped to California", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] })
+    const fetchMock = vi.fn(
+      async (_url: string) =>
+        ({
+          ok: true,
+          json: async () => [
+            {
+              lat: "30.2",
+              lon: "-92",
+              address: {
+                country_code: "us",
+                "ISO3166-2-lvl4": "US-LA",
+                state: "Louisiana",
+              },
+            },
+          ],
+        }) as Response
+    )
+    vi.stubGlobal("fetch", fetchMock)
+    const db = new FakeEnrichmentDb()
+    db.cityContexts.set("la", { name: "Lafayette", state: "LA", country: "US" })
+    db.cityContexts.set("ca", { name: "Antioch", state: "CA", country: "US" })
+    const caches = { geocodeCache: new Map<string, GeocodeResult | null>() }
+    const pending = (async () => {
+      const first = await enrichOne(
+        db,
+        candidate({
+          eventId: "la-event",
+          needsCoords: true,
+          address: "Shared Venue, LA",
+          cityId: "la",
+        }),
+        baseDeps(),
+        caches
+      )
+      const second = await enrichOne(
+        db,
+        candidate({
+          eventId: "ca-event",
+          needsCoords: true,
+          address: "Shared Venue, LA",
+          cityId: "ca",
+        }),
+        baseDeps(),
+        caches
+      )
+      return { first, second }
+    })()
+    await vi.advanceTimersByTimeAsync(4_000)
+    const { first, second } = await pending
+    expect(first.coordsSet).toBe(true)
+    expect(second.coordsSet).toBe(false)
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+    expect(new URL(fetchMock.mock.calls[0]?.[0] as string).searchParams.get("q")).toBe(
+      new URL(fetchMock.mock.calls[1]?.[0] as string).searchParams.get("q")
+    )
+    expect(db.calls).toContainEqual({ type: "markEnrichmentAttempt", eventId: "ca-event" })
+  })
+
+  it("does not write a California venue-only fallback for a Baton Rouge event", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] })
+    const fetchMock = vi.fn(
+      async (url: string) =>
+        ({
+          ok: true,
+          json: async () =>
+            new URL(url).searchParams.get("q") === "Antioch Boulevard Park"
+              ? [
+                  {
+                    lat: "37.9800582",
+                    lon: "-121.8199481",
+                    address: {
+                      country_code: "us",
+                      "ISO3166-2-lvl4": "US-CA",
+                      state: "California",
+                    },
+                  },
+                ]
+              : [],
+        }) as Response
+    )
+    vi.stubGlobal("fetch", fetchMock)
+    const db = new FakeEnrichmentDb()
+    db.cityContexts.set("city-1", { name: "Baton Rouge", state: "LA", country: "US" })
+    const pending = enrichOne(
+      db,
+      candidate({
+        needsCoords: true,
+        venueName: "Antioch Boulevard Park",
+        cityId: "city-1",
+      }),
+      baseDeps()
+    )
+    await vi.advanceTimersByTimeAsync(4_000)
+    expect(await pending).toEqual({
+      coordsSet: false,
+      imagesSet: false,
+      provider: null,
+      attempted: true,
+    })
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(db.calls).toContainEqual({ type: "markEnrichmentAttempt", eventId: "event-1" })
+    expect(db.calls.some((call) => call.type === "updateEventEnrichment")).toBe(false)
+  })
+})
+
 describe("enrichOne — coords", () => {
   it("writes lat/lng via updateEventEnrichment on a geocode hit, with null images", async () => {
     const db = new FakeEnrichmentDb()
@@ -348,7 +515,7 @@ describe("enrichOne — coords", () => {
 
   it("tries tier1 -> tier2 (branch split on last comma) -> tier3 (venue only) in order, using getCityContext", async () => {
     const db = new FakeEnrichmentDb()
-    db.cityContexts.set("city-1", { name: "Lafayette", state: "LA" })
+    db.cityContexts.set("city-1", { name: "Lafayette", state: "LA", country: "US" })
     const geo: GeocodeResult = { latitude: 30.2, longitude: -92.0, source: "nominatim" }
     const queries: string[] = []
     const geocode = vi.fn(async (query: string) => {
@@ -583,7 +750,7 @@ describe("runEnrichmentTick — main-batch row errors", () => {
 describe("runEnrichmentTick — city-context cache", () => {
   it("calls getCityContext at most once per cityId per tick across multiple candidates", async () => {
     const db = new FakeEnrichmentDb()
-    db.cityContexts.set("city-1", { name: "Lafayette", state: "LA" })
+    db.cityContexts.set("city-1", { name: "Lafayette", state: "LA", country: "US" })
     db.legacyRows = [
       candidate({ eventId: "a", needsCoords: true, cityId: "city-1", address: "1 A St" }),
       candidate({ eventId: "b", needsCoords: true, cityId: "city-1", address: "2 B St" }),

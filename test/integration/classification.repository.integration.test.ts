@@ -445,7 +445,7 @@ describe("TagEventDb.upsertTagAssignments", () => {
 })
 
 describe("TagEventDb.getCityLocation", () => {
-  it("returns name/state/lat/lng for the event's city", async () => {
+  it("returns name/state/country/lat/lng for the event's city", async () => {
     const cityId = await seedCity({
       name: "Broussard",
       state: "LA",
@@ -458,6 +458,7 @@ describe("TagEventDb.getCityLocation", () => {
     expect(city).not.toBeNull()
     expect(city!.name).toBe("Broussard")
     expect(city!.state).toBe("LA")
+    expect(city!.country).toBe("US")
     expect(num(city!.latitude)).toBeCloseTo(30.1474, 5)
     expect(num(city!.longitude)).toBeCloseTo(-91.9551, 5)
   })

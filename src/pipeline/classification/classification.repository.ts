@@ -168,7 +168,7 @@ SET confidence = EXCLUDED.confidence,
 `
 
 const GET_CITY_LOCATION_SQL = `
-SELECT name, state, latitude::float8 AS latitude, longitude::float8 AS longitude
+SELECT name, state, country, latitude::float8 AS latitude, longitude::float8 AS longitude
 FROM public.cities
 WHERE id = $1::uuid
 `
