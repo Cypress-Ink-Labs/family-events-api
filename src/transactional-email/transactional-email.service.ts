@@ -54,7 +54,10 @@ export class TransactionalEmailService implements OnModuleInit {
     })
   }
   onModuleInit() {
-    if (!this.enabled()) return
+    if (!this.enabled()) {
+      this.jobs.registerScheduleRemoval(QUEUE, "transactional-email-outbox")
+      return
+    }
     this.jobs.registerQueue(
       QUEUE,
       (data, _id, signal) => this.handleJob(data, signal),

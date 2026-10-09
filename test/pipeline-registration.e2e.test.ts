@@ -112,9 +112,10 @@ describe.sequential("pipeline family bootstrap", () => {
     const { app, jobs } = await boot({})
     try {
       expect(jobs.registered).toEqual([])
-      expect(jobs.scheduleRemovals).toEqual([
+      expect(jobs.scheduleRemovals.toSorted((a, b) => a.queue.localeCompare(b.queue))).toEqual([
         { queue: "maintenance", key: "daily-maintenance" },
         { queue: "notify", key: "process-notification-queue" },
+        { queue: "transactional-email", key: "transactional-email-outbox" },
       ])
     } finally {
       await app.close()
@@ -206,8 +207,9 @@ describe.sequential("pipeline family bootstrap", () => {
           { cron: "15 3 * * *", data: { task: "daily-maintenance" }, key: "daily-maintenance" },
         ],
       })
-      expect(jobs.scheduleRemovals).toEqual([
+      expect(jobs.scheduleRemovals.toSorted((a, b) => a.queue.localeCompare(b.queue))).toEqual([
         { queue: "notify", key: "process-notification-queue" },
+        { queue: "transactional-email", key: "transactional-email-outbox" },
       ])
     } finally {
       await app.close()
