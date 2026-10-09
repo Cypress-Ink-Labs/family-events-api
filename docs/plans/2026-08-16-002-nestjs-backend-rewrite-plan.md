@@ -4,14 +4,13 @@
 event-change email/in-app/Web Push/FCM are merged. Only direct APNs is deferred
 within U30. U31 is covered in code by the legacy backend parity work (PR #59,
 migration #25): API-owned Clerk lifecycle, invitation onboarding and transactional
-email (invitation and community moderation/decision), coordinated account deletion,
-the remaining consumer and admin/operator endpoints, public exports, and daily
-maintenance. U32 and U33
-follow; production rollout, flags, credentials, and ownership transfer for the
-parity work remain separate, unverified prerequisites.
-Railway configuration is merged and empty `api` / `app` shadow services exist,
-but neither service is deployed because production database and Clerk variables
-have not been supplied.
+invitation email, coordinated account deletion, consumer and operator endpoints,
+public exports, and daily maintenance. Follow-up PR #60 implements community
+decision email and gated tag dispatch. Both services run in production, and the
+eleven published API migrations and callback signing configuration are installed.
+PR #60's two additional migrations are not applied. Hosted account acceptance,
+provider credentials, delivery-family ownership and maintenance handoff remain
+open. See the app's migration completion runbook for current release evidence.
 **Supersedes:** old U13–U18 of `2026-08-14-001` (production-readiness plan), per the mid-session
 redirect: *everything server-side moves to NestJS*.
 
@@ -255,12 +254,10 @@ replacement here (poll vs SSE); the old SPA's four Supabase channels are referen
   [Clerk lifecycle](../CLERK_LIFECYCLE.md).
 - **Invitations:** API-owned onboarding and transactional invitation email. See
   [invitation onboarding](../INVITATION_ONBOARDING.md).
-- **Community moderation email:** community decision email is also API-owned. A
-  community decision writes to an atomic transactional outbox, and the API mail worker
-  delivers it; legacy Edge functions are no longer called for community mail. Migration
-  `20261008008000` installs community email reservations and deletion cleanup, which
-  preserve deletion privacy, delivery retries, and operational pauses (delivery-pause
-  gating).
+- **Community moderation email (PR #60):** migration `20261008008000` replaces
+  legacy Edge dispatch with atomic transactional outbox reservations and deletion
+  cleanup. The compatible API worker preserves provider retries and operational
+  pauses. This migration is not applied in production, and delivery remains off.
   See [transactional invitation email](../TRANSACTIONAL_INVITATION_EMAIL.md).
 - **Account deletion:** coordinated deletion with replayable cleanup. See the
   [account deletion runbook](../account-deletion-runbook.md).
@@ -320,10 +317,10 @@ Controlled tasks and catch-up runs succeeded; the scrape drain and eligible
 review backlog completed without family DLQ work. Digest, reminders, and notify
 remain disabled pending delivery credentials and controlled-recipient smokes.
 
-**Tag dispatch ownership:** scrape-triggered tag kicks pass through canonical
-ownership gates and are routed either to an API job or to the retained legacy owner.
-Migration `20261008009000` (tag queue ownership) installs this, and retained SQL calls
-to the legacy tag executor are suppressed when the API owns tagging.
+**Tag dispatch ownership (PR #60):** the repository routes scrape-triggered tag
+kicks through canonical ownership gates to an API job or the retained legacy owner.
+Migration `20261008009000` separately guards retained SQL callers from waking the
+legacy executor under API ownership. It is not applied in production.
 
 **Daily maintenance (PR #59):** the API registers a `maintenance` queue running
 `public.run_daily_maintenance()` at `15 3 * * *` UTC, installed in production only when
