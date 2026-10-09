@@ -360,8 +360,12 @@ describe("admin source durable scrape queue", () => {
       service.scrape(actor, id),
       service.scrape(actor, id),
     ])
-    expect(first).toEqual({ queueId: "9007199254740993", deduped: false })
-    expect(second).toEqual({ queueId: "9007199254740993", deduped: true })
+    expect([first, second]).toEqual(
+      expect.arrayContaining([
+        { queueId: "9007199254740993", deduped: false },
+        { queueId: "9007199254740993", deduped: true },
+      ])
+    )
     expect(
       await db.query(
         "SELECT id::text, source_id, trigger_type, status FROM public.source_scrape_queue"
