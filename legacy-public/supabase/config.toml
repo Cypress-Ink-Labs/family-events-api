@@ -1,0 +1,17 @@
+project_id = "family-events-public-compatibility"
+
+[functions.events-api]
+verify_jwt = false
+entrypoint = "./functions/events-api/index.mjs"
+
+[functions.events-feed]
+verify_jwt = false
+entrypoint = "./functions/events-feed/index.mjs"
+
+[functions.share-og]
+verify_jwt = false
+entrypoint = "./functions/share-og/index.mjs"
+
+[functions.sitemap]
+verify_jwt = false
+entrypoint = "./functions/sitemap/index.mjs"

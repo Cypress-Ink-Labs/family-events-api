@@ -12,15 +12,16 @@
     "start:dashboard": "node dist/scripts/start-pgboss-dashboard.js",
     "typecheck": "tsc --noEmit",
     "lint": "oxlint .",
-    "format": "oxfmt --config oxfmt.json --write src scripts test",
-    "format:check": "oxfmt --config oxfmt.json --check src scripts test",
+    "format": "oxfmt --config oxfmt.json --write src scripts test legacy-public",
+    "format:check": "oxfmt --config oxfmt.json --check src scripts test legacy-public",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:legacy-public": "node --test legacy-public/test/*.test.mjs",
     "test:integration": "vitest run --config vitest.integration.config.mts",
     "test:schema": "pnpm build && node dist/scripts/run-schema-tests.js",
     "db:migrate": "pnpm build && node dist/scripts/run-migrations.js",
     "openapi": "pnpm build && node dist/scripts/emit-openapi.js",
-    "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test"
+    "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm test:legacy-public"
   },
   "dependencies": {
     "@clerk/backend": "^3.16.6",
