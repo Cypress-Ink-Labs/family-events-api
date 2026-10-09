@@ -134,7 +134,7 @@ describe("pipeline learning statistics", () => {
     await db.query(
       `INSERT INTO public.event_ai_traces
        (event_id,input_title,input_description,predicted_fields,created_at)
-       SELECT $1::uuid,'Statistics load fixture',repeat(md5(n::text),32),
+       SELECT $1::uuid,'Statistics load fixture',array_to_string(ARRAY(SELECT md5(n::text||':'||part::text) FROM generate_series(1,32) part),''),
          CASE n%8
            WHEN 0 THEN '{"memory_context":{"used":true}}'::jsonb
            WHEN 1 THEN '{"memory_context":{"used":true}}'::jsonb
@@ -146,7 +146,7 @@ describe("pipeline learning statistics", () => {
            ELSE '{"memory_context":{"used":{"other":true}}}'::jsonb
          END,
          CASE WHEN n%8=0 THEN now()-interval '60 days' ELSE now() END
-       FROM generate_series(1,12000) n`,
+       FROM generate_series(1,140000) n`,
       [eventId]
     )
     await db.query(
@@ -169,10 +169,6 @@ describe("pipeline learning statistics", () => {
     const measuredDb = {
       withTransaction: <T>(work: (client: PoolClient) => Promise<T>): Promise<T> =>
         db.withTransaction(async (client) => {
-          await client.query("SET LOCAL max_parallel_workers_per_gather=1")
-          await client.query("SET LOCAL min_parallel_table_scan_size=0")
-          await client.query("SET LOCAL parallel_setup_cost=0")
-          await client.query("SET LOCAL parallel_tuple_cost=0")
           const query = vi.spyOn(client, "query")
           let sql: string
           let parameters: unknown[] | undefined
@@ -202,7 +198,7 @@ describe("pipeline learning statistics", () => {
       llm_reviewed: 3000,
       auto_rejected: 3000,
       memory_hits: 3000,
-      tag_memory_hits: 3000,
+      tag_memory_hits: 35000,
     })
     expect(parallelTraceScan(plan!)).toBe(true)
     expect(reviewScans(plan!)).toBe(1)
