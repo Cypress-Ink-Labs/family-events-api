@@ -34,6 +34,7 @@ export const envSchema = z.object({
   RESEND_API_KEY: z.string().optional(),
   /** Verified sender identity; MailService applies the legacy sandbox default when unset. */
   RESEND_FROM: z.string().optional(),
+  RESEND_REPLY_TO: optionalNonEmptyString,
   ADMIN_NOTIFY_EMAIL: z.preprocess(
     (value) => (value === "" ? undefined : value),
     z.email().optional()

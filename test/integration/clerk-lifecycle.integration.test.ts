@@ -141,6 +141,15 @@ beforeAll(async () => {
   )
   await db.query("DROP TABLE IF EXISTS private.account_deletions")
   await db.query(
+    "DROP TRIGGER IF EXISTS cancel_deleted_community_email ON auth.users; DROP FUNCTION IF EXISTS private.cancel_deleted_community_email()"
+  )
+  await db.query(
+    readFileSync(
+      join(process.cwd(), "schema/migrations/20261008008000_community_event_email.sql"),
+      "utf8"
+    )
+  )
+  await db.query(
     readFileSync(
       join(process.cwd(), "schema/migrations/20261008006000_coordinated_account_deletion.sql"),
       "utf8"
@@ -363,6 +372,10 @@ describe("Clerk lifecycle HTTP", () => {
     await deliver("user.created")
     const mapped = await identity.resolve("user_parent")
     await db.query(
+      'INSERT INTO private.transactional_email_outbox(dedupe_key,kind,target_id,payload) VALUES(\'community:retained\',\'community_event_approved\',$1,\'{"email":"parent@example.com","event_title":"Fixture"}\'::jsonb)',
+      [mapped!.supabaseUuid]
+    )
+    await db.query(
       "CREATE TABLE private.clerk_attribution_fixture(user_id uuid REFERENCES auth.users(id) ON DELETE RESTRICT)"
     )
     await db.query("INSERT INTO private.clerk_attribution_fixture VALUES($1)", [
@@ -384,6 +397,11 @@ describe("Clerk lifecycle HTTP", () => {
       ).toBe(200)
       expect((await deliver("user.deleted")).status).toBe(200)
       expect(await identity.resolve("user_parent")).toBeNull()
+      expect(
+        await db.query(
+          "SELECT status,payload,delivery FROM private.transactional_email_outbox WHERE kind='community_event_approved'"
+        )
+      ).toEqual([{ status: "cancelled", payload: null, delivery: null }])
       expect(
         (
           await request(app.getHttpServer())

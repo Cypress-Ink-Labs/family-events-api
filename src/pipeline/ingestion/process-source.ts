@@ -654,15 +654,8 @@ async function recordStaleEscalation(
   }
 }
 
-// Kick the tag-queue worker if we imported anything. Each RPC call fires
-// net.http_post (async) and returns immediately, so this is a fan-out, not a
-// blocking loop. process-tag-queue claims BATCH_SIZE=20 events per invocation
-// via SKIP LOCKED, so N kicks = up to N×20 events drained in parallel —
-// without waiting for the 1-min cron tick.
-//
-// Cap matches process-tag-queue CONCURRENCY×2 to leave headroom for the
-// OpenAI rate limit (the LLM is the actual bottleneck). The cron */1 keeps
-// backfilling whatever a burst leaves behind.
+// Bound immediate kicks after an import. The repository selects the gated
+// executor, and scheduled drains handle work left after the burst.
 async function kickTagQueue(
   db: ProcessSourceDb,
   source: EventSourceRow,

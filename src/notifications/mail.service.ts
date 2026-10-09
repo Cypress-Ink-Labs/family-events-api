@@ -13,6 +13,7 @@ export interface SendMailInput {
   templateId?: string
   variables?: Record<string, string>
   from?: string
+  replyTo?: string
   idempotencyKey?: string
   signal?: AbortSignal
 }
@@ -46,6 +47,7 @@ export class MailService {
       from: input.from ?? this.config.get("RESEND_FROM", { infer: true }) ?? DEFAULT_FROM,
       to: input.to,
       subject: input.subject,
+      ...(input.replyTo ? { reply_to: input.replyTo } : {}),
       ...(input.templateId
         ? { template: { id: input.templateId, variables: input.variables ?? {} } }
         : { html: input.html }),

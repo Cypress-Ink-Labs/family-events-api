@@ -177,6 +177,15 @@ beforeAll(async () => {
    ALTER TABLE public.user_calendar_events ADD CONSTRAINT user_calendar_events_user_id_fkey FOREIGN KEY(user_id) REFERENCES public.user_profiles(id) ON DELETE CASCADE;
    ALTER TABLE public.ratings ADD CONSTRAINT ratings_user_id_fkey FOREIGN KEY(user_id) REFERENCES public.user_profiles(id) ON DELETE CASCADE;`)
   await db.query(
+    "DROP TRIGGER IF EXISTS cancel_deleted_community_email ON auth.users; DROP FUNCTION IF EXISTS private.cancel_deleted_community_email()"
+  )
+  await db.query(
+    readFileSync(
+      join(process.cwd(), "schema/migrations/20261008008000_community_event_email.sql"),
+      "utf8"
+    )
+  )
+  await db.query(
     readFileSync(
       join(process.cwd(), "schema/migrations/20261008006000_coordinated_account_deletion.sql"),
       "utf8"
@@ -926,11 +935,15 @@ describe("Coordinated account deletion HTTP", () => {
       )
     }
   })
-  it("keeps failed provider deletion revoked, scrubs uncertain welcome and refuses access resurrection", async () => {
+  it("keeps failed provider deletion revoked, scrubs uncertain account mail and refuses access resurrection", async () => {
     await operator()
     provider.users.getUser.mockResolvedValue(verifiedUser())
     await deliver("user.created")
     const mapping = await identity.resolve("user_parent")
+    await db.query(
+      'INSERT INTO private.transactional_email_outbox(dedupe_key,kind,target_id,payload) VALUES(\'community:deletion\',\'community_event_rejected\',$1,\'{"email":"parent@example.com","event_title":"Fixture"}\'::jsonb)',
+      [mapping!.supabaseUuid]
+    )
     await db.query(
       "UPDATE private.transactional_email_outbox SET status='processing',attempts=1,first_attempt_at=now(),delivery=payload,locked_until=now()+interval '1 minute'"
     )
@@ -962,7 +975,10 @@ describe("Coordinated account deletion HTTP", () => {
       ).toBe(403)
       expect(
         await db.query("SELECT status,payload,delivery FROM private.transactional_email_outbox")
-      ).toEqual([{ status: "cancelled", payload: null, delivery: null }])
+      ).toEqual([
+        { status: "cancelled", payload: null, delivery: null },
+        { status: "cancelled", payload: null, delivery: null },
+      ])
       expect(
         (
           await request(app.getHttpServer())

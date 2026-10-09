@@ -18,6 +18,23 @@ afterEach(() => {
 })
 
 describe("MailService", () => {
+  it("preserves an explicit inline-mail reply address in the provider payload", async () => {
+    const send = vi.fn(
+      async (_input: string, _init: RequestInit) =>
+        new Response(JSON.stringify({ id: "em_reply" }), { status: 200 })
+    )
+    vi.stubGlobal("fetch", send)
+    const mail = makeMailService({ RESEND_API_KEY: "re_test", RESEND_FROM: FROM })
+    await mail.send({
+      to: "user@example.com",
+      subject: "Decision",
+      html: "<p>Approved</p>",
+      replyTo: "support@example.com",
+    })
+    expect(JSON.parse(String(send.mock.calls[0]?.[1]?.body))).toMatchObject({
+      reply_to: "support@example.com",
+    })
+  })
   it("posts a hosted-template payload to Resend with a 10s timeout", async () => {
     const fetchMock = vi.fn<(input: string, init: RequestInit) => Promise<Response>>(
       async () => new Response(JSON.stringify({ id: "em_1" }), { status: 200 })
