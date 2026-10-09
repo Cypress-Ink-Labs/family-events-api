@@ -4,8 +4,9 @@
 event-change email/in-app/Web Push/FCM are merged. Only direct APNs is deferred
 within U30. U31 is covered in code by the legacy backend parity work (PR #59,
 migration #25): API-owned Clerk lifecycle, invitation onboarding and transactional
-invitation email, coordinated account deletion, the remaining consumer and
-admin/operator endpoints, public exports, and daily maintenance. U32 and U33
+email (invitation and community moderation/decision), coordinated account deletion,
+the remaining consumer and admin/operator endpoints, public exports, and daily
+maintenance. U32 and U33
 follow; production rollout, flags, credentials, and ownership transfer for the
 parity work remain separate, unverified prerequisites.
 Railway configuration is merged and empty `api` / `app` shadow services exist,
@@ -253,8 +254,14 @@ replacement here (poll vs SSE); the old SPA's four Supabase channels are referen
   UUID mappings, and database profile roles as authoritative. See
   [Clerk lifecycle](../CLERK_LIFECYCLE.md).
 - **Invitations:** API-owned onboarding and transactional invitation email. See
-  [invitation onboarding](../INVITATION_ONBOARDING.md) and
-  [transactional invitation email](../TRANSACTIONAL_INVITATION_EMAIL.md).
+  [invitation onboarding](../INVITATION_ONBOARDING.md).
+- **Community moderation email:** community decision email is also API-owned. A
+  community decision writes to an atomic transactional outbox, and the API mail worker
+  delivers it; legacy Edge functions are no longer called for community mail. Migration
+  `20261008008000` installs community email reservations and deletion cleanup, which
+  preserve deletion privacy, delivery retries, and operational pauses (delivery-pause
+  gating).
+  See [transactional invitation email](../TRANSACTIONAL_INVITATION_EMAIL.md).
 - **Account deletion:** coordinated deletion with replayable cleanup. See the
   [account deletion runbook](../account-deletion-runbook.md).
 - **Consumer endpoints:** profile (including theme preference), notification
@@ -312,6 +319,11 @@ was disabled only after queue, DLQ, schedule, and gated-dispatch verification.
 Controlled tasks and catch-up runs succeeded; the scrape drain and eligible
 review backlog completed without family DLQ work. Digest, reminders, and notify
 remain disabled pending delivery credentials and controlled-recipient smokes.
+
+**Tag dispatch ownership:** scrape-triggered tag kicks pass through canonical
+ownership gates and are routed either to an API job or to the retained legacy owner.
+Migration `20261008009000` (tag queue ownership) installs this, and retained SQL calls
+to the legacy tag executor are suppressed when the API owns tagging.
 
 **Daily maintenance (PR #59):** the API registers a `maintenance` queue running
 `public.run_daily_maintenance()` at `15 3 * * *` UTC, installed in production only when
