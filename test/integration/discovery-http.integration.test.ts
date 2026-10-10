@@ -53,6 +53,24 @@ afterAll(async () => {
 })
 
 describe("discovery through HTTP and PostgreSQL", () => {
+  it("preserves overlap during the first occurrence of a repeated local midnight", async () => {
+    await db.query(
+      `INSERT INTO public.events(title,start_datetime,end_datetime,timezone,city_id,status) VALUES
+      ('Ends before repeated midnight','2024-11-02T16:00:00Z','2024-11-03T04:00:00Z','America/Havana',$1,'published'),
+      ('Ends during first midnight hour','2024-11-02T16:00:01Z','2024-11-03T04:30:00Z','America/Havana',$1,'published'),
+      ('Ends at second midnight','2024-11-02T16:00:02Z','2024-11-03T05:00:00Z','America/Havana',$1,'published')`,
+      [city]
+    )
+    const response = await request(app.getHttpServer())
+      .get("/v1/events")
+      .query({ date_start: "2024-11-03", date_end: "2024-11-03", date_overlap: "true" })
+      .expect(200)
+    expect(response.body.events.map((row: { title: string }) => row.title)).toEqual([
+      "Ends during first midnight hour",
+      "Ends at second midnight",
+    ])
+  })
+
   it("keeps a recorded multi-day event visible within a later calendar week", async () => {
     await db.query(
       `INSERT INTO public.events(title,start_datetime,end_datetime,timezone,city_id,status) VALUES

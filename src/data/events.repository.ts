@@ -161,7 +161,7 @@ function extraDiscoveryPredicate(
       overlap === undefined
         ? `d.event_day >= $${start}::date`
         : `CASE WHEN $${overlap}::boolean AND e.end_datetime > e.start_datetime
-        THEN e.end_datetime > ($${start}::date::timestamp AT TIME ZONE z.zone)
+        THEN ((e.end_datetime - interval '1 microsecond') AT TIME ZONE z.zone)::date >= $${start}::date
         ELSE d.event_day >= $${start}::date END`
     })
     AND ($${end}::date IS NULL OR d.event_day <= $${end}::date)
