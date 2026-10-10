@@ -68,6 +68,26 @@ has now been read in full and this plan is reconciled against it. Key correction
 | Supabase Auth (old SPA) / Clerk (new app) | mixed | Clerk only, via `clerk_user_mapping` seam (U19) |
 | Durable Postgres queues (`source_scrape_queue`, `event_tag_queue`, `event_llm_review_queue`, `notification_queue`) | migrations + claim RPCs | keep tables initially; workers move to pg-boss-scheduled NestJS services; queue-table consolidation is a post-cutover decision |
 
+**Public routes compatibility layer (not deployed):** `legacy-public/` in this repo
+prepares replacements for exactly four old public Supabase functions so old JSON, feed
+and crawler URLs keep working: `events-api` → app `/api/events[/:uuid]`; `events-feed` →
+`/feeds/events` (retaining `format` and `city`); `sitemap` → `/sitemap.xml` and
+`/robots.txt`; `share-og` → 307 redirect to the app's HTML alias `/functions/v1/share-og`
+(Supabase rewrites GET `text/html` on its default origin to `text/plain`). The
+destination is the required `PUBLIC_APP_URL` env var (intended
+`https://family-events.org`); missing or invalid yields a sanitized 503, with no
+fallback. Handlers are anonymous GET plus OPTIONS with open non-credentialed CORS,
+forward no caller credentials, do not follow upstream redirects, cap bodies at 8 MiB,
+and use a 10s deadline. Nothing is published by merging: it requires separately
+approved, targeted deployment with
+`supabase functions deploy <name> --project-ref ... --workdir legacy-public` for just
+those four functions (never deploy-all or the frozen backend pipeline), followed by
+acceptance checks against the old Supabase origin and real consumer/crawler
+verification. The proxy functions are retained while subscription/partner evidence is
+unknown; decommissioning, historical Railway host redirects, and DNS changes each need
+separate approval. See `legacy-public/README.md`; local tests:
+`node --test legacy-public/test/proxy.test.mjs`.
+
 Not replaced: the Postgres schema itself (58 migrations stay authoritative), Supabase
 Realtime channels (replacement strategy decided in U31), the old SPA.
 
