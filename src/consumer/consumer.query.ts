@@ -87,6 +87,7 @@ const querySchema = z.strictObject({
   date_to: z.iso.datetime({ offset: true }).optional(),
   is_free: z.enum(["true", "false"]).optional(),
   hide_past: z.enum(["true", "false"]).optional(),
+  date_overlap: z.enum(["true", "false"]).optional(),
   cost: z.enum(["any", "free", "paid", "unknown"]).optional(),
   kid_age: integerString.optional(),
   ages: z
@@ -116,6 +117,7 @@ export interface ExploreQuery extends DiscoveryControls {
   dateTo: string | null
   isFree: boolean | null
   hidePast?: boolean
+  dateOverlap?: boolean
   cost?: AdmissionCostFilter
   after: EventCursor | null
   limit: number
@@ -151,6 +153,8 @@ export function parseExploreQuery(query: unknown): ExploreQuery {
     result.data.date_to !== undefined ||
     result.data.date_start !== undefined ||
     result.data.date_end !== undefined
+  if (result.data.date_overlap === "true" && (!result.data.date_start || !result.data.date_end))
+    throw new BadRequestException("date overlap requires both calendar date bounds")
   const controls = parseControls(result.data)
   const after = result.data.cursor === undefined ? null : decodeCursor(result.data.cursor)
   if (after && (after.sort ?? "soonest") !== (result.data.sort ?? "soonest"))
@@ -164,6 +168,9 @@ export function parseExploreQuery(query: unknown): ExploreQuery {
     dateTo: result.data.date_to ?? null,
     isFree: result.data.is_free === undefined ? null : result.data.is_free === "true",
     ...(result.data.hide_past === undefined ? {} : { hidePast: result.data.hide_past === "true" }),
+    ...(result.data.date_overlap === undefined
+      ? {}
+      : { dateOverlap: result.data.date_overlap === "true" }),
     cost: result.data.cost ?? "any",
     after,
     limit,

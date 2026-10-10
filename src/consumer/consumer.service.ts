@@ -109,6 +109,7 @@ export class ConsumerService {
       cost: input.cost ?? "any",
       isFree: input.isFree,
       ...(input.hidePast === undefined ? {} : { hidePast: input.hidePast }),
+      ...(input.dateOverlap === undefined ? {} : { dateOverlap: input.dateOverlap }),
       dateFrom: input.dateFrom,
       dateTo: input.dateTo,
       ages: input.ages,
