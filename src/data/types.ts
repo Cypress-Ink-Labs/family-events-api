@@ -94,6 +94,7 @@ export interface DiscoveryControls {
 }
 export interface DiscoverEventsInput extends DiscoveryControls {
   hidePast?: boolean
+  dateOverlap?: boolean
   range: DiscoveryRange | null
   now: string
   cityId?: string | null

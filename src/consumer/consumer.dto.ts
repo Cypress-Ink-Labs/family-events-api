@@ -560,6 +560,13 @@ export class PlanQueryDto {
 
 export class EventsQueryDto extends DiscoveryControlsDto {
   @ApiPropertyOptional({
+    description:
+      "Include events with recorded duration overlapping the calendar span; requires date_start and date_end. Unknown end times match only their start date.",
+    default: false,
+  })
+  date_overlap?: boolean
+
+  @ApiPropertyOptional({
     description: "Hide finished events inside an explicit calendar date span",
     default: false,
   })

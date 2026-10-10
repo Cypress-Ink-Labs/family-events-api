@@ -153,10 +153,17 @@ function extraDiscoveryPredicate(
   tags: number,
   lat: number,
   lng: number,
-  radius: number
+  radius: number,
+  overlap?: number
 ): string {
   return `
-    AND ($${start}::date IS NULL OR d.event_day >= $${start}::date)
+    AND ($${start}::date IS NULL OR ${
+      overlap === undefined
+        ? `d.event_day >= $${start}::date`
+        : `CASE WHEN $${overlap}::boolean AND e.end_datetime > e.start_datetime
+        THEN ((e.end_datetime - interval '1 microsecond') AT TIME ZONE z.zone)::date >= $${start}::date
+        ELSE d.event_day >= $${start}::date END`
+    })
     AND ($${end}::date IS NULL OR d.event_day <= $${end}::date)
     AND (cardinality($${tags}::text[]) = 0 OR (
       SELECT count(DISTINCT t.slug) FROM public.event_tags et JOIN public.tags t ON t.id = et.tag_id
@@ -243,7 +250,7 @@ WITH candidates AS (
       $5::text IS NULL OR $5::text = 'any'
       OR e.admission_cost_state::text = $5::text
     )
-    ${extraDiscoveryPredicate(18, 19, 20, 21, 22, 23)}
+    ${extraDiscoveryPredicate(18, 19, 20, 21, 22, 23, 29)}
     AND ($15::boolean IS NULL OR e.is_free = $15::boolean)
     AND (NOT $28::boolean OR (e.end_datetime IS NOT NULL AND e.end_datetime > $2::timestamptz) OR (e.end_datetime IS NULL AND e.start_datetime >= $2::timestamptz))
     AND ${agePredicateSql(6, 7, 8)}
@@ -471,6 +478,7 @@ export class EventsRepository {
       input.after?.rating ?? null,
       input.after?.ratingCount ?? null,
       input.hidePast ?? false,
+      input.dateOverlap ?? false,
     ])
     return rows.map(publicEventContent)
   }

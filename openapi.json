@@ -5694,6 +5694,16 @@
             }
           },
           {
+            "description": "Include events with recorded duration overlapping the calendar span; requires date_start and date_end. Unknown end times match only their start date.",
+            "required": false,
+            "name": "date_overlap",
+            "in": "query",
+            "schema": {
+              "default": false,
+              "type": "boolean"
+            }
+          },
+          {
             "description": "Hide finished events inside an explicit calendar date span",
             "required": false,
             "name": "hide_past",

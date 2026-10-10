@@ -53,12 +53,107 @@ afterAll(async () => {
 })
 
 describe("discovery through HTTP and PostgreSQL", () => {
+  it("preserves overlap during the first occurrence of a repeated local midnight", async () => {
+    await db.query(
+      `INSERT INTO public.events(title,start_datetime,end_datetime,timezone,city_id,status) VALUES
+      ('Ends before repeated midnight','2024-11-02T16:00:00Z','2024-11-03T04:00:00Z','America/Havana',$1,'published'),
+      ('Ends during first midnight hour','2024-11-02T16:00:01Z','2024-11-03T04:30:00Z','America/Havana',$1,'published'),
+      ('Ends at second midnight','2024-11-02T16:00:02Z','2024-11-03T05:00:00Z','America/Havana',$1,'published')`,
+      [city]
+    )
+    const response = await request(app.getHttpServer())
+      .get("/v1/events")
+      .query({ date_start: "2024-11-03", date_end: "2024-11-03", date_overlap: "true" })
+      .expect(200)
+    expect(response.body.events.map((row: { title: string }) => row.title)).toEqual([
+      "Ends during first midnight hour",
+      "Ends at second midnight",
+    ])
+  })
+
+  it("keeps a recorded multi-day event visible within a later calendar week", async () => {
+    await db.query(
+      `INSERT INTO public.events(title,start_datetime,end_datetime,timezone,city_id,status) VALUES
+      ('Ongoing across weeks','2035-10-01T09:00:00Z','2035-10-31T18:00:00Z','America/Chicago',$1,'published')`,
+      [city]
+    )
+    const response = await request(app.getHttpServer())
+      .get("/v1/events")
+      .query({ date_start: "2035-10-07", date_end: "2035-10-13", date_overlap: "true" })
+      .expect(200)
+    expect(response.body.events.map((row: { title: string }) => row.title)).toEqual([
+      "Ongoing across weeks",
+    ])
+    const startOnly = await request(app.getHttpServer())
+      .get("/v1/events")
+      .query({ date_start: "2035-10-07", date_end: "2035-10-13" })
+      .expect(200)
+    expect(startOnly.body.events).toEqual([])
+  })
+
+  it("paginates events that began before the requested calendar span", async () => {
+    await db.query(
+      `INSERT INTO public.events(title,start_datetime,end_datetime,timezone,city_id,status)
+      SELECT 'Spanning event ' || n,'2035-10-01T09:00:00Z'::timestamptz + make_interval(secs=>n),
+        '2035-10-31T18:00:00Z','America/Chicago',$1,'published' FROM generate_series(1,29) n`,
+      [city]
+    )
+    const ids: string[] = []
+    let cursor: string | null = null
+    do {
+      const response: request.Response = await request(app.getHttpServer())
+        .get("/v1/events")
+        .query({
+          date_start: "2035-10-07",
+          date_end: "2035-10-13",
+          date_overlap: "true",
+          ...(cursor ? { cursor } : {}),
+        })
+        .expect(200)
+      expect(response.body.events.length).toBeLessThanOrEqual(24)
+      ids.push(...response.body.events.map((row: { id: string }) => row.id))
+      cursor = response.body.next_cursor
+      if (ids.length > 29) throw new Error("cursor did not progress")
+    } while (cursor)
+    const expected = await db.query("SELECT id FROM public.events ORDER BY start_datetime,id")
+    expect(ids).toEqual(expected.map((row) => row.id))
+  })
+
+  it("uses event-local exclusive end boundaries without inventing duration", async () => {
+    await db.query(
+      `INSERT INTO public.events(title,start_datetime,end_datetime,timezone,city_id,status) VALUES
+      ('Ends at midnight','2030-03-09T12:00:00Z','2030-03-10T06:00:00Z','America/Chicago',$1,'published'),
+      ('Continues past midnight','2030-03-09T12:00:00Z','2030-03-10T06:00:00.000001Z','America/Chicago',$1,'published'),
+      ('Unknown prior end','2030-03-09T12:00:00Z',NULL,'America/Chicago',$1,'published'),
+      ('Invalid prior end','2030-03-09T12:00:00Z','2030-03-09T11:00:00Z','America/Chicago',$1,'published'),
+      ('Last local minute','2030-03-11T04:59:59Z',NULL,'America/Chicago',$1,'published'),
+      ('Next local midnight','2030-03-11T05:00:00Z',NULL,'America/Chicago',$1,'published')`,
+      [city]
+    )
+    const response = await request(app.getHttpServer())
+      .get("/v1/events")
+      .query({ date_start: "2030-03-10", date_end: "2030-03-10", date_overlap: "true" })
+      .expect(200)
+    expect(response.body.events.map((row: { title: string }) => row.title)).toEqual([
+      "Continues past midnight",
+      "Last local minute",
+    ])
+    for (const query of [
+      { date_overlap: "true" },
+      { date_start: "2030-03-10", date_overlap: "true" },
+      { date_end: "2030-03-10", date_overlap: "true" },
+      { date_start: "2030-03-10", date_end: "2030-03-10", date_overlap: "invalid" },
+    ])
+      await request(app.getHttpServer()).get("/v1/events").query(query).expect(400)
+  })
+
   it("hides finished events within an explicit calendar span while preserving local dates and ongoing events", async () => {
     vi.useFakeTimers({ toFake: ["Date"] })
     vi.setSystemTime(new Date("2030-03-10T18:00:00Z"))
     try {
       await db.query(
         `INSERT INTO public.events(title,start_datetime,end_datetime,timezone,city_id,status) VALUES
+        ('Ongoing from prior day','2030-03-09T12:00:00Z','2030-03-11T12:00:00Z','America/Chicago',$1,'published'),
         ('Finished today','2030-03-10T12:00:00Z','2030-03-10T13:00:00Z','America/Chicago',$1,'published'),
         ('Ongoing today','2030-03-10T17:00:00Z','2030-03-10T19:00:00Z','America/Chicago',$1,'published'),
         ('Late local Sunday','2030-03-11T04:59:59Z',NULL,'America/Chicago',$1,'published'),
@@ -71,6 +166,15 @@ describe("discovery through HTTP and PostgreSQL", () => {
         .query({ ...span, hide_past: "true" })
         .expect(200)
       expect(hidden.body.events.map((row: { title: string }) => row.title)).toEqual([
+        "Ongoing today",
+        "Late local Sunday",
+      ])
+      const overlapping = await request(app.getHttpServer())
+        .get("/v1/events")
+        .query({ ...span, hide_past: "true", date_overlap: "true" })
+        .expect(200)
+      expect(overlapping.body.events.map((row: { title: string }) => row.title)).toEqual([
+        "Ongoing from prior day",
         "Ongoing today",
         "Late local Sunday",
       ])
