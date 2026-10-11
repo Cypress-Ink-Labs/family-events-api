@@ -152,6 +152,21 @@ Never modify an applied migration. Add a new timestamped migration and paired
 `_down.sql` rollback instead. Rollbacks are operator-reviewed recovery artifacts
 and are not run automatically.
 
+Migration `20261011001000` repairs the event editor's status assignment when the
+retained database function returns text in one branch of an enum-valued `CASE`.
+The [controlled live trial](migration-evidence/2026-10-11-admin-editor-save-failure.json)
+returned HTTP 500 for two private draft saves. The fixture was removed without
+changing the operator account. The local regression reproduces PostgreSQL error
+`42804` and passes after the migration; hosted editor acceptance must be repeated
+after applying it. Deploying the API alone does not run this migration.
+
+The migration retains the original function definition in
+`private.api_admin_editor_status_rollback`. Its paired rollback restores that
+definition only if the current function still matches the migrated definition.
+Rolling back a repaired production function restores the broken status
+expression. Review that consequence before recovery; an API binary rollback
+does not require reversing this compatible SQL repair.
+
 1. Create/link the Railway service to this repo (git integration, `main` branch).
 2. Set the service variables above. Never paste secrets into files or chat.
 3. Run `pnpm db:migrate` against the target database. Review failures; never bypass
