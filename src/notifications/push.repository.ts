@@ -1,6 +1,7 @@
 import { Injectable, Logger } from "@nestjs/common"
 
 import { DbService } from "../db/db.service.js"
+import { recipientEligibilitySql } from "./recipient-eligibility.sql.js"
 
 export const MAX_PUSH_USER_IDS = 1_000
 
@@ -40,8 +41,9 @@ SELECT
   token,
   p256dh,
   auth_key AS "authKey"
-FROM public.push_subscriptions
+FROM public.push_subscriptions subscription
 WHERE user_id = ANY($1::uuid[])
+  AND ${recipientEligibilitySql("subscription.user_id")}
 ORDER BY user_id, created_at, id
 `
 
