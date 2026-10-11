@@ -73,6 +73,13 @@ describe("notification repositories", () => {
       "DROP TABLE IF EXISTS public.user_notifications, public.notification_queue, public.push_subscriptions"
     )
     await db.query("CREATE SCHEMA IF NOT EXISTS private")
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS private.account_deletions (user_id uuid PRIMARY KEY);
+      CREATE TABLE IF NOT EXISTS private.clerk_user_lifecycle (
+        clerk_user_id text PRIMARY KEY, storage_uuid uuid, deleted_at timestamptz
+      )
+    `)
+
     // The disposable API catalog has no auth.users table. user_profiles is the
     // local user FK target; checks, indexes, and trigger behavior match production.
     await db.query(`

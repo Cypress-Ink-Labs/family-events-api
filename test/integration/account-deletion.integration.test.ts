@@ -1,3 +1,7 @@
+import { DigestRepository } from "../../src/notifications/digest.repository.js"
+import { NotificationQueueRepository } from "../../src/notifications/notification-queue.repository.js"
+import { ReminderRepository } from "../../src/notifications/reminder.repository.js"
+import { PushRepository } from "../../src/notifications/push.repository.js"
 import { UserAccessModule } from "../../src/user-access/user-access.module.js"
 import { createHmac, randomUUID } from "node:crypto"
 import { readFileSync } from "node:fs"
@@ -1043,3 +1047,116 @@ describe("Coordinated account deletion HTTP", () => {
     }
   })
 })
+
+it.each(["pending_provider", "deletion_intent_only", "lifecycle_tombstone_only"])(
+  "excludes retained notification recipients after deletion: %s",
+  async (deletionState) => {
+    await operator()
+    provider.users.getUser.mockResolvedValue(verifiedUser())
+    expect((await deliver("user.created")).status).toBe(200)
+    const mapping = await identity.resolve("user_parent")
+    const userId = mapping!.supabaseUuid
+    const cityId = randomUUID(),
+      eventId = randomUUID()
+    await db.query(
+      "INSERT INTO public.cities(id,name,slug,timezone) VALUES($1,'Fixture city',$2,'America/Chicago')",
+      [cityId, `deletion-${cityId}`]
+    )
+    await db.query("UPDATE public.user_profiles SET city_preference_id=$2 WHERE id=$1", [
+      userId,
+      cityId,
+    ])
+    await db.query(
+      "INSERT INTO public.events(id,title,city_id,start_datetime,status) VALUES($1,'Deletion reminder',$2,'2026-11-01T18:00:00Z','published')",
+      [eventId, cityId]
+    )
+    await db.query("INSERT INTO public.favorites(user_id,event_id) VALUES($1,$2)", [
+      userId,
+      eventId,
+    ])
+    await db.query(
+      "INSERT INTO public.user_notification_preferences(user_id,digest_email) VALUES($1,true)",
+      [userId]
+    )
+    await db.query(
+      "INSERT INTO public.push_subscriptions(user_id,platform,token) VALUES($1,'android','disposable-device-token')",
+      [userId]
+    )
+    const reminders = new ReminderRepository(db),
+      changes = new NotificationQueueRepository(db),
+      digests = new DigestRepository(db),
+      push = new PushRepository(db)
+    const window = { windowStart: "2026-11-01T00:00:00Z", windowEnd: "2026-11-02T00:00:00Z" }
+    const activeUserId = randomUUID()
+    await db.query(
+      "INSERT INTO auth.users(id,email,email_confirmed_at) VALUES($1,'active@example.com',now())",
+      [activeUserId]
+    )
+    await db.query("UPDATE public.user_profiles SET city_preference_id=$2 WHERE id=$1", [
+      activeUserId,
+      cityId,
+    ])
+    await db.query("INSERT INTO public.favorites(user_id,event_id) VALUES($1,$2)", [
+      activeUserId,
+      eventId,
+    ])
+    await db.query(
+      "INSERT INTO public.user_notification_preferences(user_id,digest_email) VALUES($1,true)",
+      [activeUserId]
+    )
+    await db.query(
+      "INSERT INTO public.push_subscriptions(user_id,platform,token) VALUES($1,'android','active-device-token')",
+      [activeUserId]
+    )
+    expect(await reminders.findReminderTargets(window)).toEqual(
+      expect.arrayContaining([expect.objectContaining({ userId })])
+    )
+    expect(await changes.hydrateProfiles([userId])).toHaveLength(1)
+    expect(await digests.findDigestUserByEmail("parent@example.com")).not.toBeNull()
+    expect(await push.listSubscriptions([userId])).toHaveLength(1)
+    const fetch = vi.fn(async () => new Response("{}", { status: 503 }))
+    vi.stubGlobal("fetch", fetch)
+    try {
+      expect(
+        (
+          await request(app.getHttpServer())
+            .delete(`/v1/admin/users/${userId}`)
+            .set("Authorization", "Bearer operator-token")
+            .send({})
+        ).status
+      ).toBe(503)
+      expect(
+        await db.query("SELECT status FROM private.account_deletions WHERE user_id=$1", [userId])
+      ).toEqual([{ status: "pending_provider" }])
+      expect(
+        await db.query("SELECT email FROM public.user_profiles WHERE id=$1", [userId])
+      ).toEqual([{ email: "parent@example.com" }])
+      if (deletionState === "deletion_intent_only") {
+        await db.query("DELETE FROM private.clerk_user_lifecycle WHERE storage_uuid=$1", [userId])
+      } else if (deletionState === "lifecycle_tombstone_only") {
+        await db.query("DELETE FROM private.account_deletions WHERE user_id=$1", [userId])
+      }
+      expect
+        .soft(await reminders.findReminderTargets(window))
+        .not.toEqual(expect.arrayContaining([expect.objectContaining({ userId })]))
+      expect.soft(await changes.hydrateProfiles([userId])).toEqual([])
+      expect.soft(await digests.findDigestUserByEmail("parent@example.com")).toBeNull()
+      expect
+        .soft(await digests.listDigestUsers(null, 100))
+        .not.toEqual(expect.arrayContaining([expect.objectContaining({ userId })]))
+      expect.soft(await push.listSubscriptions([userId])).toEqual([])
+      expect(await reminders.findReminderTargets(window)).toEqual(
+        expect.arrayContaining([expect.objectContaining({ userId: activeUserId })])
+      )
+      expect(await changes.hydrateProfiles([activeUserId])).toHaveLength(1)
+      expect(await digests.findDigestUserByEmail("active@example.com")).not.toBeNull()
+      expect(await digests.listDigestUsers(null, 100)).toEqual(
+        expect.arrayContaining([expect.objectContaining({ userId: activeUserId })])
+      )
+      expect(await push.listSubscriptions([activeUserId])).toHaveLength(1)
+      expect(fetch).toHaveBeenCalledOnce()
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  }
+)
