@@ -16,7 +16,7 @@ const event = (id: string, title: string): DigestEvent => ({
 })
 
 describe("digest email rendering", () => {
-  it("renders the legacy subject, event cards, and unsubscribe URL with escaped input", () => {
+  it("renders event cards and current app links with escaped input", () => {
     const result = renderDigestEmail({
       user: { displayName: "Reader & Family", cityName: "Lafayette" },
       events: [event("1", "Storytime"), event("2", "Park Day"), event("3", "<script>x</script>")],
@@ -26,7 +26,8 @@ describe("digest email rendering", () => {
     expect(result.subject).toBe("3 family picks for your weekend")
     expect(result.html).toContain("Storytime")
     expect(result.html).toContain("Park Day")
-    expect(result.html).toContain("https://events.example.com/profile?tab=notifications")
+    expect(result.html).toContain('href="https://events.example.com/account/alerts"')
+    expect(result.html).toContain('src="https://events.example.com/brand/icon-192.png"')
     expect(result.html).not.toContain("<script")
     expect(result.html).not.toContain("Reader & Family")
     expect(result.html).toContain("Reader &amp; Family")

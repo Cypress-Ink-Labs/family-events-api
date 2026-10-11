@@ -270,7 +270,7 @@ export class ReminderService {
         EVENT_DATE: formatEventDate(target.startDatetime),
         EVENT_LOCATION: target.venueName || target.address || "TBD",
         EVENT_URL: `${appUrl}/events/${target.eventId}`,
-        LOGO_URL: `${appUrl}/brand/family-events-logo.png`,
+        LOGO_URL: `${appUrl}/brand/icon-192.png`,
         APP_URL: appUrl,
       },
     })

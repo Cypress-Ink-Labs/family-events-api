@@ -167,7 +167,7 @@ describe("ReminderService", () => {
         EVENT_DATE: "Sunday, August 16 at 10:30 AM",
         EVENT_LOCATION: "Main Library",
         EVENT_URL: "https://events.example.com/events/22222222-2222-4222-8222-222222222222",
-        LOGO_URL: "https://events.example.com/brand/family-events-logo.png",
+        LOGO_URL: "https://events.example.com/brand/icon-192.png",
         APP_URL: "https://events.example.com",
       },
     })
