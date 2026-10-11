@@ -167,6 +167,39 @@ Rolling back a repaired production function restores the broken status
 expression. Review that consequence before recovery; an API binary rollback
 does not require reversing this compatible SQL repair.
 
+Apply the preceding `20261011002000` admin queue migration from API PR #70 before
+`20261011003000`. Refresh this branch from main after #70 merges so both versions
+are present in the repository before using the migration runner. The runner
+requires applied versions to be a prefix of repository history: applying 03000
+while 02000 is missing would make a later checkout containing 02000 refuse to
+reconcile that ledger. Keep the invitation caller transfer pending until this
+ordering prerequisite is verified.
+
+Migration `20261011003000` transfers the retained anonymous invitation-request
+RPC's mail intent to `private.transactional_email_outbox`. A read-only production
+catalog check on October 11 found that `public.request_invite` still reached
+`private.dispatch_email_notification` and the old `notify-email` function.
+The new app's API intake already uses the outbox; replacing that app caller did
+not transfer the retained RPC.
+
+The migration retains the RPC's grants, email normalization, message bounds,
+pending-request updates and three-attempt/ten-minute limit. It shares the API's
+per-email transaction lock and `admin_request:<request UUID>` deduplication key.
+Repeated submissions update the request without producing another mail intent;
+the queued message retains the first submission's content. If outbox persistence
+fails, the request and attempt records roll back together. This intentionally
+replaces the old best-effort dispatch, which could return success after mail
+dispatch failed.
+
+Apply through the normal ledger runner after reviewing the migration. API admin
+request delivery also requires `ADMIN_NOTIFY_EMAIL` and the existing mail
+configuration; applying SQL does not prove provider delivery. The paired rollback
+restores the frozen legacy RPC and its old email dispatcher. Review old runtime
+availability and reconcile queued mail before reversing ownership: rollback
+neither cancels outbox entries nor reverses sent mail. This migration does not
+retire old sign-in, remove functions or establish the absence of external legacy
+traffic.
+
 1. Create/link the Railway service to this repo (git integration, `main` branch).
 2. Set the service variables above. Never paste secrets into files or chat.
 3. Run `pnpm db:migrate` against the target database. Review failures; never bypass
