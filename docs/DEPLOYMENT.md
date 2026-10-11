@@ -63,27 +63,27 @@ single-writer checks and rollback procedure.
 
 ## Service variables
 
-| Variable | Required | Notes |
-| --- | --- | --- |
-| `DATABASE_URL` | yes | Postgres connection string. Cutover: the shared Supabase Postgres (session pooler URL). Local dev uses `127.0.0.1:55322`. Boot fails without it. |
-| `CLERK_SECRET_KEY` | yes in production | Clerk secret key (`sk_...`). Fail-closed: guarded routes report unauthenticated when unset. |
-| `NODE_ENV` | yes | `production`. Cutover flags require exact `"true"` in production (`src/pipeline/flags.ts`). |
-| `PORT` | no | Defaults to 3001; Railway injects its own. |
-| `PGBOSS_SCHEMA` | no | pg-boss schema, default `pgboss`. Must match the U12 worker so both share one job store. |
-| `WEB_ORIGIN` | no | Public origin of the web app (e.g. `https://<app>.up.railway.app`). Enables CORS with credentials for browser calls; unset = no CORS headers. |
-| `SENTRY_DSN` | no | Enables Sentry error reporting when non-empty. Empty or absent disables SDK initialization and all sending. Do not commit the DSN. |
-| `SENTRY_ENVIRONMENT` / `SENTRY_RELEASE` | no | Optional event labels used only when Sentry is enabled. |
-| `SENTRY_TRACES_SAMPLE_RATE` | no | Trace sampling from 0 through 1; defaults to 0 (tracing disabled). Has no effect when `SENTRY_DSN` is unset. |
-| `CUTOVER_SCRAPE` / `CUTOVER_TAG` / `CUTOVER_REVIEW` / `CUTOVER_DIGEST` / `CUTOVER_REMINDERS` / `CUTOVER_NOTIFY` / `CUTOVER_MAINTENANCE` | no | Per-job-family cutover flags; all default off in production (nothing installed). Set to exact `"true"` only after the relevant ownership and readiness checks. |
-| `TELEGRAM_BOT_TOKEN` | required for Telegram digest | Environment fallback for digest delivery; Vault name `telegram_bot_token` takes precedence. Also shared with operator failure pings. |
-| `TELEGRAM_FAILURE_CHAT_ID` | no | Operator destination for pipeline failure pings (U3). Never used for user digests. |
-| `OPENWEATHER_API_KEY` | no | `GET /v1/plan` weather ranking. Unset degrades to a neutral snapshot. |
-| `AI_PROVIDER` / `AI_BASE_URL` / `AI_MODEL` / `AI_API_KEY` / `OPENAI_API_KEY` | no | LLM extraction fallback, tagging, review, and embeddings (`src/pipeline/llm-config.ts`; `OPENAI_API_KEY` also read directly by tag-event embeddings). Unset leaves LLM paths unconfigured. |
-| `UNSPLASH_ACCESS_KEY` / `PEXELS_API_KEY` / `PIXABAY_API_KEY` | no | Stock-image enrichment (U29); unset providers are skipped in fallback order. Unsplash key is shared by search, download tracking, and attribution backfill. |
-| `SCRAPER_IMAGE_HOST_ALLOWLIST` | no | Comma-separated extra ingest image hosts appended to the built-in CDN allowlist. |
-| `VAPID_PRIVATE_KEY` / `VAPID_PUBLIC_KEY` / `VAPID_SUBJECT` | required for web push | Environment fallback for Web Push credentials. Vault names `vapid_private_key`, `vapid_public_key`, and `vapid_subject` take precedence. |
-| `FCM_SERVICE_ACCOUNT_JSON` | required for mobile push | JSON service account fallback for FCM HTTP v1. Both iOS and Android subscription tokens use FCM. Vault name `fcm_service_account_json` takes precedence. |
-| `NODE_VERSION` | yes | `24` or newer. Railway service variable, not a `.env` entry. |
+| Variable                                                                                                                                | Required                     | Notes                                                                                                                                                                                      |
+| --------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `DATABASE_URL`                                                                                                                          | yes                          | Postgres connection string. Cutover: the shared Supabase Postgres (session pooler URL). Local dev uses `127.0.0.1:55322`. Boot fails without it.                                           |
+| `CLERK_SECRET_KEY`                                                                                                                      | yes in production            | Clerk secret key (`sk_...`). Fail-closed: guarded routes report unauthenticated when unset.                                                                                                |
+| `NODE_ENV`                                                                                                                              | yes                          | `production`. Cutover flags require exact `"true"` in production (`src/pipeline/flags.ts`).                                                                                                |
+| `PORT`                                                                                                                                  | no                           | Defaults to 3001; Railway injects its own.                                                                                                                                                 |
+| `PGBOSS_SCHEMA`                                                                                                                         | no                           | pg-boss schema, default `pgboss`. Must match the U12 worker so both share one job store.                                                                                                   |
+| `WEB_ORIGIN`                                                                                                                            | no                           | Public origin of the web app (e.g. `https://<app>.up.railway.app`). Enables CORS with credentials for browser calls; unset = no CORS headers.                                              |
+| `SENTRY_DSN`                                                                                                                            | no                           | Enables Sentry error reporting when non-empty. Empty or absent disables SDK initialization and all sending. Do not commit the DSN.                                                         |
+| `SENTRY_ENVIRONMENT` / `SENTRY_RELEASE`                                                                                                 | no                           | Optional event labels used only when Sentry is enabled.                                                                                                                                    |
+| `SENTRY_TRACES_SAMPLE_RATE`                                                                                                             | no                           | Trace sampling from 0 through 1; defaults to 0 (tracing disabled). Has no effect when `SENTRY_DSN` is unset.                                                                               |
+| `CUTOVER_SCRAPE` / `CUTOVER_TAG` / `CUTOVER_REVIEW` / `CUTOVER_DIGEST` / `CUTOVER_REMINDERS` / `CUTOVER_NOTIFY` / `CUTOVER_MAINTENANCE` | no                           | Per-job-family cutover flags; all default off in production (nothing installed). Set to exact `"true"` only after the relevant ownership and readiness checks.                             |
+| `TELEGRAM_BOT_TOKEN`                                                                                                                    | required for Telegram digest | Environment fallback for digest delivery; Vault name `telegram_bot_token` takes precedence. Also shared with operator failure pings.                                                       |
+| `TELEGRAM_FAILURE_CHAT_ID`                                                                                                              | no                           | Operator destination for pipeline failure pings (U3). Never used for user digests.                                                                                                         |
+| `OPENWEATHER_API_KEY`                                                                                                                   | no                           | `GET /v1/plan` weather ranking. Unset degrades to a neutral snapshot.                                                                                                                      |
+| `AI_PROVIDER` / `AI_BASE_URL` / `AI_MODEL` / `AI_API_KEY` / `OPENAI_API_KEY`                                                            | no                           | LLM extraction fallback, tagging, review, and embeddings (`src/pipeline/llm-config.ts`; `OPENAI_API_KEY` also read directly by tag-event embeddings). Unset leaves LLM paths unconfigured. |
+| `UNSPLASH_ACCESS_KEY` / `PEXELS_API_KEY` / `PIXABAY_API_KEY`                                                                            | no                           | Stock-image enrichment (U29); unset providers are skipped in fallback order. Unsplash key is shared by search, download tracking, and attribution backfill.                                |
+| `SCRAPER_IMAGE_HOST_ALLOWLIST`                                                                                                          | no                           | Comma-separated extra ingest image hosts appended to the built-in CDN allowlist.                                                                                                           |
+| `VAPID_PRIVATE_KEY` / `VAPID_PUBLIC_KEY` / `VAPID_SUBJECT`                                                                              | required for web push        | Environment fallback for Web Push credentials. Vault names `vapid_private_key`, `vapid_public_key`, and `vapid_subject` take precedence.                                                   |
+| `FCM_SERVICE_ACCOUNT_JSON`                                                                                                              | required for mobile push     | JSON service account fallback for FCM HTTP v1. Both iOS and Android subscription tokens use FCM. Vault name `fcm_service_account_json` takes precedence.                                   |
+| `NODE_VERSION`                                                                                                                          | yes                          | `24` or newer. Railway service variable, not a `.env` entry.                                                                                                                               |
 
 Note: the `AI_*`, stock-image, and allowlist variables are read through
 `process.env` seams in pipeline code rather than the zod schema; they are
@@ -189,14 +189,14 @@ In production, queues register only when their cutover flags are exactly
 pass through the atomic `private.cron_enabled` gate, so setting a flag installs
 the queue but sends nothing until the corresponding legacy cron is disabled.
 
-| Variable | Required when enabled | Notes |
-| --- | --- | --- |
-| `RESEND_API_KEY` | yes | Resend key. Unset means all email soft-fails (logged as `sent: false, dev: true`); jobs still complete without retry. |
-| `RESEND_FROM` | recommended | Default `Family Events <onboarding@resend.dev>` is a sandbox sender; replace it with a verified domain for production. |
-| `RESEND_REPLY_TO` | no | Retained reply address for inline transactional invitation and community-decision mail. The first attempt freezes it with the provider body. Welcome/reminder hosted templates retain their existing contract. |
-| `APP_URL` | recommended | Default `https://family-events.up.railway.app`; used for event, logo, browse, and preference links. |
-| `TELEGRAM_BOT_TOKEN` | yes for Telegram digest | Vault value `telegram_bot_token` takes precedence over this environment fallback. Missing token or per-user chat ID skips only Telegram. |
-| Web Push / FCM credentials | yes for reminder push | Use the VAPID and FCM variables or Vault names listed above. Missing provider credentials skip only that provider. |
+| Variable                   | Required when enabled   | Notes                                                                                                                                                                                                          |
+| -------------------------- | ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `RESEND_API_KEY`           | yes                     | Resend key. Unset means all email soft-fails (logged as `sent: false, dev: true`); jobs still complete without retry.                                                                                          |
+| `RESEND_FROM`              | recommended             | Default `Family Events <onboarding@resend.dev>` is a sandbox sender; replace it with a verified domain for production.                                                                                         |
+| `RESEND_REPLY_TO`          | no                      | Retained reply address for inline transactional invitation and community-decision mail. The first attempt freezes it with the provider body. Welcome/reminder hosted templates retain their existing contract. |
+| `APP_URL`                  | recommended             | Default `https://family-events.up.railway.app`; used for event, logo, browse, and preference links.                                                                                                            |
+| `TELEGRAM_BOT_TOKEN`       | yes for Telegram digest | Vault value `telegram_bot_token` takes precedence over this environment fallback. Missing token or per-user chat ID skips only Telegram.                                                                       |
+| Web Push / FCM credentials | yes for reminder push   | Use the VAPID and FCM variables or Vault names listed above. Missing provider credentials skip only that provider.                                                                                             |
 
 Active U30 channels are reminder email, in-app, Web Push, and FCM; weekly digest
 email and Telegram; and event-change email, in-app, Web Push, and FCM. Both iOS
@@ -285,3 +285,23 @@ discriminator and existing tokens have been migrated. The deployed iOS and
 Android subscription contract uses FCM.
 
 Lifecycle implementation and callback forwarding requirements are documented in [CLERK_LIFECYCLE.md](CLERK_LIFECYCLE.md). This migration work does not establish that the deployed acknowledge-only callback has been replaced.
+
+## Admin Events queue count repair
+
+Migration `20261011002000_admin_queue_count_materialization.sql` makes the
+`base_count` CTE in `private.admin_events_enriched` materialize once. The
+production generic plan recalculated the count 6,730 times and took about
+21 seconds, exceeding the app's 10-second API timeout. A read-only candidate
+with the same generic plan inputs took 257 ms and calculated the count once.
+See [the retained diagnostic receipt](migration-evidence/2026-10-11-admin-queue-timeout.json).
+
+Apply the repository migration runner after the deployed image includes this
+migration and the preceding editor status repair. Verify the complete ledger
+and checksums, then load the unfiltered hosted Events queue and repeat filtered
+counts and cursor pagination. The local plan and read-only candidate do not
+establish hosted recovery. Notification delivery and retirement remain gated.
+
+The paired down migration restores the exact saved function definition and
+refuses to overwrite a function changed after this migration. Restoring the
+original definition can restore the queue timeout. A compatible binary rollback
+can leave this database repair in place.
