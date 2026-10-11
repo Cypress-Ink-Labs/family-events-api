@@ -160,33 +160,42 @@ it("preserves a concurrent function replacement committed while rollback waits",
   await db.withTransaction((client) => client.query(forward))
   const later = (await definition()).replace("BEGIN", "BEGIN\n  PERFORM 1;")
   const writer = await db.pool.connect()
-  const recovery = await db.pool.connect()
   try {
-    await writer.query("BEGIN")
-    await writer.query(later)
-    await recovery.query("BEGIN")
-    const writerPid = (await writer.query("SELECT pg_backend_pid() AS pid")).rows[0].pid
-    const recoveryPid = (await recovery.query("SELECT pg_backend_pid() AS pid")).rows[0].pid
-    const result = recovery.query(rollback).then(
-      () => ({ error: null }),
-      (error: Error) => ({ error })
-    )
-    await expect
-      .poll(async () => {
-        const rows = await db.query<{ blocked: boolean }>(
-          "SELECT $1::int = ANY(pg_blocking_pids($2::int)) AS blocked",
-          [writerPid, recoveryPid]
-        )
-        return rows[0]!.blocked
-      })
-      .toBe(true)
-    await writer.query("COMMIT")
-    expect((await result).error).not.toBeNull()
-    expect(await definition()).toBe(later)
+    const recovery = await db.pool.connect()
+    try {
+      await writer.query("BEGIN")
+      await writer.query(later)
+      await recovery.query("BEGIN")
+      const writerPid = (await writer.query("SELECT pg_backend_pid() AS pid")).rows[0].pid
+      const recoveryPid = (await recovery.query("SELECT pg_backend_pid() AS pid")).rows[0].pid
+      const result = recovery.query(rollback).then(
+        () => ({ error: null }),
+        (error: Error) => ({ error })
+      )
+      await expect
+        .poll(async () => {
+          const rows = await db.query<{ blocked: boolean }>(
+            "SELECT $1::int = ANY(pg_blocking_pids($2::int)) AS blocked",
+            [writerPid, recoveryPid]
+          )
+          return rows[0]!.blocked
+        })
+        .toBe(true)
+      await writer.query("COMMIT")
+      expect((await result).error).not.toBeNull()
+      expect(await definition()).toBe(later)
+    } finally {
+      try {
+        await writer.query("ROLLBACK")
+      } finally {
+        try {
+          await recovery.query("ROLLBACK")
+        } finally {
+          recovery.release()
+        }
+      }
+    }
   } finally {
-    await writer.query("ROLLBACK")
-    await recovery.query("ROLLBACK")
     writer.release()
-    recovery.release()
   }
 })
