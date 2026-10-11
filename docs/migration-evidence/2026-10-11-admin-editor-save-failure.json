@@ -1,0 +1,57 @@
+{
+  "scope": "Controlled operator event-editor trial; full migration remains incomplete",
+  "observed_date": "2026-10-11",
+  "api_commit": "49fa52ec4faff6f63f8bebfc78c8331163020dd6",
+  "app_commit": "8b12165ef81c5a3a59c6d2d70ef78aae7fc9dc6c",
+  "fixture_id": "aec0af90-ce00-4887-9a45-cc174f5204e8",
+  "private_draft": true,
+  "invalid_input": {
+    "minimum_age": 12,
+    "maximum_age": 3,
+    "visible_error": "Maximum age must not be below minimum age",
+    "values_retained": true
+  },
+  "valid_saves": [
+    {
+      "timestamp": "2026-10-11T13:35:46.961009980Z",
+      "http_status": 500
+    },
+    {
+      "timestamp": "2026-10-11T13:36:09.470818903Z",
+      "http_status": 500
+    }
+  ],
+  "database_error": {
+    "code": "42804",
+    "message": "CASE types public.event_status and text cannot be matched",
+    "function": "private.admin_update_event(uuid,jsonb,uuid[],boolean,text)",
+    "production_status_expression": "status = CASE WHEN patch ? 'status' THEN patch->>'status' ELSE status END"
+  },
+  "post_failure": {
+    "title": "Migration acceptance: private event editor fixture",
+    "status": "draft",
+    "tag_slug": "music",
+    "decisions": [],
+    "audit": [],
+    "unchanged_fields_sha256": "e6505837426361003c1a22497ac46c1ef5d2f7b6f35eeff9e833cf761afcfe79",
+    "hash_excludes": [
+      "title",
+      "venue_name",
+      "status",
+      "updated_at",
+      "admin_locked_fields",
+      "admin_last_edited_at",
+      "admin_last_edited_by",
+      "search_vector"
+    ],
+    "operator_account_sha256": "a18c505b5a271862a9828e6328ad3af30f91ca814c632674db959417c3213c86"
+  },
+  "cleanup": {
+    "timestamp": "2026-10-11T13:39:13.516Z",
+    "owned_draft_event_removed": true,
+    "operator_account_sha256": "a18c505b5a271862a9828e6328ad3af30f91ca814c632674db959417c3213c86"
+  },
+  "production_fix_verified": false,
+  "observation_window_started": false,
+  "legacy_retirement_authorized": false
+}
