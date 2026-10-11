@@ -290,8 +290,9 @@ Lifecycle implementation and callback forwarding requirements are documented in 
 
 Migration `20261011002000_admin_queue_count_materialization.sql` makes the
 `base_count` CTE in `private.admin_events_enriched` materialize once. The
-production generic plan recalculated the count 6,730 times and took about
-21 seconds, exceeding the app's 10-second API timeout. A read-only candidate
+production RPC exceeded the 8-second database statement timeout. A separate
+generic-plan probe recalculated the count 6,730 times and took about 21
+seconds. A read-only candidate
 with the same generic plan inputs took 257 ms and calculated the count once.
 See [the retained diagnostic receipt](migration-evidence/2026-10-11-admin-queue-timeout.json).
 
