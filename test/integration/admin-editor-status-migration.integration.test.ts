@@ -89,6 +89,24 @@ it("preserves an already corrected definition through apply and rollback", async
   expect(await definition()).toBe(corrected)
 })
 
+it.each([typed, untyped])(
+  "rejects an additional recognized assignment atomically: %s",
+  async (extra) => {
+    const original = (await definition()).replace(untyped, typed)
+    await db.query(original.replace("DECLARE", `DECLARE\n  -- ${extra}`))
+    const ambiguous = await definition()
+    await expect(db.withTransaction((client) => client.query(forward))).rejects.toThrow(
+      "multiple recognized assignments"
+    )
+    expect(await definition()).toBe(ambiguous)
+    expect(
+      (await db.query("SELECT to_regclass('private.api_admin_editor_status_rollback') AS name"))[0]!
+        .name
+    ).toBeNull()
+    await db.query(original)
+  }
+)
+
 it("rejects unknown definitions atomically and protects subsequent function changes on rollback", async () => {
   const original = (await definition()).replace(untyped, typed)
   await db.query(original.replace(typed, "status = status"))

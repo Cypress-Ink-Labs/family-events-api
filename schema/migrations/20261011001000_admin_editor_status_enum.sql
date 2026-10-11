@@ -9,6 +9,7 @@ DO $migration$
 DECLARE
   definition text;
   changed text;
+  recognized_count integer;
   untyped constant text := $expression$status = CASE WHEN patch ? 'status' THEN patch->>'status' ELSE status END$expression$;
   typed constant text := $expression$status = CASE WHEN patch ? 'status' THEN (patch->>'status')::public.event_status ELSE status END$expression$;
 BEGIN
@@ -16,15 +17,19 @@ BEGIN
     'private.admin_update_event(uuid,jsonb,uuid[],boolean,text)'::regprocedure
   ) INTO definition;
 
-  IF strpos(definition, untyped) > 0 THEN
-    IF (length(definition) - length(replace(definition, untyped, ''))) <> length(untyped) THEN
-      RAISE EXCEPTION 'admin editor status migration found multiple untyped assignments';
-    END IF;
-    changed := replace(definition, untyped, typed);
-  ELSIF strpos(definition, typed) > 0 THEN
-    changed := definition;
-  ELSE
+  recognized_count :=
+    (length(definition) - length(replace(definition, untyped, ''))) / length(untyped)
+    + (length(definition) - length(replace(definition, typed, ''))) / length(typed);
+  IF recognized_count > 1 THEN
+    RAISE EXCEPTION 'admin editor status migration found multiple recognized assignments';
+  ELSIF recognized_count = 0 THEN
     RAISE EXCEPTION 'admin editor status migration found an unknown assignment';
+  END IF;
+
+  IF strpos(definition, untyped) > 0 THEN
+    changed := replace(definition, untyped, typed);
+  ELSE
+    changed := definition;
   END IF;
 
   INSERT INTO private.api_admin_editor_status_rollback(original_definition, patched_definition)
