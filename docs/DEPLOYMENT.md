@@ -167,6 +167,14 @@ Rolling back a repaired production function restores the broken status
 expression. Review that consequence before recovery; an API binary rollback
 does not require reversing this compatible SQL repair.
 
+Apply the preceding `20261011002000` admin queue migration from API PR #70 before
+`20261011003000`. Refresh this branch from main after #70 merges so both versions
+are present in the repository before using the migration runner. The runner
+requires applied versions to be a prefix of repository history: applying 03000
+while 02000 is missing would make a later checkout containing 02000 refuse to
+reconcile that ledger. Keep the invitation caller transfer pending until this
+ordering prerequisite is verified.
+
 Migration `20261011003000` transfers the retained anonymous invitation-request
 RPC's mail intent to `private.transactional_email_outbox`. A read-only production
 catalog check on October 11 found that `public.request_invite` still reached
