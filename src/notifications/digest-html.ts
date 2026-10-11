@@ -156,8 +156,8 @@ export function renderDigestEmail(input: {
   const count = String(input.events.length)
   const eventLabel = input.events.length === 1 ? "event" : "events"
   const eventsHtml = input.events.map((event) => renderEventCard(event, appUrl)).join("\n")
-  const unsubscribeUrl = `${appUrl}/profile?tab=notifications`
-  const logoUrl = `${appUrl}/brand/family-events-logo.png`
+  const unsubscribeUrl = `${appUrl}/account/alerts`
+  const logoUrl = `${appUrl}/brand/icon-192.png`
 
   return {
     subject: `${input.events.length} family picks for your weekend`,
