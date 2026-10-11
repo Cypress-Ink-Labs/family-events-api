@@ -1,6 +1,7 @@
 import { Injectable } from "@nestjs/common"
 
 import { DbService } from "../db/db.service.js"
+import { recipientEligibilitySql } from "./recipient-eligibility.sql.js"
 
 // Stable signed 64-bit namespace key reserved for the U30 notification queue.
 export const NOTIFICATION_QUEUE_LOCK_ID = "564679841717855333"
@@ -79,9 +80,10 @@ WHERE id = ANY($1::uuid[])
 `
 
 const HYDRATE_PROFILES_SQL = `
-SELECT id, email, display_name AS "displayName"
-FROM public.user_profiles
-WHERE id = ANY($1::uuid[])
+SELECT p.id, p.email, p.display_name AS "displayName"
+FROM public.user_profiles p
+WHERE p.id = ANY($1::uuid[])
+  AND ${recipientEligibilitySql("p.id")}
 `
 
 const HYDRATE_PREFERENCES_SQL = `
