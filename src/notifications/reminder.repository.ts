@@ -1,6 +1,7 @@
 import { Injectable } from "@nestjs/common"
 
 import { DbService } from "../db/db.service.js"
+import { recipientEligibilitySql } from "./recipient-eligibility.sql.js"
 
 export interface ReminderTarget {
   userId: string
@@ -43,6 +44,7 @@ JOIN public.events e ON e.id = f.event_id
   AND e.start_datetime < $2::timestamptz
 LEFT JOIN public.user_profiles p ON p.id = f.user_id
 LEFT JOIN public.user_notification_preferences unp ON unp.user_id = f.user_id
+WHERE ${recipientEligibilitySql("f.user_id")}
 ORDER BY f.user_id, e.start_datetime, e.id
 `
 

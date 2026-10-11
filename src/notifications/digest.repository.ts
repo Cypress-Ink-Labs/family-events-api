@@ -1,6 +1,7 @@
 import { Injectable, Logger } from "@nestjs/common"
 
 import { DbService } from "../db/db.service.js"
+import { recipientEligibilitySql } from "./recipient-eligibility.sql.js"
 
 export interface DigestUser {
   userId: string
@@ -42,6 +43,7 @@ FROM public.user_notification_preferences unp
 JOIN public.user_profiles p ON p.id = unp.user_id
 JOIN public.cities c ON c.id = p.city_preference_id
 WHERE (unp.digest_email IS TRUE OR unp.digest_telegram IS TRUE)
+  AND ${recipientEligibilitySql("p.id")}
 `
 
 @Injectable()
