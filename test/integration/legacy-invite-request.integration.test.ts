@@ -131,10 +131,13 @@ describe("retained invitation RPC outbox migration", () => {
   })
 
   it("serializes concurrent requests with the API intake lock and queues one message", async () => {
-    const results = await Promise.all(
+    const results = await Promise.allSettled(
       Array.from({ length: 8 }, () => requestInvite("race@example.com"))
     )
-    expect(results.filter(Boolean)).toHaveLength(3)
+    expect(results.every((result) => result.status === "fulfilled")).toBe(true)
+    expect(results.filter((result) => result.status === "fulfilled" && result.value)).toHaveLength(
+      3
+    )
     expect(await db.query("SELECT count(*)::int AS n FROM public.invite_requests")).toEqual([
       { n: 1 },
     ])
@@ -148,12 +151,13 @@ describe("retained invitation RPC outbox migration", () => {
 
   it("shares request ownership and deduplication with concurrent API intake", async () => {
     const onboarding = new OnboardingService(db, new IdentityService(db))
-    await Promise.all([
+    const results = await Promise.allSettled([
       requestInvite("shared@example.com", "legacy"),
       onboarding.request("shared@example.com", "API"),
       requestInvite("SHARED@example.com", "legacy retry"),
       onboarding.request("shared@example.com", "API retry"),
     ])
+    expect(results.every((result) => result.status === "fulfilled")).toBe(true)
     expect(await db.query("SELECT count(*)::int AS n FROM public.invite_requests")).toEqual([
       { n: 1 },
     ])
