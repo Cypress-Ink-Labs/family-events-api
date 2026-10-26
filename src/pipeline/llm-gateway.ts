@@ -1,6 +1,6 @@
 // Vercel AI Gateway transport over the AI SDK. One AI_GATEWAY_API_KEY reaches
-// every approved gateway model, e.g. "spacexai/grok-4.20-non-reasoning" for
-// chat and "openai/text-embedding-3-small" for embeddings.
+// every approved gateway model, e.g. "openai/gpt-6-luna" for chat and
+// "openai/text-embedding-3-small" for embeddings.
 
 import {
   createGateway,
@@ -20,11 +20,13 @@ import { OpenAiChatCompletionHttpError, type ChatCompletionResult } from "./llm-
 
 export const GATEWAY_PROVIDER = "gateway"
 export const GATEWAY_API_KEY_ENV = "AI_GATEWAY_API_KEY"
-export const DEFAULT_GATEWAY_MODEL = "spacexai/grok-4.20-non-reasoning"
+export const DEFAULT_GATEWAY_MODEL = "openai/gpt-6-luna"
 export const GATEWAY_EMBEDDING_MODEL = "openai/text-embedding-3-small"
 
 /** Keep in step with the gateway rows in public.approved_ai_models. */
 export const APPROVED_GATEWAY_MODELS: ReadonlySet<string> = new Set([
+  "openai/gpt-6-luna",
+  "openai/gpt-6-luna-fast",
   "spacexai/grok-4.20-non-reasoning",
   "spacexai/grok-4.3",
   "spacexai/grok-4.7",

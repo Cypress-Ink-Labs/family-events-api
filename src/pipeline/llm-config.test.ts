@@ -16,7 +16,7 @@ const descriptor = {
 }
 
 describe("resolveSharedLlmConfig", () => {
-  it("defaults to the gateway and the Grok default when the gateway key is set", () => {
+  it("defaults to the gateway and GPT-6 Luna when the gateway key is set", () => {
     expect(
       resolveSharedLlmConfig(
         descriptor,
@@ -27,7 +27,25 @@ describe("resolveSharedLlmConfig", () => {
       baseUrl: "",
       configured: true,
       enabled: true,
-      model: "spacexai/grok-4.20-non-reasoning",
+      model: "openai/gpt-6-luna",
+      provider: "gateway",
+    })
+  })
+
+  it("keeps the gateway default for a GPT-6 Luna assignment instead of the legacy OpenAI allowlist", () => {
+    const config = resolveSharedLlmConfig(
+      {
+        ...descriptor,
+        dbOverride: { enabled: true, modelId: "openai/gpt-6-luna-fast", provider: "gateway" },
+      },
+      env({ AI_GATEWAY_API_KEY: "vck_test", OPENAI_API_KEY: "sk-legacy" })
+    )
+    expect(config).toEqual({
+      apiKey: "vck_test",
+      baseUrl: "",
+      configured: true,
+      enabled: true,
+      model: "openai/gpt-6-luna-fast",
       provider: "gateway",
     })
   })
