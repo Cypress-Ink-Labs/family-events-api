@@ -1,8 +1,11 @@
 import { ApiProperty } from "@nestjs/swagger"
 
+import { AI_CALL_FEATURES, AI_FAILURE_REASONS } from "../pipeline/ai-health.js"
+import { AI_HEALTH_STATUSES } from "./ai-health-summary.js"
+
 export class AdminAiModelDto {
   @ApiProperty() id!: string
-  @ApiProperty({ enum: ["openai", "ollama", "localai"] }) provider!: string
+  @ApiProperty({ enum: ["gateway", "openai", "ollama", "localai"] }) provider!: string
   @ApiProperty() display_name!: string
   @ApiProperty() description!: string
   @ApiProperty({ enum: ["low", "medium", "high"] }) cost_tier!: string
@@ -48,10 +51,34 @@ export class AdminScheduleHealthDto {
   @ApiProperty({ type: Boolean, nullable: true }) nest_enabled!: boolean | null
   @ApiProperty({ enum: ["legacy", "api", "paused", "internal"] }) owner!: string
 }
+export class AdminAiFeatureHealthDto {
+  @ApiProperty() feature!: string
+  @ApiProperty({ type: String, nullable: true }) provider!: string | null
+  @ApiProperty() enabled!: boolean
+  @ApiProperty({ description: "Whether the provider's key or URL is set; never the value." })
+  credentials_configured!: boolean
+}
+export class AdminAiLastFailureDto {
+  @ApiProperty({ enum: [...AI_CALL_FEATURES] }) feature!: string
+  @ApiProperty() provider!: string
+  @ApiProperty() model!: string
+  @ApiProperty({ enum: [...AI_FAILURE_REASONS] }) reason!: string
+  @ApiProperty({ format: "date-time" }) at!: string
+}
+export class AdminAiHealthDto {
+  @ApiProperty({ enum: [...AI_HEALTH_STATUSES] }) status!: string
+  @ApiProperty() gateway_key_configured!: boolean
+  @ApiProperty({ type: [AdminAiFeatureHealthDto] }) features!: AdminAiFeatureHealthDto[]
+  @ApiProperty({ type: AdminAiLastFailureDto, nullable: true })
+  last_failure!: AdminAiLastFailureDto | null
+  @ApiProperty({ type: String, nullable: true, format: "date-time" })
+  last_success_at!: string | null
+}
 export class AdminDashboardHealthDto {
   @ApiProperty({ format: "date-time" }) generated_at!: string
   @ApiProperty({ type: [AdminPresenceDto] }) presence!: AdminPresenceDto[]
   @ApiProperty({ type: [AdminIngestionDayDto] }) ingestion!: AdminIngestionDayDto[]
   @ApiProperty({ type: [AdminRecentRunDto] }) recent_runs!: AdminRecentRunDto[]
   @ApiProperty({ type: [AdminScheduleHealthDto] }) schedules!: AdminScheduleHealthDto[]
+  @ApiProperty({ type: AdminAiHealthDto }) ai!: AdminAiHealthDto
 }

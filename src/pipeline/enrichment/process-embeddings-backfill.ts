@@ -21,7 +21,7 @@
 //   guard around the sleep call.
 
 import { logEdgeEvent } from "../logger.js"
-import { embedEvent, type EmbedEventDb } from "./embed-event.js"
+import { embedEvent, type EmbedEventDb, type EmbedEventDependencies } from "./embed-event.js"
 
 const BATCH_SIZE = 50
 const DELAY_BETWEEN_ITEMS_MS = 50 // ~1200/min, well under OpenAI 3000 RPM
@@ -44,6 +44,7 @@ export interface EmbeddingsBackfillSummary {
 
 export interface EmbeddingsBackfillDependencies {
   apiKey: string
+  provider?: EmbedEventDependencies["provider"]
   /** Legacy BATCH_SIZE = 50. */
   batchSize?: number
   /** Legacy DELAY_BETWEEN_ITEMS_MS = 50. */
@@ -117,7 +118,7 @@ export async function processEmbeddingsBackfill(
       await embedEvent(
         db,
         { eventId: event.id, title, description: event.description },
-        { apiKey: deps.apiKey, fetchImpl: deps.fetchImpl }
+        { apiKey: deps.apiKey, provider: deps.provider, fetchImpl: deps.fetchImpl }
       )
       summary.processed += 1
     } catch (err) {

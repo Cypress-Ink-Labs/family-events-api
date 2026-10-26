@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest"
+import { MockLanguageModelV4 } from "ai/test"
+import { describe, expect, it, vi } from "vitest"
 
 import type { EnvReader } from "../llm-config.js"
 import { PARENT_TIPS_JSON_SCHEMA } from "./parent-tips-prompt.js"
@@ -290,5 +291,54 @@ describe("generateParentTipsForEvent", () => {
     expect(result.status).toBe("failed")
     expect(db.updates).toHaveLength(0)
     expect(db.attempts).toHaveLength(0)
+  })
+})
+
+describe("parent tips through the AI Gateway", () => {
+  it("resolves an approved gateway assignment to the gateway key and Grok model", () => {
+    const config = resolveParentTipsAiConfig(
+      { modelId: "spacexai/grok-4.7", provider: "gateway", enabled: true },
+      fakeEnv({ AI_GATEWAY_API_KEY: "vck_test", OPENAI_API_KEY: "sk-legacy" })
+    )
+
+    expect(config).toMatchObject({
+      provider: "gateway",
+      model: "spacexai/grok-4.7",
+      apiKey: "vck_test",
+      configured: true,
+    })
+  })
+
+  it("generates and stores tips with the gateway provider label", async () => {
+    const model = new MockLanguageModelV4({
+      doGenerate: {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({ tips: [{ category: "arrival", text: "Park on Main St." }] }),
+          },
+        ],
+        finishReason: { unified: "stop", raw: "stop" },
+        usage: {
+          inputTokens: { total: 1, noCache: 1, cacheRead: undefined, cacheWrite: undefined },
+          outputTokens: { total: 1, text: 1, reasoning: undefined },
+        },
+        warnings: [],
+      },
+    })
+    const languageModel = vi.fn(() => model)
+    const db = new FakeParentTipsDb()
+
+    const result = await generateParentTipsForEvent(
+      db,
+      baseCandidate(),
+      baseConfig({ provider: "gateway", model: "spacexai/grok-4.7", baseUrl: "", apiKey: "vck" }),
+      { gatewayModels: { languageModel, embeddingModel: vi.fn() } }
+    )
+
+    expect(result).toMatchObject({ status: "generated", provider: "gateway" })
+    expect(languageModel).toHaveBeenCalledWith("spacexai/grok-4.7")
+    expect(model.doGenerateCalls[0]).toMatchObject({ temperature: 0.2 })
+    expect(db.updates[0]).toMatchObject({ provider: "gateway", model: "spacexai/grok-4.7" })
   })
 })

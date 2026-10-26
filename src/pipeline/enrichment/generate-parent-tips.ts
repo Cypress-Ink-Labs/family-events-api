@@ -33,9 +33,11 @@
 // silently falls back to `DEFAULT_OPENAI_MODEL` ("gpt-4.1-nano") via
 // `resolveSharedLlmConfig`'s allowlist check. This reproduces production
 // behavior exactly and is intentional for U33 cutover parity — do NOT
-// "fix"/extend this allowlist as part of this port.
+// "fix"/extend this allowlist as part of this port. Gateway models are
+// checked against the shared approved gateway allowlist instead.
 
 import { resolveSharedLlmConfig, type EnvReader, type SharedLlmProvider } from "../llm-config.js"
+import { GATEWAY_PROVIDER, generateGatewayText, type GatewayModels } from "../llm-gateway.js"
 import { parseJsonContent, postOpenAiChatCompletion } from "../llm-openai.js"
 import {
   buildParentTipsSystemPrompt,
@@ -180,40 +182,26 @@ export async function generateParentTipsForEvent(
   db: ParentTipsDb,
   candidate: ParentTipsCandidate,
   config: ParentTipsLlmConfig,
-  deps?: { fetchImpl?: typeof fetch; timeoutMs?: number }
+  deps?: { fetchImpl?: typeof fetch; timeoutMs?: number; gatewayModels?: GatewayModels }
 ): Promise<GenerateParentTipsResult> {
   const systemPrompt = buildParentTipsSystemPrompt()
   const userPrompt = buildParentTipsUserPrompt(candidate)
 
   try {
-    const completion = await postOpenAiChatCompletion({
-      apiKey: config.apiKey ?? "",
-      baseUrl: config.baseUrl,
-      body: {
-        model: config.model,
-        temperature: 0.2,
-        response_format:
-          config.provider === "openai"
-            ? {
-                type: "json_schema" as const,
-                json_schema: {
-                  name: "parent_tips",
-                  strict: true,
-                  schema: PARENT_TIPS_JSON_SCHEMA,
-                },
-              }
-            : { type: "json_object" as const },
-        ...(config.provider === "ollama" ? { reasoning_effort: "none" } : {}),
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt },
-        ],
-      },
-      fetchImpl: deps?.fetchImpl,
-      failureMessagePrefix: `${config.provider} parent-tips call failed`,
-      providerName: config.provider,
-      timeoutMs: deps?.timeoutMs ?? AI_TIMEOUT_MS,
-    })
+    const completion =
+      config.provider === GATEWAY_PROVIDER
+        ? await generateGatewayText({
+            apiKey: config.apiKey ?? "",
+            model: config.model,
+            system: systemPrompt,
+            prompt: userPrompt,
+            temperature: 0.2,
+            feature: "parent-tips",
+            failureMessagePrefix: `${config.provider} parent-tips call failed`,
+            timeoutMs: deps?.timeoutMs ?? AI_TIMEOUT_MS,
+            models: deps?.gatewayModels,
+          })
+        : await postLegacyParentTips(config, systemPrompt, userPrompt, deps)
 
     const parsed = parseJsonContent(completion.content)
     const rawTips = Array.isArray(parsed.tips) ? parsed.tips : []
@@ -249,4 +237,41 @@ export async function generateParentTipsForEvent(
   } catch (err) {
     return { status: "failed", error: err instanceof Error ? err.message : String(err) }
   }
+}
+
+function postLegacyParentTips(
+  config: ParentTipsLlmConfig,
+  systemPrompt: string,
+  userPrompt: string,
+  deps?: { fetchImpl?: typeof fetch; timeoutMs?: number }
+) {
+  return postOpenAiChatCompletion({
+    apiKey: config.apiKey ?? "",
+    baseUrl: config.baseUrl,
+    body: {
+      model: config.model,
+      temperature: 0.2,
+      response_format:
+        config.provider === "openai"
+          ? {
+              type: "json_schema" as const,
+              json_schema: {
+                name: "parent_tips",
+                strict: true,
+                schema: PARENT_TIPS_JSON_SCHEMA,
+              },
+            }
+          : { type: "json_object" as const },
+      ...(config.provider === "ollama" ? { reasoning_effort: "none" } : {}),
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt },
+      ],
+    },
+    fetchImpl: deps?.fetchImpl,
+    failureMessagePrefix: `${config.provider} parent-tips call failed`,
+    providerName: config.provider,
+    timeoutMs: deps?.timeoutMs ?? AI_TIMEOUT_MS,
+    telemetry: { feature: "parent-tips", provider: config.provider, model: config.model },
+  })
 }

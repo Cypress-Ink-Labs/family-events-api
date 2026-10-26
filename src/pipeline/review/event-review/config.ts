@@ -1,3 +1,4 @@
+import { GATEWAY_PROVIDER, readGatewayApiKey, resolveGatewayModel } from "../../llm-gateway.js"
 import type { LlmReviewConfig } from "./types.js"
 import { LLM_EVENT_REVIEW_PROMPT_VERSION } from "./prompt.js"
 
@@ -54,19 +55,26 @@ export function resolveLlmReviewConfig(
 ): LlmReviewConfig {
   const enabled =
     dbOverrides != null ? dbOverrides.enabled : parseBoolean(env.get("LLM_REVIEW_ENABLED"), false)
+  const gatewayKey = readGatewayApiKey(env)
   const provider =
     dbOverrides?.provider ??
     env.get("LLM_REVIEW_PROVIDER") ??
     env.get("AI_PROVIDER") ??
-    "openai-compatible"
-  const baseUrl = normalizeBaseUrl(env.get("LLM_REVIEW_BASE_URL") ?? env.get("AI_BASE_URL"))
-  const model = (
+    (gatewayKey ? GATEWAY_PROVIDER : "openai-compatible")
+  const gateway = provider === GATEWAY_PROVIDER
+  const baseUrl = gateway
+    ? ""
+    : normalizeBaseUrl(env.get("LLM_REVIEW_BASE_URL") ?? env.get("AI_BASE_URL"))
+  const configuredModel = (
     dbOverrides?.model ??
     env.get("LLM_REVIEW_MODEL") ??
     env.get("AI_MODEL") ??
     ""
   ).trim()
-  const apiKey = (env.get("LLM_REVIEW_API_KEY") ?? env.get("AI_API_KEY") ?? "").trim()
+  const model = gateway ? resolveGatewayModel(configuredModel) : configuredModel
+  const apiKey = gateway
+    ? gatewayKey
+    : (env.get("LLM_REVIEW_API_KEY") ?? env.get("AI_API_KEY") ?? "").trim()
   const promptVersion =
     (env.get("LLM_REVIEW_PROMPT_VERSION") ?? LLM_EVENT_REVIEW_PROMPT_VERSION).trim() ||
     LLM_EVENT_REVIEW_PROMPT_VERSION
@@ -90,7 +98,7 @@ export function resolveLlmReviewConfig(
     } else if (!apiKey) {
       valid = false
       invalidReason = "missing_api_key"
-    } else if (!baseUrl) {
+    } else if (!baseUrl && !gateway) {
       valid = false
       invalidReason = "missing_base_url"
     } else if (!parsedThreshold.valid || !(confidenceThreshold >= 0 && confidenceThreshold <= 1)) {

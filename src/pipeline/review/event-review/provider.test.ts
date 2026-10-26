@@ -1,6 +1,7 @@
+import { MockLanguageModelV4 } from "ai/test"
 import { describe, expect, it, vi } from "vitest"
 import { reviewEventWithLlm } from "./reviewer.js"
-import { buildLlmReviewProvider } from "./provider.js"
+import { buildLlmReviewProvider, GatewayReviewProvider } from "./provider.js"
 import type { LlmReviewConfig } from "./types.js"
 
 // Thin provider test (U29 task brief: "Provider gets a thin test with a stubbed fetch/client").
@@ -187,5 +188,42 @@ describe("buildLlmReviewProvider", () => {
     expect(result.appliedDecision).toBe("approve")
     expect(result.flags).not.toContain("low_confidence")
     expect(result.flags).toContain("memory_confidence_boosted")
+  })
+
+  it("reviews through the gateway with the assigned Grok model", async () => {
+    const model = new MockLanguageModelV4({
+      doGenerate: {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({ decision: "approve", confidence: 0.9, reason: "Clear" }),
+          },
+        ],
+        finishReason: { unified: "stop", raw: "stop" },
+        usage: {
+          inputTokens: { total: 1, noCache: 1, cacheRead: undefined, cacheWrite: undefined },
+          outputTokens: { total: 1, text: 1, reasoning: undefined },
+        },
+        warnings: [],
+      },
+    })
+    const languageModel = vi.fn(() => model)
+    const config = reviewConfig({
+      provider: "gateway",
+      baseUrl: "",
+      model: "spacexai/grok-4.3",
+      apiKey: "vck_test",
+    })
+    const provider = new GatewayReviewProvider(config, {
+      languageModel,
+      embeddingModel: vi.fn(),
+    })
+
+    const result = await reviewEventWithLlm(reviewInput, { config, provider })
+
+    expect(languageModel).toHaveBeenCalledWith("spacexai/grok-4.3")
+    expect(model.doGenerateCalls[0]).toMatchObject({ temperature: 0 })
+    expect(result.appliedDecision).toBe("approve")
+    expect(buildLlmReviewProvider(config)).toBeInstanceOf(GatewayReviewProvider)
   })
 })
