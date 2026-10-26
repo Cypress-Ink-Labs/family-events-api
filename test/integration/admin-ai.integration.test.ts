@@ -11,6 +11,7 @@ import { PgExceptionFilter } from "../../src/common/pg-exception.filter.js"
 import { DbModule } from "../../src/db/db.module.js"
 import { DbService } from "../../src/db/db.service.js"
 import { readFileSync } from "node:fs"
+import { AiHealthRecorder } from "../../src/pipeline/ai-health.recorder.js"
 import { ClassificationRepository } from "../../src/pipeline/classification/classification.repository.js"
 import { ensureAdminCatalog, truncateAdminCatalog } from "./admin-catalog.js"
 import { integrationDatabaseUrl } from "./db.js"
@@ -54,14 +55,24 @@ describe("AI settings and dashboard health HTTP", () => {
     await db.query("DROP TABLE IF EXISTS private.operator_presence")
     await db.query(readFileSync("schema/migrations/20261008007000_operator_presence.sql", "utf8"))
     await db.query(readFileSync("test/integration/sql/ai_feature_config.sql", "utf8"))
+    const gatewayMigration = readFileSync("schema/migrations/20261026001000_ai_gateway.sql", "utf8")
+    await db.query("DROP TABLE IF EXISTS private.ai_call_health")
+    await db.query(
+      gatewayMigration.slice(gatewayMigration.indexOf("CREATE TABLE private.ai_call_health"))
+    )
     await db.query(
       "CREATE TABLE IF NOT EXISTS public.clerk_user_mapping(clerk_user_id text PRIMARY KEY,supabase_uuid uuid UNIQUE NOT NULL REFERENCES auth.users(id),email text NOT NULL,role text NOT NULL DEFAULT 'member',created_at timestamptz NOT NULL DEFAULT now(),updated_at timestamptz NOT NULL DEFAULT now())"
     )
   })
   afterAll(async () => {
+    vi.unstubAllEnvs()
     await app?.close()
   })
   beforeEach(async () => {
+    vi.unstubAllEnvs()
+    for (const name of ["AI_GATEWAY_API_KEY", "OPENAI_API_KEY", "AI_API_KEY", "LLM_REVIEW_API_KEY"])
+      vi.stubEnv(name, "")
+    await db.query("TRUNCATE private.ai_call_health")
     await truncateAdminCatalog(db)
     await db.query("TRUNCATE public.clerk_user_mapping,auth.users CASCADE")
     actor = randomUUID()
@@ -203,6 +214,50 @@ describe("AI settings and dashboard health HTTP", () => {
     await db.query("UPDATE private.operator_presence SET last_seen_at=now()-interval '91 seconds'")
     await db.query("UPDATE public.user_access SET is_enabled=false WHERE user_id=$1", [actor])
     await get("dashboard/health").expect(403)
+  })
+  it("reports AI availability from recorded calls and key presence, never key values", async () => {
+    const recorder = new AiHealthRecorder(db)
+    const tagging = { feature: "tagging", provider: "openai", model: "fixture-model" } as const
+    const aiHealth = async () => (await get("dashboard/health").expect(200)).body.ai
+
+    expect(await aiHealth()).toMatchObject({
+      status: "not_configured",
+      gateway_key_configured: false,
+      features: [
+        { feature: "tagging", provider: "openai", enabled: true, credentials_configured: false },
+      ],
+      last_failure: null,
+      last_success_at: null,
+    })
+
+    vi.stubEnv("OPENAI_API_KEY", "sk-fixture-secret")
+    vi.stubEnv("AI_GATEWAY_API_KEY", "vck_fixture_secret")
+    expect(await aiHealth()).toMatchObject({ status: "unknown", gateway_key_configured: true })
+
+    await recorder.record({ ...tagging, failure: null })
+    const available = await aiHealth()
+    expect(available.status).toBe("available")
+    expect(available.last_success_at).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/)
+
+    await recorder.record({ ...tagging, failure: "unauthorized" })
+    const unavailable = await aiHealth()
+    expect(unavailable).toMatchObject({
+      status: "unavailable",
+      last_failure: { feature: "tagging", provider: "openai", reason: "unauthorized" },
+      last_success_at: available.last_success_at,
+    })
+    expect(JSON.stringify(unavailable)).not.toMatch(/sk-fixture-secret|vck_fixture_secret/)
+
+    await recorder.record({ ...tagging, failure: null })
+    expect(await aiHealth()).toMatchObject({ status: "available", last_failure: null })
+    expect(
+      await db.query(
+        "SELECT last_failure_reason FROM private.ai_call_health WHERE feature='tagging'"
+      )
+    ).toEqual([{ last_failure_reason: "unauthorized" }])
+
+    await db.query("UPDATE public.ai_feature_config SET enabled=false WHERE feature='tagging'")
+    expect((await aiHealth()).status).toBe("disabled")
   })
   it("rehearses presence rollback and reapplication without changing personal or configuration data", async () => {
     await get("dashboard/health").expect(200)

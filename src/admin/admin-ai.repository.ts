@@ -2,6 +2,7 @@ import { BadRequestException, ForbiddenException, Injectable } from "@nestjs/com
 import type { PoolClient } from "pg"
 import { DbService } from "../db/db.service.js"
 import { FAMILIES, JOB_FAMILIES } from "../pipeline/families.js"
+import type { EnvReader } from "../pipeline/llm-config.js"
 import { isDatabaseAdminDenial, requireDatabaseAdmin, withAdminActor } from "./admin-database.js"
 import type {
   AdminAiModelDto,
@@ -11,6 +12,16 @@ import type {
   AdminIngestionDayDto,
   AdminRecentRunDto,
 } from "./admin-ai.dto.js"
+import {
+  summarizeAiHealth,
+  type AiCallHealthRow,
+  type AiFeatureAssignment,
+} from "./ai-health-summary.js"
+
+const utcIso = (column: string) =>
+  `to_char(${column} AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`
+
+const processEnvReader: EnvReader = { get: (name) => process.env[name] }
 
 @Injectable()
 export class AdminAiRepository {
@@ -129,7 +140,25 @@ export class AdminAiRepository {
           }
         })
       )
-      return { generated_at: new Date().toISOString(), presence, ingestion, recent_runs, schedules }
+      const assignments = (
+        await client.query<AiFeatureAssignment>(
+          "SELECT cfg.feature,models.provider,cfg.enabled FROM public.ai_feature_config cfg LEFT JOIN public.approved_ai_models models ON models.id=cfg.model_id ORDER BY cfg.feature"
+        )
+      ).rows
+      const calls = (
+        await client.query<AiCallHealthRow>(
+          `SELECT feature,provider,model,${utcIso("last_success_at")} AS last_success_at,${utcIso("last_failure_at")} AS last_failure_at,last_failure_reason FROM private.ai_call_health ORDER BY feature`
+        )
+      ).rows
+      const ai = summarizeAiHealth({ assignments, calls, env: processEnvReader })
+      return {
+        generated_at: new Date().toISOString(),
+        presence,
+        ingestion,
+        recent_runs,
+        schedules,
+        ai,
+      }
     })
   }
 }

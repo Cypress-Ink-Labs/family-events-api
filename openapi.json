@@ -11295,6 +11295,7 @@
           "provider": {
             "type": "string",
             "enum": [
+              "gateway",
               "openai",
               "ollama",
               "localai"
@@ -11502,6 +11503,117 @@
           "owner"
         ]
       },
+      "AdminAiFeatureHealthDto": {
+        "type": "object",
+        "properties": {
+          "feature": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string",
+            "nullable": true
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "credentials_configured": {
+            "type": "boolean",
+            "description": "Whether the provider's key or URL is set; never the value."
+          }
+        },
+        "required": [
+          "feature",
+          "provider",
+          "enabled",
+          "credentials_configured"
+        ]
+      },
+      "AdminAiLastFailureDto": {
+        "type": "object",
+        "properties": {
+          "feature": {
+            "type": "string",
+            "enum": [
+              "tagging",
+              "event-review",
+              "parent-tips",
+              "embeddings",
+              "source-extraction"
+            ]
+          },
+          "provider": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "unauthorized",
+              "rate_limited",
+              "timeout",
+              "provider_error"
+            ]
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "feature",
+          "provider",
+          "model",
+          "reason",
+          "at"
+        ]
+      },
+      "AdminAiHealthDto": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "available",
+              "unavailable",
+              "not_configured",
+              "disabled",
+              "unknown"
+            ]
+          },
+          "gateway_key_configured": {
+            "type": "boolean"
+          },
+          "features": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminAiFeatureHealthDto"
+            }
+          },
+          "last_failure": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AdminAiLastFailureDto"
+              }
+            ]
+          },
+          "last_success_at": {
+            "type": "string",
+            "nullable": true,
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "status",
+          "gateway_key_configured",
+          "features",
+          "last_failure",
+          "last_success_at"
+        ]
+      },
       "AdminDashboardHealthDto": {
         "type": "object",
         "properties": {
@@ -11532,6 +11644,9 @@
             "items": {
               "$ref": "#/components/schemas/AdminScheduleHealthDto"
             }
+          },
+          "ai": {
+            "$ref": "#/components/schemas/AdminAiHealthDto"
           }
         },
         "required": [
@@ -11539,7 +11654,8 @@
           "presence",
           "ingestion",
           "recent_runs",
-          "schedules"
+          "schedules",
+          "ai"
         ]
       },
       "CityDto": {

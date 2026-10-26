@@ -1,5 +1,6 @@
 import { Module } from "@nestjs/common"
 
+import { AiHealthRecorder } from "./ai-health.recorder.js"
 import { ClassificationRepository } from "./classification/classification.repository.js"
 import { TagQueueService } from "./classification/tag-queue.service.js"
 import { CronGateService } from "./cron-gate.service.js"
@@ -20,6 +21,7 @@ import { ReviewRepository } from "./review/review.repository.js"
  */
 @Module({
   providers: [
+    AiHealthRecorder,
     MaintenanceQueueService,
     ClassificationRepository,
     CronGateService,
