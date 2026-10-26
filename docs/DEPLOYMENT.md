@@ -78,7 +78,7 @@ single-writer checks and rollback procedure.
 | `TELEGRAM_BOT_TOKEN`                                                                                                                    | required for Telegram digest | Environment fallback for digest delivery; Vault name `telegram_bot_token` takes precedence. Also shared with operator failure pings.                                                                                                                                                                                                                                               |
 | `TELEGRAM_FAILURE_CHAT_ID`                                                                                                              | no                           | Operator destination for pipeline failure pings (U3). Never used for user digests.                                                                                                                                                                                                                                                                                                 |
 | `OPENWEATHER_API_KEY`                                                                                                                   | no                           | `GET /v1/plan` weather ranking. Unset degrades to a neutral snapshot.                                                                                                                                                                                                                                                                                                              |
-| `AI_GATEWAY_API_KEY`                                                                                                                    | yes for AI features          | Vercel AI Gateway key. One key reaches every approved gateway model (default `spacexai/grok-4.20-non-reasoning`) and `openai/text-embedding-3-small` embeddings. When set, it is the default provider for tagging, review, parent tips, embeddings and source extraction. Unset: AI features use their keyword/heuristic fallbacks and the dashboard shows "No AI key configured". |
+| `AI_GATEWAY_API_KEY`                                                                                                                    | yes for AI features          | Vercel AI Gateway key. One key reaches every approved gateway model (default `openai/gpt-6-luna`) and `openai/text-embedding-3-small` embeddings. When set, it is the default provider for tagging, review, parent tips, embeddings and source extraction. Unset: AI features use their keyword/heuristic fallbacks and the dashboard shows "No AI key configured".                |
 | `AI_PROVIDER` / `AI_BASE_URL` / `AI_MODEL` / `AI_API_KEY` / `OPENAI_API_KEY`                                                            | no                           | Legacy direct-provider settings, used only for features assigned a legacy (`openai`/`ollama`/`localai`) model or when no gateway key is set. An explicit `AI_PROVIDER` overrides the gateway default for source extraction; remove it or set it to `gateway`.                                                                                                                      |
 | `UNSPLASH_ACCESS_KEY` / `PEXELS_API_KEY` / `PIXABAY_API_KEY`                                                                            | no                           | Stock-image enrichment (U29); unset providers are skipped in fallback order. Unsplash key is shared by search, download tracking, and attribution backfill.                                                                                                                                                                                                                        |
 | `SCRAPER_IMAGE_HOST_ALLOWLIST`                                                                                                          | no                           | Comma-separated extra ingest image hosts appended to the built-in CDN allowlist.                                                                                                                                                                                                                                                                                                   |
@@ -95,17 +95,57 @@ Set the key on the API service, never on the web app service:
    Variable**, name it `AI_GATEWAY_API_KEY`, paste the key, and deploy. With
    the Railway CLI linked to the API service:
    `railway variables --set "AI_GATEWAY_API_KEY=<key>"`.
-3. Apply migration `20261026001000_ai_gateway` (`pnpm db:migrate`). It approves
-   the gateway Grok models and moves every feature assigned an OpenAI model to
-   `spacexai/grok-4.20-non-reasoning`, keeping each feature's enabled flag.
+3. Apply migrations `20261026001000_ai_gateway` and
+   `20261026002000_ai_gateway_gpt_6_luna` (`pnpm db:migrate` applies both in
+   order). The first approves the gateway Grok models and moves every feature
+   assigned an OpenAI model to `spacexai/grok-4.20-non-reasoning`. The second
+   approves GPT-6 Luna and assigns `openai/gpt-6-luna` to all six features.
+   Both keep each feature's enabled flag.
 4. Open `/admin/dashboard`. The **AI status** section reads "AI available"
    after the next successful call. "AI unavailable" means the last call failed
    (for example a rejected key); "No AI key configured" means an enabled
    feature has no key. Statuses report presence only, never key values.
 
-Rollback: `20261026001000_ai_gateway_down.sql` restores the previous model
-assignments and constraints. It refuses to run once gateway-tagged events or
-traces exist, so export or relabel those rows first.
+Approved gateway models (selectable per feature under **AI settings**):
+
+| Model id                           | Pricing per 1M tokens (input / output) | Notes                                   |
+| ---------------------------------- | -------------------------------------- | --------------------------------------- |
+| `openai/gpt-6-luna`                | $0.10 / $0.50                          | Default. Efficient OpenAI reasoning.    |
+| `openai/gpt-6-luna-fast`           | $0.20 / $1.00                          | Faster GPT-6 Luna at twice the price.   |
+| `spacexai/grok-4.20-non-reasoning` | $1.25 / $2.50                          | Previous default; non-reasoning.        |
+| `spacexai/grok-4.3`                | $1.25 / $2.50                          | Reasoning Grok.                         |
+| `spacexai/grok-4.7`                | $2.00 / $6.00                          | Latest Grok; highest token cost listed. |
+
+Prices are the gateway's base tier. Requests longer than about 272,000 tokens
+(GPT-6 Luna) or 200,000 tokens (Grok) cost more. Every gateway chat call sends the system and
+user prompts, the feature's temperature and JSON response format with no
+schema, and no reasoning or provider options, so reasoning effort is each
+provider's default. GPT-6 Luna's gateway metadata lists `temperature`,
+`response_format`, `structured_outputs` and `reasoning` (effort `none`
+through `max`) as supported. Every prompt says "JSON", which OpenAI's JSON
+mode requires. Embeddings stay on `openai/text-embedding-3-small`.
+
+An unapproved or missing gateway model id resolves to `openai/gpt-6-luna` in
+code. Deploying this code before migration `20261026002000` keeps the stored
+Grok assignments, because they remain approved. An earlier API binary
+ignores the Luna assignments and falls back to its Grok default, so a binary
+rollback does not require the SQL rollback.
+
+Rollback, newest first, each in its own transaction (for example
+`psql -v ON_ERROR_STOP=1 --single-transaction -f <file>`):
+
+- `20261026002000_ai_gateway_gpt_6_luna_down.sql` is one statement that locks
+  `public.ai_feature_config` against concurrent setting changes and restores the saved
+  assignment of every feature still on `openai/gpt-6-luna` and the previous
+  Grok 4.20 description, then removes both GPT-6 Luna models. Features an
+  operator moved to another model afterwards keep that choice. It refuses to
+  run while any feature uses a GPT-6 Luna model it cannot restore (for
+  example a later `openai/gpt-6-luna-fast` choice); reassign those first.
+  Events and traces tagged by GPT-6 Luna keep provider `gateway` and need no
+  relabeling.
+- `20261026001000_ai_gateway_down.sql` restores the pre-gateway model
+  assignments and constraints. It refuses to run once gateway-tagged events or
+  traces exist, so export or relabel those rows first.
 
 Note: the `AI_*`, stock-image, and allowlist variables are read through
 `process.env` seams in pipeline code rather than the zod schema; they are
