@@ -1,4 +1,6 @@
-import { describe, expect, it } from "vitest"
+import { APICallError } from "ai"
+import { MockEmbeddingModelV4 } from "ai/test"
+import { describe, expect, it, vi } from "vitest"
 
 import {
   buildEmbeddingInput,
@@ -117,5 +119,60 @@ describe("embedEvent", () => {
     await expect(rejection).rejects.not.toBeInstanceOf(EmbedEventUpstreamError)
     await expect(rejection).rejects.toThrow("OpenAI returned unexpected embedding dimensions: 3")
     expect(db.upserts).toHaveLength(0)
+  })
+})
+
+function gatewayModels(embedding: MockEmbeddingModelV4) {
+  const embeddingModel = vi.fn(() => embedding)
+  return { models: { languageModel: vi.fn(), embeddingModel }, embeddingModel }
+}
+
+describe("embedEvent through the AI Gateway", () => {
+  it("stores a gateway vector under the same embedding model label", async () => {
+    const vector = Array.from({ length: EMBEDDING_DIMENSIONS }, (_, i) => i / 10_000)
+    const { models, embeddingModel } = gatewayModels(
+      new MockEmbeddingModelV4({ doEmbed: { embeddings: [vector], warnings: [] } })
+    )
+    const db = new FakeEmbedEventDb()
+
+    await embedEvent(
+      db,
+      { eventId: "evt-1", title: "Story time", description: null },
+      {
+        apiKey: "vck_test",
+        provider: "gateway",
+        gatewayModels: models,
+      }
+    )
+
+    expect(embeddingModel).toHaveBeenCalledWith("openai/text-embedding-3-small")
+    expect(db.upserts).toEqual([{ eventId: "evt-1", embedding: vector, model: EMBEDDING_MODEL }])
+  })
+
+  it("maps a rejected gateway key to an upstream error without the response body", async () => {
+    const { models } = gatewayModels(
+      new MockEmbeddingModelV4({
+        doEmbed: () =>
+          Promise.reject(
+            new APICallError({
+              message: "bad key",
+              url: "https://ai-gateway.vercel.sh/v1/ai/embedding-model",
+              requestBodyValues: {},
+              statusCode: 401,
+              responseBody: "upstream body",
+              isRetryable: false,
+            })
+          ),
+      })
+    )
+
+    const error = await embedEvent(
+      new FakeEmbedEventDb(),
+      { eventId: "evt-1", title: "Story time", description: null },
+      { apiKey: "vck_test", provider: "gateway", gatewayModels: models }
+    ).catch((caught: unknown) => caught)
+
+    expect(error).toBeInstanceOf(EmbedEventUpstreamError)
+    expect((error as Error).message).toBe("AI Gateway embeddings failed (401)")
   })
 })

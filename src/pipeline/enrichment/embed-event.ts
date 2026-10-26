@@ -20,6 +20,8 @@
 //   matching how tag-event.ts / process-source.ts already dropped their own
 //   HTTP shells.
 
+import type { EmbeddingCredentials } from "../llm-config.js"
+import { generateGatewayEmbedding, GatewayHttpError, type GatewayModels } from "../llm-gateway.js"
 import { OpenAiEmbeddingHttpError, postOpenAiEmbedding } from "../llm-openai.js"
 
 export const EMBEDDING_MODEL = "text-embedding-3-small"
@@ -47,9 +49,48 @@ export interface EmbedEventInput {
 
 export interface EmbedEventDependencies {
   apiKey: string
+  /** Defaults to the legacy direct OpenAI endpoint. */
+  provider?: EmbeddingCredentials["provider"]
   baseUrl?: string
   fetchImpl?: typeof fetch
+  gatewayModels?: GatewayModels
   timeoutMs?: number
+}
+
+/**
+ * One text-embedding-3-small vector, through the gateway or the legacy
+ * OpenAI endpoint. HTTP failures surface as EmbedEventUpstreamError.
+ */
+export async function generateEventEmbedding(
+  text: string,
+  deps: EmbedEventDependencies
+): Promise<number[]> {
+  try {
+    if (deps.provider === "gateway") {
+      return await generateGatewayEmbedding({
+        apiKey: deps.apiKey,
+        value: text,
+        dimensions: EMBEDDING_DIMENSIONS,
+        timeoutMs: deps.timeoutMs,
+        models: deps.gatewayModels,
+      })
+    }
+    return await postOpenAiEmbedding({
+      baseUrl: deps.baseUrl ?? DEFAULT_BASE_URL,
+      apiKey: deps.apiKey,
+      model: EMBEDDING_MODEL,
+      input: text,
+      dimensions: EMBEDDING_DIMENSIONS,
+      timeoutMs: deps.timeoutMs,
+      fetchImpl: deps.fetchImpl,
+      telemetry: { feature: "embeddings", provider: "openai", model: EMBEDDING_MODEL },
+    })
+  } catch (err) {
+    if (err instanceof OpenAiEmbeddingHttpError || err instanceof GatewayHttpError) {
+      throw new EmbedEventUpstreamError(err.message)
+    }
+    throw err
+  }
 }
 
 export class EmbedEventUpstreamError extends Error {
@@ -83,24 +124,6 @@ export async function embedEvent(
   deps: EmbedEventDependencies
 ): Promise<void> {
   const text = buildEmbeddingInput(input.title, input.description)
-
-  let embedding: number[]
-  try {
-    embedding = await postOpenAiEmbedding({
-      baseUrl: deps.baseUrl ?? DEFAULT_BASE_URL,
-      apiKey: deps.apiKey,
-      model: EMBEDDING_MODEL,
-      input: text,
-      dimensions: EMBEDDING_DIMENSIONS,
-      timeoutMs: deps.timeoutMs,
-      fetchImpl: deps.fetchImpl,
-    })
-  } catch (err) {
-    if (err instanceof OpenAiEmbeddingHttpError) {
-      throw new EmbedEventUpstreamError(err.message)
-    }
-    throw err
-  }
-
+  const embedding = await generateEventEmbedding(text, deps)
   await db.upsertEventEmbedding(input.eventId, embedding, EMBEDDING_MODEL)
 }

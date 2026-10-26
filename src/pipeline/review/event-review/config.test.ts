@@ -133,4 +133,43 @@ describe("resolveLlmReviewConfig", () => {
     expect(config.model).toBe("gpt-4o-mini")
     expect(config.enabled).toBe(true)
   })
+
+  it("routes a gateway model assignment through the single gateway key", () => {
+    const config = resolveLlmReviewConfig(env({ AI_GATEWAY_API_KEY: "vck_test" }), {
+      model: "spacexai/grok-4.3",
+      enabled: true,
+      provider: "gateway",
+    })
+
+    expect(config).toMatchObject({
+      provider: "gateway",
+      model: "spacexai/grok-4.3",
+      apiKey: "vck_test",
+      baseUrl: "",
+      valid: true,
+    })
+  })
+
+  it("defaults to the gateway and the Grok default when only the gateway key is set", () => {
+    const config = resolveLlmReviewConfig(
+      env({ AI_GATEWAY_API_KEY: "vck_test", LLM_REVIEW_ENABLED: "true", AI_MODEL: "gpt-4o" })
+    )
+
+    expect(config).toMatchObject({
+      provider: "gateway",
+      model: "spacexai/grok-4.20-non-reasoning",
+      valid: true,
+    })
+  })
+
+  it("fails closed on a gateway assignment without the gateway key", () => {
+    const config = resolveLlmReviewConfig(env({ LLM_REVIEW_API_KEY: "sk-legacy" }), {
+      model: "spacexai/grok-4.3",
+      enabled: true,
+      provider: "gateway",
+    })
+
+    expect(config.valid).toBe(false)
+    expect(config.invalidReason).toBe("missing_api_key")
+  })
 })

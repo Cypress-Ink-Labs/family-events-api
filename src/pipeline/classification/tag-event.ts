@@ -38,6 +38,8 @@ import {
   isMemoryFeatureEnabled,
   type MemoryContextDb,
 } from "../memory-context.js"
+import { resolveEmbeddingCredentials, type EmbeddingCredentials } from "../llm-config.js"
+import { GATEWAY_PROVIDER, generateGatewayText } from "../llm-gateway.js"
 import { parseJsonContent, postOpenAiChatCompletion } from "../llm-openai.js"
 import {
   clampConfidence,
@@ -203,7 +205,62 @@ async function classifyWithLlm(
     `available_tags: ${JSON.stringify(availableTags)}`,
   ].join("\n")
 
-  const completion = await postOpenAiChatCompletion({
+  const completion =
+    config.provider === GATEWAY_PROVIDER
+      ? await generateGatewayText({
+          apiKey: config.apiKey,
+          model: config.model,
+          system: systemPrompt,
+          prompt: userPrompt,
+          temperature: 0.1,
+          feature: "tagging",
+          failureMessagePrefix: `${config.provider} classification failed`,
+          timeoutMs: AI_TIMEOUT_MS,
+        })
+      : await postLegacyClassification(config, systemPrompt, userPrompt)
+
+  const usage: LlmUsage = {
+    completionTokens: completion.usage.completionTokens,
+    finishReason: completion.usage.finishReason,
+    llmLatencyMs: completion.latencyMs,
+    promptTokens: completion.usage.promptTokens,
+    totalTokens: completion.usage.totalTokens,
+  }
+
+  const parsed = parseJsonContent(completion.content)
+  const rawTags = parsed?.tags
+  const tags = Array.isArray(rawTags)
+    ? rawTags
+        .map((tag: { slug?: string; confidence?: number; reason?: string | null }) => ({
+          slug: String(tag?.slug ?? ""),
+          confidence: clampConfidence(Number(tag?.confidence ?? 0.5)),
+          reason: typeof tag?.reason === "string" ? tag.reason : null,
+        }))
+        .filter((tag: { slug: string; confidence: number; reason: string | null }) => tag.slug)
+    : []
+
+  const ageMin = typeof parsed?.age_min === "number" ? parsed.age_min : null
+  const ageMax = typeof parsed?.age_max === "number" ? parsed.age_max : null
+  const price = typeof parsed?.price === "number" ? parsed.price : null
+  const isFree = parsed?.is_free === true
+  const venueName = typeof parsed?.venue_name === "string" ? parsed.venue_name : null
+  const reasoningSummary =
+    typeof parsed?.reasoning_summary === "string" ? parsed.reasoning_summary : null
+
+  return {
+    tags,
+    ageMin,
+    ageMax,
+    price,
+    isFree,
+    venueName,
+    reasoningSummary,
+    usage,
+  }
+}
+
+function postLegacyClassification(config: LlmConfig, systemPrompt: string, userPrompt: string) {
+  return postOpenAiChatCompletion({
     apiKey: config.apiKey,
     baseUrl: config.baseUrl,
     body: {
@@ -262,46 +319,8 @@ async function classifyWithLlm(
     failureMessagePrefix: `${config.provider} classification failed`,
     providerName: config.provider,
     timeoutMs: AI_TIMEOUT_MS,
+    telemetry: { feature: "tagging", provider: config.provider, model: config.model },
   })
-
-  const usage: LlmUsage = {
-    completionTokens: completion.usage.completionTokens,
-    finishReason: completion.usage.finishReason,
-    llmLatencyMs: completion.latencyMs,
-    promptTokens: completion.usage.promptTokens,
-    totalTokens: completion.usage.totalTokens,
-  }
-
-  const parsed = parseJsonContent(completion.content)
-  const rawTags = parsed?.tags
-  const tags = Array.isArray(rawTags)
-    ? rawTags
-        .map((tag: { slug?: string; confidence?: number; reason?: string | null }) => ({
-          slug: String(tag?.slug ?? ""),
-          confidence: clampConfidence(Number(tag?.confidence ?? 0.5)),
-          reason: typeof tag?.reason === "string" ? tag.reason : null,
-        }))
-        .filter((tag: { slug: string; confidence: number; reason: string | null }) => tag.slug)
-    : []
-
-  const ageMin = typeof parsed?.age_min === "number" ? parsed.age_min : null
-  const ageMax = typeof parsed?.age_max === "number" ? parsed.age_max : null
-  const price = typeof parsed?.price === "number" ? parsed.price : null
-  const isFree = parsed?.is_free === true
-  const venueName = typeof parsed?.venue_name === "string" ? parsed.venue_name : null
-  const reasoningSummary =
-    typeof parsed?.reasoning_summary === "string" ? parsed.reasoning_summary : null
-
-  return {
-    tags,
-    ageMin,
-    ageMax,
-    price,
-    isFree,
-    venueName,
-    reasoningSummary,
-    usage,
-  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -358,7 +377,11 @@ function normalizeAiConfigForUse(aiConfig: LlmConfig): LlmConfig {
         fallback_model: aiConfig.model,
       })
     }
-  } else if (process.env.OPENAI_MODEL && !process.env.AI_MODEL) {
+  } else if (
+    aiConfig.provider !== GATEWAY_PROVIDER &&
+    process.env.OPENAI_MODEL &&
+    !process.env.AI_MODEL
+  ) {
     logEdgeEvent("warn", "OPENAI_MODEL is being used for a self-hosted AI provider", {
       function: "tag-event",
       provider: aiConfig.provider,
@@ -867,7 +890,10 @@ export interface EmbedEventInput {
 }
 
 export type EmbedEventFn = (input: EmbedEventInput) => Promise<unknown>
-export type GenerateEmbeddingFn = (text: string, apiKey: string) => Promise<{ embedding: number[] }>
+export type GenerateEmbeddingFn = (
+  text: string,
+  credentials: EmbeddingCredentials
+) => Promise<{ embedding: number[] }>
 
 export interface TagEventDeps {
   db: TagEventDb
@@ -894,8 +920,8 @@ async function loadMemoryContext(
   getEnv: (name: string) => string | undefined,
   input: TagEventInput
 ): Promise<MemoryContext | null> {
-  const openAiKey = getEnv("OPENAI_API_KEY") ?? ""
-  if (!openAiKey || !input.eventId) return null
+  const credentials = resolveEmbeddingCredentials({ get: getEnv })
+  if (!credentials || !input.eventId) return null
 
   try {
     const tagMemoryEnabled = await isMemoryFeatureEnabled(deps.memoryDb, "tag-memory")
@@ -903,7 +929,7 @@ async function loadMemoryContext(
 
     const { embedding } = await deps.generateEmbedding(
       `${input.title}\n\n${input.description}`.slice(0, 2000),
-      openAiKey
+      credentials
     )
     const contexts = await fetchSimilarEventTagContext(
       deps.memoryDb,
@@ -942,8 +968,7 @@ async function autoEmbedAfterTagging(
   input: TagEventInput,
   eventId: string
 ): Promise<void> {
-  const openAiKey = getEnv("OPENAI_API_KEY") ?? ""
-  if (!openAiKey) return
+  if (!resolveEmbeddingCredentials({ get: getEnv })) return
 
   try {
     const embedStart = Date.now()
@@ -1013,7 +1038,7 @@ export async function processTagEvent(
       )
 
       // Auto-embed after classification (non-fatal — embedding failure must
-      // not block tagging). Only when OPENAI_API_KEY is available.
+      // not block tagging). Only when an embedding key is available.
       await autoEmbedAfterTagging(deps, getEnv, input, input.eventId)
     }
 

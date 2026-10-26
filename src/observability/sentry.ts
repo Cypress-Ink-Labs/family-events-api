@@ -13,7 +13,10 @@ type SentryEnv = Pick<
   Partial<Env>
 
 const DIRECT_SECRET_NAMES = [
+  "AI_GATEWAY_API_KEY",
   "AI_API_KEY",
+  "LLM_REVIEW_API_KEY",
+  "LOCALAI_API_KEY",
   "OPENAI_API_KEY",
   "UNSPLASH_ACCESS_KEY",
   "PEXELS_API_KEY",

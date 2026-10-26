@@ -3,7 +3,7 @@ import { Injectable, Logger, type OnModuleInit } from "@nestjs/common"
 import { JobsService } from "../../jobs/jobs.service.js"
 import { CronGateService } from "../cron-gate.service.js"
 import { EnrichmentRepository } from "../enrichment/enrichment.repository.js"
-import { EMBEDDING_DIMENSIONS, EMBEDDING_MODEL, embedEvent } from "../enrichment/embed-event.js"
+import { embedEvent, generateEventEmbedding } from "../enrichment/embed-event.js"
 import {
   runEnrichmentTick,
   type EnrichmentTickDependencies,
@@ -14,13 +14,12 @@ import {
   type LegacyReplacementSchedule,
 } from "../families.js"
 import { isFamilyEnabled } from "../flags.js"
-import { postOpenAiEmbedding } from "../llm-openai.js"
+import { resolveEmbeddingCredentials } from "../llm-config.js"
 import { ClassificationRepository } from "./classification.repository.js"
 import { processTagQueueBatch } from "./process-tag-queue.js"
 import { processTagEvent, type TagEventDeps } from "./tag-event.js"
 
 const DRAIN_TASK = "drain-tag-queue"
-const OPENAI_BASE_URL = "https://api.openai.com/v1"
 
 type TagTask = "process-tag-queue" | "backfill-enrichment" | typeof DRAIN_TASK
 
@@ -151,6 +150,8 @@ export class TagQueueService implements OnModuleInit {
       memoryDb: this.classification,
       getEnv: (name) => env[name],
       embedEvent: async (input) => {
+        const credentials = resolveEmbeddingCredentials({ get: (name) => env[name] })
+        if (!credentials) return
         await embedEvent(
           this.enrichment,
           {
@@ -158,17 +159,11 @@ export class TagQueueService implements OnModuleInit {
             title: input.title,
             description: input.description ?? null,
           },
-          { apiKey: env["OPENAI_API_KEY"] ?? "" }
+          credentials
         )
       },
-      generateEmbedding: async (text, apiKey) => ({
-        embedding: await postOpenAiEmbedding({
-          baseUrl: OPENAI_BASE_URL,
-          apiKey,
-          model: EMBEDDING_MODEL,
-          input: text,
-          dimensions: EMBEDDING_DIMENSIONS,
-        }),
+      generateEmbedding: async (text, credentials) => ({
+        embedding: await generateEventEmbedding(text, credentials),
       }),
     }
   }
