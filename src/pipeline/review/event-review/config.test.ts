@@ -150,14 +150,14 @@ describe("resolveLlmReviewConfig", () => {
     })
   })
 
-  it("defaults to the gateway and the Grok default when only the gateway key is set", () => {
+  it("defaults to the gateway and GPT-6 Luna when only the gateway key is set", () => {
     const config = resolveLlmReviewConfig(
       env({ AI_GATEWAY_API_KEY: "vck_test", LLM_REVIEW_ENABLED: "true", AI_MODEL: "gpt-4o" })
     )
 
     expect(config).toMatchObject({
       provider: "gateway",
-      model: "spacexai/grok-4.20-non-reasoning",
+      model: "openai/gpt-6-luna",
       valid: true,
     })
   })

@@ -40,7 +40,7 @@ const input: TagEventInput = {
   description: "Bring a blanket to the park",
   currentEvent: null,
 }
-const grokAssignment = { modelId: DEFAULT_GATEWAY_MODEL, provider: "gateway", enabled: true }
+const defaultAssignment = { modelId: DEFAULT_GATEWAY_MODEL, provider: "gateway", enabled: true }
 
 describe("tag classification through the AI Gateway", () => {
   const outcomes: AiCallOutcome[] = []
@@ -66,7 +66,7 @@ describe("tag classification through the AI Gateway", () => {
     vi.unstubAllGlobals()
   })
 
-  it("classifies with the assigned Grok model and the single gateway key", async () => {
+  it("classifies with the default GPT-6 Luna assignment and the single gateway key", async () => {
     const model = new MockLanguageModelV4({
       doGenerate: {
         content: [
@@ -87,7 +87,7 @@ describe("tag classification through the AI Gateway", () => {
     })
     gateway.languageModel.mockReturnValue(model)
 
-    const result = await resolveClassification(input, tags, grokAssignment)
+    const result = await resolveClassification(input, tags, defaultAssignment)
 
     expect(gateway.apiKeys).toEqual(["vck_test_key"])
     expect(gateway.languageModel).toHaveBeenCalledWith(DEFAULT_GATEWAY_MODEL)
@@ -121,7 +121,7 @@ describe("tag classification through the AI Gateway", () => {
       })
     )
 
-    const result = await resolveClassification(input, tags, grokAssignment)
+    const result = await resolveClassification(input, tags, defaultAssignment)
 
     expect(result.classification).toMatchObject({ provider: "gateway", status: "fallback" })
     expect(result.classification.tags.map((tag) => tag.slug)).toContain("free")
@@ -132,7 +132,7 @@ describe("tag classification through the AI Gateway", () => {
   it("uses keywords without a provider call when no gateway key is set", async () => {
     vi.stubEnv("AI_GATEWAY_API_KEY", "")
 
-    const result = await resolveClassification(input, tags, grokAssignment)
+    const result = await resolveClassification(input, tags, defaultAssignment)
 
     expect(result.classification).toMatchObject({ status: "fallback" })
     expect(gateway.languageModel).not.toHaveBeenCalled()

@@ -5,7 +5,7 @@
 //   Deno.env.
 // - "gateway" (Vercel AI Gateway, AI_GATEWAY_API_KEY) is the default provider
 //   whenever its key is set. Gateway models pass the approved gateway
-//   allowlist or fall back to the Grok default. The legacy providers keep
+//   allowlist or fall back to the gateway default. The legacy providers keep
 //   their original rules and are still selected by an approved model's
 //   provider, AI_PROVIDER, or the absence of a gateway key.
 

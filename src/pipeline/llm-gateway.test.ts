@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { setAiOutcomeRecorder, type AiCallOutcome } from "./ai-health.js"
 import {
+  APPROVED_GATEWAY_MODELS,
   DEFAULT_GATEWAY_MODEL,
   GATEWAY_EMBEDDING_MODEL,
   GatewayHttpError,
@@ -63,11 +64,78 @@ describe("AI Gateway transport", () => {
     vi.unstubAllGlobals()
   })
 
-  it("keeps approved Grok models and falls back to the default otherwise", () => {
-    expect(resolveGatewayModel("spacexai/grok-4.3")).toBe("spacexai/grok-4.3")
-    expect(resolveGatewayModel("gpt-5.4-nano")).toBe(DEFAULT_GATEWAY_MODEL)
-    expect(resolveGatewayModel(null)).toBe(DEFAULT_GATEWAY_MODEL)
+  it("defaults to GPT-6 Luna and keeps every approved gateway model selectable", () => {
+    expect(DEFAULT_GATEWAY_MODEL).toBe("openai/gpt-6-luna")
+    expect([...APPROVED_GATEWAY_MODELS]).toEqual([
+      "openai/gpt-6-luna",
+      "openai/gpt-6-luna-fast",
+      "spacexai/grok-4.20-non-reasoning",
+      "spacexai/grok-4.3",
+      "spacexai/grok-4.7",
+    ])
+    for (const model of APPROVED_GATEWAY_MODELS) expect(resolveGatewayModel(model)).toBe(model)
   })
+
+  it("falls back to the default for unapproved, legacy or unprefixed model ids", () => {
+    for (const model of [
+      "gpt-5.4-nano",
+      "gpt-6-luna",
+      "openai/gpt-6-luna-batch",
+      "openai/gpt-6-luna-decisions",
+      "OPENAI/GPT-6-LUNA",
+      " openai/gpt-6-luna",
+      "",
+      null,
+      undefined,
+    ])
+      expect(resolveGatewayModel(model)).toBe(DEFAULT_GATEWAY_MODEL)
+  })
+
+  it.each(["openai/gpt-6-luna", "openai/gpt-6-luna-fast"])(
+    "sends %s verbatim in JSON mode at the caller's temperature with provider-default reasoning",
+    async (model) => {
+      const language = new MockLanguageModelV4({
+        doGenerate: {
+          content: [{ type: "text", text: '{"decision":"approve"}' }],
+          finishReason: { unified: "stop", raw: "stop" },
+          usage: {
+            inputTokens: usage.inputTokens,
+            outputTokens: { total: 9, text: 5, reasoning: 4 },
+          },
+          warnings: [],
+        },
+      })
+      const { models, requested } = modelsWith(language)
+
+      const result = await generateGatewayText({
+        apiKey: "test-key",
+        model,
+        system: "Return JSON ONLY.",
+        prompt: "Event",
+        temperature: 0,
+        feature: "event-review",
+        failureMessagePrefix: "LLM review",
+        timeoutMs: 30_000,
+        models,
+      })
+
+      expect(requested).toEqual([model])
+      expect(language.doGenerateCalls).toHaveLength(1)
+      const call = language.doGenerateCalls[0]!
+      expect(call).toMatchObject({ temperature: 0, responseFormat: { type: "json" } })
+      expect(call.responseFormat).not.toHaveProperty("schema")
+      expect(call.reasoning).toBeUndefined()
+      expect(call.providerOptions).toBeUndefined()
+      expect(call.maxOutputTokens).toBeUndefined()
+      expect(result.content).toBe('{"decision":"approve"}')
+      expect(result.usage).toMatchObject({ promptTokens: 12, completionTokens: 9, totalTokens: 21 })
+      await vi.waitFor(() =>
+        expect(outcomes).toEqual([
+          { feature: "event-review", provider: "gateway", model, failure: null },
+        ])
+      )
+    }
+  )
 
   it("returns JSON text, usage and a success outcome from one request", async () => {
     const language = new MockLanguageModelV4({
