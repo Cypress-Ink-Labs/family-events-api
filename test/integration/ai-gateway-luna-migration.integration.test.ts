@@ -40,7 +40,7 @@ const gatewayAssignments = [
 const apply = (text: string) => db.withTransaction((client) => client.query(text))
 const assignments = () =>
   db.query<{ feature: string; model_id: string; enabled: boolean }>(
-    "SELECT feature,model_id,enabled FROM public.ai_feature_config ORDER BY feature"
+    'SELECT feature,model_id,enabled FROM public.ai_feature_config ORDER BY feature COLLATE "C"'
   )
 const modelIds = async () =>
   (await db.query<{ id: string }>("SELECT id FROM public.approved_ai_models ORDER BY id")).map(
