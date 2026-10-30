@@ -140,7 +140,7 @@ describe("operator review over HTTP and PostgreSQL", () => {
       .set("Authorization", "Bearer operator")
       .expect(403)
   })
-  it("returns a null editor name when the editor has a blank name, no profile row or never edited", async () => {
+  it("returns a null editor name for a missing or blank name, a missing profile row, and no editor", async () => {
     const diagnostics = async () =>
       (
         await request(app.getHttpServer())

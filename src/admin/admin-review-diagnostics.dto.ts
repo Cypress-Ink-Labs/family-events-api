@@ -34,7 +34,7 @@ export class AdminReviewDetailsDto extends AdminEventDto {
     type: String,
     nullable: true,
     description:
-      "Display name of the last editor; null when they have none or their profile is anonymized",
+      "Display name of the last editor; null when nobody edited, the editor has no profile row or a blank name, or the profile is anonymized",
   })
   admin_last_edited_by_name!: string | null
 }
