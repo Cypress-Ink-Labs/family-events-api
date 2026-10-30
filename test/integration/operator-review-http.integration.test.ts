@@ -140,7 +140,7 @@ describe("operator review over HTTP and PostgreSQL", () => {
       .set("Authorization", "Bearer operator")
       .expect(403)
   })
-  it("returns a null editor name when the editor has no display name or no longer exists", async () => {
+  it("returns a null editor name when the editor has a blank name, no profile row or never edited", async () => {
     const diagnostics = async () =>
       (
         await request(app.getHttpServer())
@@ -155,6 +155,16 @@ describe("operator review over HTTP and PostgreSQL", () => {
     })
     await db.query("UPDATE public.user_profiles SET display_name='' WHERE id=$1", [member])
     expect(await diagnostics()).toMatchObject({ admin_last_edited_by_name: null })
+    const noProfile = randomUUID()
+    await db.query("INSERT INTO auth.users(id) VALUES($1)", [noProfile])
+    await db.query("UPDATE public.events SET admin_last_edited_by=$2 WHERE id=$1", [
+      event,
+      noProfile,
+    ])
+    expect(await diagnostics()).toMatchObject({
+      admin_last_edited_by: noProfile,
+      admin_last_edited_by_name: null,
+    })
     await db.query("UPDATE public.events SET admin_last_edited_by=NULL WHERE id=$1", [event])
     expect(await diagnostics()).toMatchObject({
       admin_last_edited_by: null,
