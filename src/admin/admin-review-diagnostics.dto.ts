@@ -30,6 +30,13 @@ export class AdminReviewDetailsDto extends AdminEventDto {
   admin_last_edited_at!: string | null
   @ApiProperty({ type: String, format: "uuid", nullable: true })
   admin_last_edited_by!: string | null
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description:
+      "Display name of the last editor; null when nobody edited, the editor has no profile row or a blank name, or the profile is anonymized",
+  })
+  admin_last_edited_by_name!: string | null
 }
 
 const JSON_VALUE = {
