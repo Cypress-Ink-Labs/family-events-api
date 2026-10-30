@@ -21,6 +21,12 @@ export class AdminDeadLetterDto {
   trigger_type!: string
   @ApiProperty({ type: String, format: "uuid", nullable: true })
   source_id!: string | null
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description: "Name of the source on source-queue rows; null on tag-queue rows",
+  })
+  source_name!: string | null
   @ApiProperty({ type: String, format: "uuid", nullable: true })
   source_run_id!: string | null
   @ApiProperty({ type: String, format: "uuid", nullable: true })

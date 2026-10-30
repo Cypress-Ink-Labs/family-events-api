@@ -10069,6 +10069,11 @@
             "format": "uuid",
             "nullable": true
           },
+          "source_name": {
+            "type": "string",
+            "nullable": true,
+            "description": "Name of the source on source-queue rows; null on tag-queue rows"
+          },
           "source_run_id": {
             "type": "string",
             "format": "uuid",
@@ -10091,6 +10096,7 @@
           "last_error",
           "trigger_type",
           "source_id",
+          "source_name",
           "source_run_id",
           "event_id"
         ]

@@ -53,6 +53,7 @@ describe("AdminDeadLetterRepository", () => {
       const [sql, bindings] = query.mock.calls[2]!
       expect(sql).toContain(`FROM public.${table}`)
       expect(sql).toContain(columns)
+      expect(sql).toContain("AS source_name")
       expect(sql).toContain(
         finishedAt === null
           ? "finished_at IS NULL AND id < $1::bigint"

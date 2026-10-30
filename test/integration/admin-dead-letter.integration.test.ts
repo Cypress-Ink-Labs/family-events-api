@@ -78,6 +78,15 @@ describe("admin dead letters on PostgreSQL", () => {
     })
   })
 
+  it("names the source on source dead letters and leaves tag dead letters unnamed", async () => {
+    await dead("source", "2026-06-01T00:00:00Z")
+    await dead("tag", "2026-06-01T00:00:00Z")
+    const sources = await service.list(actor, { queue: "source", limit: 10, cursor: null })
+    expect(sources.items[0]).toMatchObject({ source_id: sourceId, source_name: "DLQ" })
+    const tags = await service.list(actor, { queue: "tag", limit: 10, cursor: null })
+    expect(tags.items[0]).toMatchObject({ source_id: null, source_name: null })
+  })
+
   it("keyset-pages equal, non-null, and null finished_at without skips or duplicates", async () => {
     for (const timestamp of [
       "2026-06-03T00:00:00Z",

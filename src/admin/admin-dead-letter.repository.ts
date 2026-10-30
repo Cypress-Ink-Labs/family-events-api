@@ -18,6 +18,9 @@ export interface DeadLetterRow {
   source_run_id: string | null
   event_id: string | null
 }
+export interface DeadLetterListRow extends DeadLetterRow {
+  source_name: string | null
+}
 export interface DeadLetterRetryResult {
   disposition: "queued" | "already_active"
   resultingQueueId: string
@@ -27,10 +30,13 @@ const TABLES = {
   source: {
     name: "source_scrape_queue",
     columns: "source_id, source_run_id, NULL::uuid AS event_id",
+    listColumns:
+      "(SELECT s.name FROM public.event_sources s WHERE s.id = q.source_id) AS source_name",
   },
   tag: {
     name: "event_tag_queue",
     columns: "NULL::uuid AS source_id, source_run_id, event_id",
+    listColumns: "NULL::text AS source_name",
   },
 } as const
 
@@ -38,7 +44,7 @@ const TABLES = {
 export class AdminDeadLetterRepository {
   constructor(private readonly db: DbService) {}
 
-  list(actor: string, input: DeadLetterListInput): Promise<DeadLetterRow[]> {
+  list(actor: string, input: DeadLetterListInput): Promise<DeadLetterListRow[]> {
     const table = TABLES[input.queue]
     let cursorPredicate: string
     let limitPlaceholder: string
@@ -59,10 +65,11 @@ export class AdminDeadLetterRepository {
     }
     return withAdminActor(this.db, actor, async (client) => {
       await requireDatabaseAdmin(client)
-      const result = await client.query<DeadLetterRow>(
+      const result = await client.query<DeadLetterListRow>(
         `SELECT id::text AS id, attempt_count, enqueued_at, started_at, finished_at,
-                next_attempt_at, left(last_error, 1000) AS last_error, trigger_type, ${table.columns}
-         FROM public.${table.name}
+                next_attempt_at, left(last_error, 1000) AS last_error, trigger_type, ${table.columns},
+                ${table.listColumns}
+         FROM public.${table.name} q
          WHERE status = 'dead' AND ${cursorPredicate}
          ORDER BY finished_at DESC NULLS LAST, id DESC
          LIMIT ${limitPlaceholder}::integer`,

@@ -1,7 +1,10 @@
 import { ForbiddenException, Injectable, NotFoundException } from "@nestjs/common"
 
 import { isDatabaseAdminDenial } from "./admin-database.js"
-import { AdminDeadLetterRepository, type DeadLetterRow } from "./admin-dead-letter.repository.js"
+import {
+  AdminDeadLetterRepository,
+  type DeadLetterListRow,
+} from "./admin-dead-letter.repository.js"
 import {
   encodeDeadLetterCursor,
   type DeadLetterListInput,
@@ -27,7 +30,7 @@ export class AdminDeadLetterService {
     actor: string,
     input: DeadLetterListInput
   ): Promise<{
-    items: (DeadLetterRow & { queue: DeadLetterQueue })[]
+    items: (DeadLetterListRow & { queue: DeadLetterQueue })[]
     nextCursor: string | null
   }> {
     const rows = await this.call(() => this.repository.list(actor, input))
