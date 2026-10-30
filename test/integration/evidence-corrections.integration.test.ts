@@ -149,6 +149,60 @@ describe("evidence and correction HTTP with disposable PostgreSQL", () => {
     expect(response.body[0]).toMatchObject({ event_id: event, event_title: "Fixture event" })
     expect(JSON.stringify(response.body)).not.toContain("Private fixture detail")
   })
+  it("counts every report status in one operator-only totals request, zero-filled", async () => {
+    const totals = () =>
+      request(app.getHttpServer())
+        .get("/v1/admin/correction-reports/totals")
+        .set("Authorization", "Bearer operator")
+    expect((await totals()).body).toEqual({ new: 0, in_review: 0, resolved: 0, dismissed: 0 })
+
+    const audit = (
+      await db.query(
+        "INSERT INTO public.admin_audit_log(admin_user_id,action,target_type,metadata) VALUES ($1,'event.update','event','{}'::jsonb) RETURNING id",
+        [actor]
+      )
+    )[0]!
+    const correction = (
+      await db.query(
+        "INSERT INTO public.listing_corrections(event_id,operator_id,audit_log_id,audit_note) VALUES ($1,$2,$3,'Fixed') RETURNING id",
+        [event, actor, audit.id]
+      )
+    )[0]!
+    await db.query(
+      `INSERT INTO public.correction_reports(event_id,category,details) SELECT $1,'other','New '||n FROM generate_series(1,3) n`,
+      [event]
+    )
+    await db.query(
+      `INSERT INTO public.correction_reports(event_id,category,details,status,claimed_by,claimed_at)
+       SELECT $1,'other','Claimed '||n,'in_review',$2,now() FROM generate_series(1,2) n`,
+      [event, actor]
+    )
+    await db.query(
+      `INSERT INTO public.correction_reports(event_id,category,details,status,claimed_by,claimed_at,resolved_by,resolved_at,resolution_note,correction_id)
+       VALUES ($1,'other','Done','resolved',$2,now(),$2,now(),'Fixed',$3)`,
+      [event, actor, correction.id]
+    )
+    await db.query(
+      `INSERT INTO public.correction_reports(event_id,category,details,status,claimed_by,claimed_at,resolved_by,resolved_at,resolution_note)
+       SELECT $1,'other','Nope '||n,'dismissed',$2,now(),$2,now(),'Not a problem' FROM generate_series(1,4) n`,
+      [event, actor]
+    )
+
+    const response = await totals()
+    expect(response.status).toBe(200)
+    expect(response.body).toEqual({ new: 3, in_review: 2, resolved: 1, dismissed: 4 })
+
+    expect(
+      (
+        await request(app.getHttpServer())
+          .get("/v1/admin/correction-reports/totals")
+          .set("Authorization", "Bearer member")
+      ).status
+    ).toBe(404)
+    expect(
+      (await request(app.getHttpServer()).get("/v1/admin/correction-reports/totals")).status
+    ).toBe(401)
+  })
   it("reuses a valid anonymous capability without consuming issuance budget", async () => {
     const first = await request(app.getHttpServer()).post("/v1/correction-report-capability")
     expect(first.status).toBe(204)

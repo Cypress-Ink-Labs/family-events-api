@@ -30,6 +30,7 @@ import { OperatorGuard } from "../auth/operator.guard.js"
 import {
   AdminCorrectionReportRepository,
   type CorrectionReportListRow,
+  type CorrectionReportStatusTotals,
 } from "./admin-correction-report.repository.js"
 
 function parse<T>(schema: z.ZodType<T>, value: unknown): T {
@@ -127,6 +128,13 @@ class CorrectionReportPrivatePayloadDto extends CorrectionReportPrivateDetailDto
   evidence!: string[] | null
 }
 
+class CorrectionReportStatusTotalsDto {
+  @ApiProperty({ type: "integer", minimum: 0 }) new!: number
+  @ApiProperty({ type: "integer", minimum: 0 }) in_review!: number
+  @ApiProperty({ type: "integer", minimum: 0 }) resolved!: number
+  @ApiProperty({ type: "integer", minimum: 0 }) dismissed!: number
+}
+
 class ClaimCorrectionReportDto {
   @ApiProperty({ type: "integer", minimum: 1 }) version!: number
 }
@@ -185,6 +193,16 @@ export class AdminCorrectionReportController {
     )
     const limit = parse(z.coerce.number().int().min(1).max(200).default(50), rawLimit)
     return this.reports.list(request.identity.supabaseUuid, parsedStatus, limit)
+  }
+
+  @Get("totals")
+  @ApiOperation({
+    operationId: "adminCorrectionReportTotals",
+    summary: "Count correction reports in every status",
+  })
+  @ApiOkResponse({ type: CorrectionReportStatusTotalsDto })
+  totals(@Req() request: IdentifiedRequest): Promise<CorrectionReportStatusTotals> {
+    return this.reports.totals(request.identity.supabaseUuid)
   }
 
   @Get(":id")
