@@ -4753,6 +4753,33 @@
         ]
       }
     },
+    "/v1/admin/correction-reports/totals": {
+      "get": {
+        "operationId": "adminCorrectionReportTotals",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CorrectionReportStatusTotalsDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "clerk": []
+          }
+        ],
+        "summary": "Count correction reports in every status",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/v1/admin/correction-reports/{id}": {
       "get": {
         "operationId": "adminGetCorrectionReportPrivateDetail",
@@ -10670,6 +10697,33 @@
           "created_at",
           "updated_at",
           "event_title"
+        ]
+      },
+      "CorrectionReportStatusTotalsDto": {
+        "type": "object",
+        "properties": {
+          "new": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "in_review": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "resolved": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "dismissed": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "new",
+          "in_review",
+          "resolved",
+          "dismissed"
         ]
       },
       "CorrectionReportContactDto": {

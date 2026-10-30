@@ -29,6 +29,10 @@ export type CorrectionReportListRow = Omit<
   "reporter_user_id" | "details" | "resolution_note"
 > & { event_title: string }
 
+export type CorrectionReportStatus = "new" | "in_review" | "resolved" | "dismissed"
+
+export type CorrectionReportStatusTotals = Record<CorrectionReportStatus, number>
+
 export interface ListingCorrectionRow {
   id: string
   event_id: string
@@ -69,6 +73,23 @@ export class AdminCorrectionReportRepository {
         [status ?? null, limit]
       )
       return result.rows
+    })
+  }
+
+  totals(actor: string): Promise<CorrectionReportStatusTotals> {
+    return this.withActor(actor, async (client) => {
+      await requireDatabaseAdmin(client)
+      const result = await client.query<{ status: CorrectionReportStatus; total: number }>(
+        "SELECT status, count(*)::int AS total FROM public.correction_reports GROUP BY status"
+      )
+      const totals: CorrectionReportStatusTotals = {
+        new: 0,
+        in_review: 0,
+        resolved: 0,
+        dismissed: 0,
+      }
+      for (const row of result.rows) totals[row.status] = row.total
+      return totals
     })
   }
 

@@ -949,6 +949,21 @@ describe("application bootstrap", () => {
         expect.objectContaining({ name: "limit", required: false }),
       ])
     )
+    expect(
+      document.paths["/v1/admin/correction-reports/totals"]!.get!.responses["200"]
+    ).toMatchObject({
+      content: {
+        "application/json": {
+          schema: { $ref: "#/components/schemas/CorrectionReportStatusTotalsDto" },
+        },
+      },
+    })
+    expect(Object.keys(schemas.CorrectionReportStatusTotalsDto!.properties!)).toEqual([
+      "new",
+      "in_review",
+      "resolved",
+      "dismissed",
+    ])
     const listFields = Object.keys(schemas.CorrectionReportQueueRowDto!.properties!)
     for (const field of ["details", "reporter_user_id", "contact", "evidence", "resolution_note"]) {
       expect(listFields).not.toContain(field)
