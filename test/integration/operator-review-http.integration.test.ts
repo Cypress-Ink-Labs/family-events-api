@@ -77,10 +77,10 @@ beforeEach(async () => {
   member = randomUUID()
   event = randomUUID()
   await db.query("INSERT INTO auth.users(id) VALUES($1),($2)", [actor, member])
-  await db.query("INSERT INTO public.user_profiles(id,role) VALUES($1,'admin'),($2,'user')", [
-    actor,
-    member,
-  ])
+  await db.query(
+    "INSERT INTO public.user_profiles(id,role,display_name) VALUES($1,'admin','Dana Operator'),($2,'user',NULL)",
+    [actor, member]
+  )
   await db.query("INSERT INTO public.user_access(user_id,is_enabled) VALUES($1,true),($2,true)", [
     actor,
     member,
@@ -116,6 +116,7 @@ describe("operator review over HTTP and PostgreSQL", () => {
       llm_review_flags: ["age_uncertain"],
       admin_locked_fields: ["title"],
       admin_last_edited_by: actor,
+      admin_last_edited_by_name: "Dana Operator",
     })
     expect(result.body.review.llm_reviewed_at).toContain(".654321")
     expect(result.body.trace).toMatchObject({
@@ -138,6 +139,27 @@ describe("operator review over HTTP and PostgreSQL", () => {
       .get(`/v1/admin/events/${event}/diagnostics`)
       .set("Authorization", "Bearer operator")
       .expect(403)
+  })
+  it("returns a null editor name when the editor has no display name or no longer exists", async () => {
+    const diagnostics = async () =>
+      (
+        await request(app.getHttpServer())
+          .get(`/v1/admin/events/${event}/diagnostics`)
+          .set("Authorization", "Bearer operator")
+          .expect(200)
+      ).body.review
+    await db.query("UPDATE public.events SET admin_last_edited_by=$2 WHERE id=$1", [event, member])
+    expect(await diagnostics()).toMatchObject({
+      admin_last_edited_by: member,
+      admin_last_edited_by_name: null,
+    })
+    await db.query("UPDATE public.user_profiles SET display_name='' WHERE id=$1", [member])
+    expect(await diagnostics()).toMatchObject({ admin_last_edited_by_name: null })
+    await db.query("UPDATE public.events SET admin_last_edited_by=NULL WHERE id=$1", [event])
+    expect(await diagnostics()).toMatchObject({
+      admin_last_edited_by: null,
+      admin_last_edited_by_name: null,
+    })
   })
   it("keeps filters, timestamp cursors, status reasons, tag overrides and audit attribution coherent", async () => {
     const source = randomUUID(),

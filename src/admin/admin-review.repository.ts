@@ -112,7 +112,9 @@ export class AdminReviewRepository {
           ai_confidence,ai_tag_provider,ai_tag_model,ai_tag_status,
           llm_review_status,llm_review_decision,llm_review_confidence,llm_review_reason,llm_review_flags,
           llm_review_provider,llm_review_model,llm_review_prompt_version,llm_reviewed_at,llm_review_error,
-          admin_locked_fields,admin_last_edited_at,admin_last_edited_by,created_at
+          admin_locked_fields,admin_last_edited_at,admin_last_edited_by,
+          (SELECT NULLIF(btrim(up.display_name),'') FROM public.user_profiles up WHERE up.id=public.events.admin_last_edited_by) AS admin_last_edited_by_name,
+          created_at
         FROM public.events WHERE id=$1::uuid`,
         [id]
       )

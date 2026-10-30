@@ -8215,6 +8215,11 @@
             "type": "string",
             "format": "uuid",
             "nullable": true
+          },
+          "admin_last_edited_by_name": {
+            "type": "string",
+            "nullable": true,
+            "description": "Display name of the last editor; null when they have none or their profile is anonymized"
           }
         },
         "required": [
@@ -8246,7 +8251,8 @@
           "llm_reviewed_at",
           "admin_locked_fields",
           "admin_last_edited_at",
-          "admin_last_edited_by"
+          "admin_last_edited_by",
+          "admin_last_edited_by_name"
         ]
       },
       "AdminAiTraceDto": {
