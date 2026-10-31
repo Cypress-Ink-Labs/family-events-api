@@ -7,6 +7,7 @@ import {
   APPROVED_GATEWAY_MODELS,
   DEFAULT_GATEWAY_MODEL,
   GATEWAY_EMBEDDING_MODEL,
+  gatewayReasoning,
   GatewayHttpError,
   generateGatewayEmbedding,
   generateGatewayText,
@@ -91,8 +92,22 @@ describe("AI Gateway transport", () => {
       expect(resolveGatewayModel(model)).toBe(DEFAULT_GATEWAY_MODEL)
   })
 
+  it("turns reasoning off for tagging on GPT-6 Luna only, and keeps everything else low", () => {
+    for (const model of APPROVED_GATEWAY_MODELS) {
+      expect(gatewayReasoning("event-review", model)).toBe("low")
+      expect(gatewayReasoning("parent-tips", model)).toBe("low")
+      expect(gatewayReasoning("source-extraction", model)).toBe("low")
+    }
+    expect(gatewayReasoning("tagging", "openai/gpt-6-luna")).toBe("none")
+    expect(gatewayReasoning("tagging", "openai/gpt-6-luna-fast")).toBe("none")
+    expect(gatewayReasoning("tagging", "spacexai/grok-4.20-non-reasoning")).toBe("low")
+    expect(gatewayReasoning("tagging", "spacexai/grok-4.3")).toBe("low")
+    expect(gatewayReasoning("tagging", "spacexai/grok-4.7")).toBe("low")
+    expect(gatewayReasoning("tagging", "openai/gpt-7-unlisted")).toBe("low")
+  })
+
   it.each(["openai/gpt-6-luna", "openai/gpt-6-luna-fast"])(
-    "sends %s verbatim in JSON mode at the caller's temperature with provider-default reasoning",
+    "sends %s verbatim in JSON mode at the caller's temperature with low reasoning",
     async (model) => {
       const language = new MockLanguageModelV4({
         doGenerate: {
@@ -124,7 +139,7 @@ describe("AI Gateway transport", () => {
       const call = language.doGenerateCalls[0]!
       expect(call).toMatchObject({ temperature: 0, responseFormat: { type: "json" } })
       expect(call.responseFormat).not.toHaveProperty("schema")
-      expect(call.reasoning).toBeUndefined()
+      expect(call.reasoning).toBe("low")
       expect(call.providerOptions).toBeUndefined()
       expect(call.maxOutputTokens).toBeUndefined()
       expect(result.content).toBe('{"decision":"approve"}')
@@ -166,6 +181,7 @@ describe("AI Gateway transport", () => {
     expect(language.doGenerateCalls[0]).toMatchObject({
       temperature: 0.1,
       responseFormat: { type: "json" },
+      reasoning: "none",
     })
     await vi.waitFor(() =>
       expect(outcomes).toEqual([
