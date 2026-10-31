@@ -119,7 +119,7 @@ Approved gateway models (selectable per feature under **AI settings**):
 Prices are the gateway's base tier. Requests longer than about 272,000 tokens
 (GPT-6 Luna) or 200,000 tokens (Grok) cost more. Every gateway chat call sends the system and
 user prompts, the feature's temperature and JSON response format with no
-schema, a pinned reasoning effort and no provider options. Tagging runs with
+schema, a pinned reasoning effort and usage tags (below). The `tagging` feature runs with
 reasoning `none` on the two GPT-6 Luna models and `low` on every other model.
 Event review, parent tips and source extraction run `low`. GPT-6 Luna ignored
 the temperature at its default effort and at `low` (the gateway returns an
@@ -131,6 +131,17 @@ GPT-6 Luna's gateway metadata lists `temperature`,
 `response_format`, `structured_outputs` and `reasoning` (effort `none`
 through `max`) as supported. Every prompt says "JSON", which OpenAI's JSON
 mode requires. Embeddings stay on `openai/text-embedding-3-small`.
+
+Every gateway chat and embedding call carries the tags `family-events-api`
+and `feature:<feature>`, where the feature is `tagging`, `event-review`,
+`parent-tips`, `source-extraction` or `embeddings`. The key's Vercel account
+is shared with other projects, so its credit balance and untagged usage
+include their spend. To read this API's spend alone, call `getSpendReport`
+on `createGateway({ apiKey })` from `ai` with `tags: ["family-events-api"]`,
+and add `groupBy: "tag"` for a per-feature split. Without the tag filter the
+report covers the whole account. The reporting API needs a Vercel Pro or
+Enterprise plan. Requests reached the filtered report 1 to 4 minutes after
+they ran (two runs on 2026-10-31).
 
 An unapproved or missing gateway model id resolves to `openai/gpt-6-luna` in
 code. Deploying this code before migration `20261026002000` keeps the stored
