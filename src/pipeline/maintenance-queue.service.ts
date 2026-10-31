@@ -7,7 +7,7 @@ import { FAMILIES, isLegacyReplacementSchedule } from "./families.js"
 import { isFamilyEnabled } from "./flags.js"
 
 export const DAILY_MAINTENANCE_LOCK_KEY = 1_180_030_052
-export const RETENTION_BATCH_SIZE = 5000
+export const RETENTION_BATCH_SIZE = 1000
 const RETENTION_MAX_PASSES = 200
 export const DATABASE_SIZE_WARNING_BYTES = 400_000_000
 

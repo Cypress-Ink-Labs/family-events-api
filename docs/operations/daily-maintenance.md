@@ -14,10 +14,10 @@ advisory lock prevents concurrent maintenance across API processes.
 
 ## Retention
 
-After the legacy function commits, the service calls `private.run_retention(5000)`
+After the legacy function commits, the service calls `private.run_retention(1000)`
 repeatedly, one transaction per call, until no table deletes a full batch (at most
 200 calls; a run that hits the cap logs a warning and the next run continues).
-Each call deletes at most 5000 rows per table:
+Each call deletes at most 1000 rows per table:
 
 | Table | Deleted when |
 |---|---|

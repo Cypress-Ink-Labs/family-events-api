@@ -9,6 +9,7 @@ import { CronGateService } from "../../src/pipeline/cron-gate.service.js"
 import {
   MaintenanceQueueService,
   DAILY_MAINTENANCE_LOCK_KEY,
+  RETENTION_BATCH_SIZE,
 } from "../../src/pipeline/maintenance-queue.service.js"
 import { createIntegrationDb, integrationDatabaseUrl } from "./db.js"
 import { ensureAdminCatalog, truncateAdminCatalog } from "./admin-catalog.js"
@@ -403,7 +404,7 @@ describe("daily maintenance with frozen PostgreSQL behavior", () => {
       await apiOwns()
       const id = await event("Worker event")
       await db.query(
-        `INSERT INTO public.event_ai_traces(event_id,input_title,created_at) SELECT $1,'old',${outside(14)} FROM generate_series(1,5001)`,
+        `INSERT INTO public.event_ai_traces(event_id,input_title,created_at) SELECT $1,'old',${outside(14)} FROM generate_series(1,${RETENTION_BATCH_SIZE + 1})`,
         [id]
       )
       await worker.handleJob({ task: "daily-maintenance" })
@@ -412,7 +413,7 @@ describe("daily maintenance with frozen PostgreSQL behavior", () => {
       )
       const { retention } = JSON.parse(history[0]!.body)
       expect(retention).toMatchObject({
-        event_ai_traces_pruned: 5001,
+        event_ai_traces_pruned: RETENTION_BATCH_SIZE + 1,
         event_tag_queue_succeeded_pruned: 0,
         passes: 2,
       })
