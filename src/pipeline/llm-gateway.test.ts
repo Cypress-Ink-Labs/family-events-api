@@ -140,7 +140,9 @@ describe("AI Gateway transport", () => {
       expect(call).toMatchObject({ temperature: 0, responseFormat: { type: "json" } })
       expect(call.responseFormat).not.toHaveProperty("schema")
       expect(call.reasoning).toBe("low")
-      expect(call.providerOptions).toBeUndefined()
+      expect(call.providerOptions).toEqual({
+        gateway: { tags: ["family-events-api", "feature:event-review"] },
+      })
       expect(call.maxOutputTokens).toBeUndefined()
       expect(result.content).toBe('{"decision":"approve"}')
       expect(result.usage).toMatchObject({ promptTokens: 12, completionTokens: 9, totalTokens: 21 })
@@ -287,7 +289,11 @@ describe("AI Gateway transport", () => {
       generateGatewayEmbedding({ apiKey: "test-key", value: "Story time", dimensions: 3, models })
     ).resolves.toEqual([0.1, 0.2, 0.3])
     expect(requested).toEqual([GATEWAY_EMBEDDING_MODEL])
-    expect(embedding.doEmbedCalls[0]).toMatchObject({ values: ["Story time"], dimensions: 3 })
+    expect(embedding.doEmbedCalls[0]).toMatchObject({
+      values: ["Story time"],
+      dimensions: 3,
+      providerOptions: { gateway: { tags: ["family-events-api", "feature:embeddings"] } },
+    })
   })
 
   it("rejects embeddings with the wrong dimensions", async () => {

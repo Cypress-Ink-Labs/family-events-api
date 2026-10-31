@@ -19,6 +19,7 @@ import type { EnvReader } from "./llm-config.js"
 import { OpenAiChatCompletionHttpError, type ChatCompletionResult } from "./llm-openai.js"
 
 export const GATEWAY_PROVIDER = "gateway"
+export const GATEWAY_SPEND_TAG = "family-events-api"
 export const GATEWAY_API_KEY_ENV = "AI_GATEWAY_API_KEY"
 export const DEFAULT_GATEWAY_MODEL = "openai/gpt-6-luna"
 export const GATEWAY_EMBEDDING_MODEL = "openai/text-embedding-3-small"
@@ -36,6 +37,10 @@ const TAGGING_REASONING_OFF_MODELS: ReadonlySet<string> = new Set([
   "openai/gpt-6-luna",
   "openai/gpt-6-luna-fast",
 ])
+
+export function gatewayUsageTags(feature: AiCallFeature): { gateway: { tags: string[] } } {
+  return { gateway: { tags: [GATEWAY_SPEND_TAG, `feature:${feature}`] } }
+}
 
 export function gatewayReasoning(feature: AiCallFeature, model: string): "none" | "low" {
   return feature === "tagging" && TAGGING_REASONING_OFF_MODELS.has(model) ? "none" : "low"
@@ -125,6 +130,7 @@ export async function generateGatewayText(
           prompt: options.prompt,
           temperature: options.temperature,
           reasoning: gatewayReasoning(options.feature, options.model),
+          providerOptions: gatewayUsageTags(options.feature),
           output: Output.json(),
           maxRetries: 0,
           abortSignal: combineSignals(options.signal, options.timeoutMs),
@@ -189,6 +195,7 @@ export async function generateGatewayEmbedding(
           model: models.embeddingModel(GATEWAY_EMBEDDING_MODEL),
           value: options.value,
           dimensions: options.dimensions,
+          providerOptions: gatewayUsageTags(options.feature ?? "embeddings"),
           maxRetries: 0,
           abortSignal: AbortSignal.timeout(options.timeoutMs ?? 30_000),
         }))
