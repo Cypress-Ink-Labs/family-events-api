@@ -28,6 +28,10 @@ describe("daily maintenance with frozen PostgreSQL behavior", () => {
     db = createIntegrationDb()
     await ensureAdminCatalog(db)
     await ensureMaintenanceCatalog(db)
+    await db.query(`DO $$ BEGIN
+      IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname='anon') THEN CREATE ROLE anon; END IF;
+      IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname='authenticated') THEN CREATE ROLE authenticated; END IF;
+    END $$`)
     await db.query("DROP FUNCTION IF EXISTS private.run_retention(integer)")
     await db.query(retentionForward)
     worker = new MaintenanceQueueService({} as JobsService, new CronGateService(db), db, {
@@ -428,6 +432,25 @@ describe("daily maintenance with frozen PostgreSQL behavior", () => {
         expect(JSON.parse(history[0]!.body).retention).toMatch(/not installed/)
       } finally {
         await db.query(retentionForward)
+      }
+    })
+
+    it("keeps the legacy pruning when retention fails and surfaces the failure", async () => {
+      await seedOldAndRetained()
+      await apiOwns()
+      await db.query(
+        "CREATE OR REPLACE FUNCTION private.run_retention(p_batch_size integer) RETURNS jsonb LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'retention boom'; END $$"
+      )
+      try {
+        await expect(worker.handleJob({ task: "daily-maintenance" })).rejects.toThrow(
+          /retention boom/
+        )
+        expect(await count("public.event_tag_queue")).toBe(4)
+        expect(await db.query("SELECT status FROM private.railway_cron_runs")).toEqual([
+          { status: "failed" },
+        ])
+      } finally {
+        await db.query(retentionForward.replace("CREATE FUNCTION", "CREATE OR REPLACE FUNCTION"))
       }
     })
 

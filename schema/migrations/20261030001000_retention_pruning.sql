@@ -1,8 +1,8 @@
 -- Retention for the tables that grew past the 500 MB free-tier cap. Runs from
 -- the API's daily maintenance after public.run_daily_maintenance(). One call
--- deletes at most p_batch_size rows per table so each statement stays short;
--- the caller repeats it until a pass deletes less than a full batch.
-CREATE FUNCTION private.run_retention(p_batch_size integer DEFAULT 5000) RETURNS jsonb
+-- deletes at most p_batch_size rows per table; the caller repeats it, one
+-- transaction per call, until no table deletes a full batch.
+CREATE FUNCTION private.run_retention(p_batch_size integer) RETURNS jsonb
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO ''
     AS $$
@@ -101,16 +101,4 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION private.run_retention(integer) FROM PUBLIC;
-
-DO $grants$
-DECLARE
-  api_role text;
-BEGIN
-  FOREACH api_role IN ARRAY ARRAY['anon', 'authenticated'] LOOP
-    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = api_role) THEN
-      EXECUTE format('REVOKE ALL ON FUNCTION private.run_retention(integer) FROM %I', api_role);
-    END IF;
-  END LOOP;
-END;
-$grants$;
+REVOKE ALL ON FUNCTION private.run_retention(integer) FROM PUBLIC, anon, authenticated;

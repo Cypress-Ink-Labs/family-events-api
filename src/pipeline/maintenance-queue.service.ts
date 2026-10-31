@@ -8,8 +8,8 @@ import { isFamilyEnabled } from "./flags.js"
 
 export const DAILY_MAINTENANCE_LOCK_KEY = 1_180_030_052
 export const RETENTION_BATCH_SIZE = 5000
-export const RETENTION_MAX_PASSES = 200
-export const DATABASE_SIZE_WARNING_BYTES = 400 * 1024 * 1024
+const RETENTION_MAX_PASSES = 200
+export const DATABASE_SIZE_WARNING_BYTES = 400_000_000
 
 type RetentionPass = Record<string, number>
 
@@ -57,57 +57,71 @@ export class MaintenanceQueueService implements OnModuleInit {
     const schedule = FAMILIES.maintenance.schedules[0]
     if (!schedule || !isLegacyReplacementSchedule(schedule))
       throw new Error("maintenance legacy schedule missing")
-    await this.gate.runGated(schedule, () =>
-      this.db.withTransaction(async (client) => {
-        const lock = await client.query<{ locked: boolean }>(
-          "SELECT pg_try_advisory_xact_lock($1) AS locked",
-          [DAILY_MAINTENANCE_LOCK_KEY]
-        )
-        if (lock.rows[0]?.locked !== true) return "skipped: maintenance already running"
+    await this.gate.runGated(schedule, async () => {
+      const summary = await this.db.withTransaction(async (client) => {
+        if (!(await this.tryLock(client))) return null
         const result = await client.query<{ summary: unknown }>(
           "SELECT public.run_daily_maintenance() AS summary"
         )
         const summary = result.rows[0]?.summary
         if (summary === null || summary === undefined)
           throw new Error("daily maintenance returned no summary")
-        const retention = await this.runRetention(client)
-        return JSON.stringify({ ...(summary as object), retention })
+        return summary as object
       })
+      if (!summary) return "skipped: maintenance already running"
+      return JSON.stringify({ ...summary, retention: await this.runRetention() })
+    })
+  }
+  private async tryLock(client: PoolClient) {
+    const lock = await client.query<{ locked: boolean }>(
+      "SELECT pg_try_advisory_xact_lock($1) AS locked",
+      [DAILY_MAINTENANCE_LOCK_KEY]
     )
+    return lock.rows[0]?.locked === true
   }
   /**
-   * Each call to private.run_retention deletes at most one batch per table, so every
-   * statement stays short; repeat until a pass leaves nothing at the batch limit.
+   * Retention runs after the legacy pruning has committed. Each call to
+   * private.run_retention deletes at most one batch per table and gets its own
+   * transaction, so a failure keeps the legacy work and row locks last one batch.
    */
-  private async runRetention(client: PoolClient) {
-    const installed = await client.query<{ present: boolean }>(
-      "SELECT to_regprocedure('private.run_retention(integer)') IS NOT NULL AS present"
-    )
-    if (installed.rows[0]?.present !== true) return "skipped: private.run_retention not installed"
+  private async runRetention() {
     const totals: RetentionPass = {}
     let databaseSizeBytes = 0
     let passes = 0
-    for (let more = true; more && passes < RETENTION_MAX_PASSES;) {
-      const result = await client.query<{ pass: RetentionPass }>(
-        "SELECT private.run_retention($1) AS pass",
-        [RETENTION_BATCH_SIZE]
-      )
-      const pass = result.rows[0]?.pass
-      if (!pass) throw new Error("retention returned no summary")
+    let batchFull = true
+    while (batchFull && passes < RETENTION_MAX_PASSES) {
+      const pass = await this.db.withTransaction(async (client) => {
+        if (!(await this.tryLock(client))) return "locked" as const
+        const installed = await client.query<{ present: boolean }>(
+          "SELECT to_regprocedure('private.run_retention(integer)') IS NOT NULL AS present"
+        )
+        if (installed.rows[0]?.present !== true) return "not installed" as const
+        const result = await client.query<{ pass: RetentionPass }>(
+          "SELECT private.run_retention($1) AS pass",
+          [RETENTION_BATCH_SIZE]
+        )
+        if (!result.rows[0]?.pass) throw new Error("retention returned no summary")
+        return result.rows[0].pass
+      })
+      if (typeof pass === "string") return `skipped: ${pass}`
       passes++
-      more = false
+      batchFull = false
       for (const [key, value] of Object.entries(pass)) {
         if (key === "database_size_bytes") databaseSizeBytes = value
         else {
           totals[key] = (totals[key] ?? 0) + value
-          if (value >= RETENTION_BATCH_SIZE) more = true
+          if (value >= RETENTION_BATCH_SIZE) batchFull = true
         }
       }
     }
+    if (batchFull)
+      this.logger.warn(
+        `retention stopped after ${passes} passes with rows still due; the rest is pruned on the next run`
+      )
     if (databaseSizeBytes > DATABASE_SIZE_WARNING_BYTES)
       this.logger.warn(
-        `database is ${Math.round(databaseSizeBytes / 1024 / 1024)} MB after retention, above the ${DATABASE_SIZE_WARNING_BYTES / 1024 / 1024} MB warning threshold`
+        `database is ${Math.round(databaseSizeBytes / 1e6)} MB after retention, above the ${DATABASE_SIZE_WARNING_BYTES / 1e6} MB warning threshold`
       )
-    return { ...totals, database_size_bytes: databaseSizeBytes, passes }
+    return { ...totals, database_size_bytes: databaseSizeBytes, passes, drained: !batchFull }
   }
 }
