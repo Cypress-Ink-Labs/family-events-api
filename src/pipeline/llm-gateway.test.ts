@@ -92,7 +92,7 @@ describe("AI Gateway transport", () => {
       expect(resolveGatewayModel(model)).toBe(DEFAULT_GATEWAY_MODEL)
   })
 
-  it("turns reasoning off for tagging unless the model cannot, and keeps other features low", () => {
+  it("turns reasoning off for tagging on GPT-6 Luna only, and keeps everything else low", () => {
     for (const model of APPROVED_GATEWAY_MODELS) {
       expect(gatewayReasoning("event-review", model)).toBe("low")
       expect(gatewayReasoning("parent-tips", model)).toBe("low")
@@ -100,9 +100,10 @@ describe("AI Gateway transport", () => {
     }
     expect(gatewayReasoning("tagging", "openai/gpt-6-luna")).toBe("none")
     expect(gatewayReasoning("tagging", "openai/gpt-6-luna-fast")).toBe("none")
-    expect(gatewayReasoning("tagging", "spacexai/grok-4.20-non-reasoning")).toBe("none")
+    expect(gatewayReasoning("tagging", "spacexai/grok-4.20-non-reasoning")).toBe("low")
     expect(gatewayReasoning("tagging", "spacexai/grok-4.3")).toBe("low")
     expect(gatewayReasoning("tagging", "spacexai/grok-4.7")).toBe("low")
+    expect(gatewayReasoning("tagging", "openai/gpt-7-unlisted")).toBe("low")
   })
 
   it.each(["openai/gpt-6-luna", "openai/gpt-6-luna-fast"])(
