@@ -16,14 +16,14 @@ advisory lock prevents concurrent maintenance across API processes.
 
 After the legacy function commits, the service calls `private.run_retention(5000)`
 repeatedly, one transaction per call, until no table deletes a full batch (at most
-200 calls; a run that stops early logs a warning and the next run continues).
+200 calls; a run that hits the cap logs a warning and the next run continues).
 Each call deletes at most 5000 rows per table:
 
 | Table | Deleted when |
 |---|---|
 | `public.event_ai_traces` | `created_at` older than 14 days |
 | `public.event_llm_review_traces` | `created_at` older than 14 days, or its queue row is `succeeded` with `finished_at` older than 14 days |
-| `public.event_llm_review_queue` | `succeeded` and `finished_at` older than 14 days |
+| `public.event_llm_review_queue` | `succeeded` and `finished_at` older than 14 days, once no trace points at it |
 | `public.event_tag_queue` | `succeeded` and `finished_at` older than 14 days (`dead`/`failed` keep the legacy rules) |
 | `public.source_extraction_traces` | `created_at` older than 30 days |
 | `private.cron_run_log_entries` | `created_at` older than 30 days |

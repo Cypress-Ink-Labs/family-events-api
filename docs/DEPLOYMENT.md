@@ -407,5 +407,5 @@ maintenance calls to prune traces, succeeded queue rows and cron logs (14 to 30
 day windows; see [daily maintenance](operations/daily-maintenance.md)). It changes no
 existing object, and the API skips the step until it is applied. Its rollback drops
 the function and cannot restore deleted rows. Applying it with the runner also
-applies every earlier pending migration, including the AI Gateway ones, so confirm
-the gateway key decision first.
+applies every earlier pending migration, including the AI Gateway ones, so set or deliberately leave unset
+`AI_GATEWAY_API_KEY` first.

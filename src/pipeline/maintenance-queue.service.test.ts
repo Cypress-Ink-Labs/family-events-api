@@ -1,4 +1,5 @@
-import { describe, expect, it, vi } from "vitest"
+import { Logger } from "@nestjs/common"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import type { JobsService } from "../jobs/jobs.service.js"
 import type { DbService } from "../db/db.service.js"
 import type { CronGateService } from "./cron-gate.service.js"
@@ -65,6 +66,7 @@ describe("dedicated daily maintenance registration", () => {
   })
 })
 describe("retention step", () => {
+  afterEach(() => vi.restoreAllMocks())
   function runWith(passes: Record<string, number>[]) {
     const rest = [...passes]
     const query = vi.fn(async (sql: string) => {
@@ -81,7 +83,7 @@ describe("retention step", () => {
       db as unknown as DbService,
       { NODE_ENV: "production", CUTOVER_MAINTENANCE: "true" }
     )
-    const warn = vi.spyOn(worker["logger"], "warn").mockImplementation(() => {})
+    const warn = vi.spyOn(Logger.prototype, "warn").mockImplementation(() => {})
     return { worker, warn, query }
   }
   it("warns when the database is still above 400 MB after pruning", async () => {
