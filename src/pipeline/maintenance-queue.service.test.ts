@@ -1,8 +1,13 @@
-import { describe, expect, it, vi } from "vitest"
+import { Logger } from "@nestjs/common"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import type { JobsService } from "../jobs/jobs.service.js"
 import type { DbService } from "../db/db.service.js"
 import type { CronGateService } from "./cron-gate.service.js"
-import { MaintenanceQueueService } from "./maintenance-queue.service.js"
+import {
+  DATABASE_SIZE_WARNING_BYTES,
+  MaintenanceQueueService,
+  RETENTION_BATCH_SIZE,
+} from "./maintenance-queue.service.js"
 describe("dedicated daily maintenance registration", () => {
   it("registers one UTC parity schedule on its own serial queue", () => {
     const registerQueue = vi.fn()
@@ -58,5 +63,43 @@ describe("dedicated daily maintenance registration", () => {
       { NODE_ENV: "production", CUTOVER_MAINTENANCE: "true" }
     )
     await expect(enabled.handleJob({ task: "other" })).rejects.toThrow(/unknown/)
+  })
+})
+describe("retention step", () => {
+  afterEach(() => vi.restoreAllMocks())
+  function runWith(passes: Record<string, number>[]) {
+    const rest = [...passes]
+    const query = vi.fn(async (sql: string) => {
+      if (sql.includes("pg_try_advisory_xact_lock")) return { rows: [{ locked: true }] }
+      if (sql.includes("run_daily_maintenance")) return { rows: [{ summary: { legacy: true } }] }
+      if (sql.includes("to_regprocedure")) return { rows: [{ present: true }] }
+      return { rows: [{ pass: rest.shift() }] }
+    })
+    const db = { withTransaction: (fn: (client: unknown) => unknown) => fn({ query }) }
+    const gate = { runGated: (_: unknown, fn: () => Promise<string>) => fn() }
+    const worker = new MaintenanceQueueService(
+      {} as JobsService,
+      gate as unknown as CronGateService,
+      db as unknown as DbService,
+      { NODE_ENV: "production", CUTOVER_MAINTENANCE: "true" }
+    )
+    const warn = vi.spyOn(Logger.prototype, "warn").mockImplementation(() => {})
+    return { worker, warn, query }
+  }
+  it("warns when the database is still above 400 MB after pruning", async () => {
+    const { worker, warn } = runWith([
+      { event_ai_traces_pruned: 1, database_size_bytes: DATABASE_SIZE_WARNING_BYTES + 1 },
+    ])
+    await worker.handleJob({ task: "daily-maintenance" })
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("400 MB"))
+  })
+  it("stays quiet at or below the threshold and repeats while any table fills its batch", async () => {
+    const { worker, warn, query } = runWith([
+      { event_ai_traces_pruned: RETENTION_BATCH_SIZE, database_size_bytes: 1 },
+      { event_ai_traces_pruned: 3, database_size_bytes: DATABASE_SIZE_WARNING_BYTES },
+    ])
+    await worker.handleJob({ task: "daily-maintenance" })
+    expect(warn).not.toHaveBeenCalled()
+    expect(query.mock.calls.filter(([sql]) => sql.includes("run_retention($1)"))).toHaveLength(2)
   })
 })

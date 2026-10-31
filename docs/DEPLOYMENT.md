@@ -401,3 +401,11 @@ The paired down migration restores the exact saved function definition and
 refuses to overwrite a function changed after this migration. Restoring the
 original definition can restore the queue timeout. A compatible binary rollback
 can leave this database repair in place.
+
+Migration `20261030001000` adds `private.run_retention(integer)`, which the daily
+maintenance calls to prune traces, succeeded queue rows and cron logs (14 to 30
+day windows; see [daily maintenance](operations/daily-maintenance.md)). It changes no
+existing object, and the API skips the step until it is applied. Its rollback drops
+the function and cannot restore deleted rows. Applying it with the runner also
+applies every earlier pending migration, including the AI Gateway ones, so set or deliberately leave unset
+`AI_GATEWAY_API_KEY` first.
