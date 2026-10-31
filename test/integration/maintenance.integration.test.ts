@@ -32,7 +32,7 @@ describe("daily maintenance with frozen PostgreSQL behavior", () => {
       IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname='anon') THEN CREATE ROLE anon; END IF;
       IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname='authenticated') THEN CREATE ROLE authenticated; END IF;
     END $$`)
-    await db.query("DROP FUNCTION IF EXISTS private.run_retention(integer)")
+    await db.query(retentionRollback)
     await db.query(retentionForward)
     worker = new MaintenanceQueueService({} as JobsService, new CronGateService(db), db, {
       NODE_ENV: "production",
@@ -244,7 +244,6 @@ describe("daily maintenance with frozen PostgreSQL behavior", () => {
   describe("retention", () => {
     const interval = (days: number, offsetMinutes: number) =>
       `now()-interval '${days} days'${offsetMinutes < 0 ? "-" : "+"}interval '${Math.abs(offsetMinutes)} minutes'`
-    // 5 minutes outside / inside a window, mirroring the legacy fixtures.
     const outside = (days: number) => interval(days, -5)
     const inside = (days: number) => interval(days, 5)
 
@@ -429,7 +428,10 @@ describe("daily maintenance with frozen PostgreSQL behavior", () => {
         const history = await db.query<{ body: string }>(
           "SELECT body FROM private.railway_cron_runs WHERE label='cron-db-maintenance'"
         )
-        expect(JSON.parse(history[0]!.body).retention).toMatch(/not installed/)
+        expect(JSON.parse(history[0]!.body).retention).toMatchObject({
+          skipped: "not installed",
+          passes: 0,
+        })
       } finally {
         await db.query(retentionForward)
       }
@@ -450,7 +452,8 @@ describe("daily maintenance with frozen PostgreSQL behavior", () => {
           { status: "failed" },
         ])
       } finally {
-        await db.query(retentionForward.replace("CREATE FUNCTION", "CREATE OR REPLACE FUNCTION"))
+        await db.query(retentionRollback)
+        await db.query(retentionForward)
       }
     })
 

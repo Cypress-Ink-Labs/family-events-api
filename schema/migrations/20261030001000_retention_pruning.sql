@@ -1,7 +1,6 @@
 -- Retention for the tables that grew past the 500 MB free-tier cap. Runs from
 -- the API's daily maintenance after public.run_daily_maintenance(). One call
--- deletes at most p_batch_size rows per table; the caller repeats it, one
--- transaction per call, until no table deletes a full batch.
+-- deletes at most p_batch_size rows per table.
 CREATE FUNCTION private.run_retention(p_batch_size integer) RETURNS jsonb
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO ''
@@ -27,7 +26,6 @@ BEGIN
   );
   GET DIAGNOSTICS v_ai_traces = ROW_COUNT;
 
-  -- Traces go before the queue rows they reference.
   DELETE FROM public.event_llm_review_traces
   WHERE id IN (
     SELECT t.id FROM public.event_llm_review_traces t
@@ -42,8 +40,8 @@ BEGIN
   );
   GET DIAGNOSTICS v_review_traces = ROW_COUNT;
 
-  -- A queue row waits until its traces are gone, so none is orphaned or kept by
-  -- a foreign key when a trace backlog spans several batches.
+  -- Deleting a queue row first would null its traces' queue_id (ON DELETE SET NULL)
+  -- and drop them from the rule above, so the row waits until they are gone.
   DELETE FROM public.event_llm_review_queue
   WHERE id IN (
     SELECT q.id FROM public.event_llm_review_queue q

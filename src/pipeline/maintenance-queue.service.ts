@@ -66,7 +66,9 @@ export class MaintenanceQueueService implements OnModuleInit {
         const summary = result.rows[0]?.summary
         if (summary === null || summary === undefined)
           throw new Error("daily maintenance returned no summary")
-        return summary as object
+        if (typeof summary !== "object")
+          throw new Error("daily maintenance summary is not an object")
+        return summary
       })
       if (!summary) return "skipped: maintenance already running"
       return JSON.stringify({ ...summary, retention: await this.runRetention() })
@@ -81,32 +83,36 @@ export class MaintenanceQueueService implements OnModuleInit {
   }
   /**
    * Retention runs after the legacy pruning has committed. Each call to
-   * private.run_retention deletes at most one batch per table and gets its own
-   * transaction, so a failure keeps the legacy work and row locks last one batch.
+   * private.run_retention gets its own transaction, so a failure keeps the legacy
+   * work and row locks last one batch.
    */
   private async runRetention() {
     const totals: RetentionPass = {}
     let databaseSizeBytes = 0
     let passes = 0
+    let skipped: string | undefined
     let batchFull = true
-    while (batchFull && passes < RETENTION_MAX_PASSES) {
-      const pass = await this.db.withTransaction(async (client) => {
-        if (!(await this.tryLock(client))) return "locked" as const
+    while (batchFull && !skipped && passes < RETENTION_MAX_PASSES) {
+      const outcome = await this.db.withTransaction(async (client) => {
+        if (!(await this.tryLock(client))) return { skipped: "maintenance already running" }
         const installed = await client.query<{ present: boolean }>(
           "SELECT to_regprocedure('private.run_retention(integer)') IS NOT NULL AS present"
         )
-        if (installed.rows[0]?.present !== true) return "not installed" as const
+        if (installed.rows[0]?.present !== true) return { skipped: "not installed" }
         const result = await client.query<{ pass: RetentionPass }>(
           "SELECT private.run_retention($1) AS pass",
           [RETENTION_BATCH_SIZE]
         )
         if (!result.rows[0]?.pass) throw new Error("retention returned no summary")
-        return result.rows[0].pass
+        return { pass: result.rows[0].pass }
       })
-      if (typeof pass === "string") return `skipped: ${pass}`
+      if ("skipped" in outcome) {
+        skipped = outcome.skipped
+        break
+      }
       passes++
       batchFull = false
-      for (const [key, value] of Object.entries(pass)) {
+      for (const [key, value] of Object.entries(outcome.pass)) {
         if (key === "database_size_bytes") databaseSizeBytes = value
         else {
           totals[key] = (totals[key] ?? 0) + value
@@ -114,14 +120,20 @@ export class MaintenanceQueueService implements OnModuleInit {
         }
       }
     }
-    if (batchFull)
+    if (batchFull && !skipped)
       this.logger.warn(
-        `retention stopped after ${passes} passes with rows still due; the rest is pruned on the next run`
+        `retention stopped after ${passes} passes with rows still due; the next run continues`
       )
     if (databaseSizeBytes > DATABASE_SIZE_WARNING_BYTES)
       this.logger.warn(
         `database is ${Math.round(databaseSizeBytes / 1e6)} MB after retention, above the ${DATABASE_SIZE_WARNING_BYTES / 1e6} MB warning threshold`
       )
-    return { ...totals, database_size_bytes: databaseSizeBytes, passes, drained: !batchFull }
+    return {
+      ...totals,
+      database_size_bytes: databaseSizeBytes,
+      passes,
+      drained: !batchFull,
+      ...(skipped ? { skipped } : {}),
+    }
   }
 }
