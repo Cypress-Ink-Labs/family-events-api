@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs"
 import { ensureMaintenanceCatalog } from "./maintenance-catalog.js"
 import { ConfigService } from "@nestjs/config"
 import { PgBoss } from "pg-boss"
@@ -11,6 +12,15 @@ import {
 } from "../../src/pipeline/maintenance-queue.service.js"
 import { createIntegrationDb, integrationDatabaseUrl } from "./db.js"
 import { ensureAdminCatalog, truncateAdminCatalog } from "./admin-catalog.js"
+const retentionForward = readFileSync(
+  "schema/migrations/20261030001000_retention_pruning.sql",
+  "utf8"
+)
+const retentionRollback = readFileSync(
+  "schema/migrations/20261030001000_retention_pruning_down.sql",
+  "utf8"
+)
+
 describe("daily maintenance with frozen PostgreSQL behavior", () => {
   let db: DbService
   let worker: MaintenanceQueueService
@@ -18,6 +28,8 @@ describe("daily maintenance with frozen PostgreSQL behavior", () => {
     db = createIntegrationDb()
     await ensureAdminCatalog(db)
     await ensureMaintenanceCatalog(db)
+    await db.query("DROP FUNCTION IF EXISTS private.run_retention(integer)")
+    await db.query(retentionForward)
     worker = new MaintenanceQueueService({} as JobsService, new CronGateService(db), db, {
       NODE_ENV: "production",
       CUTOVER_MAINTENANCE: "true",
@@ -96,20 +108,19 @@ describe("daily maintenance with frozen PostgreSQL behavior", () => {
       "invite_request_attempts",
       "invite_redemption_attempts",
       "recommendation_signals",
-      "event_ai_traces",
-      "source_extraction_traces",
     ])
       expect(await db.query(`SELECT count(*)::int AS count FROM public.${table}`)).toEqual([
         { count: 1 },
       ])
+    // The 90-day fixtures sit outside the shorter retention windows, so the retention step
+    // that follows the legacy function removes the rows the legacy window kept.
+    for (const table of ["event_ai_traces", "source_extraction_traces"])
+      expect(await db.query(`SELECT count(*)::int AS count FROM public.${table}`)).toEqual([
+        { count: 0 },
+      ])
     expect(
       await db.query("SELECT status::text FROM public.event_tag_queue ORDER BY finished_at,status")
-    ).toEqual([
-      { status: "pending" },
-      { status: "succeeded" },
-      { status: "dead" },
-      { status: "failed" },
-    ])
+    ).toEqual([{ status: "pending" }, { status: "dead" }, { status: "failed" }])
     expect(
       await db.query("SELECT name FROM private.timezone_names_cache WHERE name='UTC'")
     ).toEqual([{ name: "UTC" }])
@@ -150,7 +161,7 @@ describe("daily maintenance with frozen PostgreSQL behavior", () => {
     }
     await worker.handleJob({ task: "daily-maintenance" })
     expect(await db.query("SELECT count(*)::int AS count FROM public.event_tag_queue")).toEqual([
-      { count: 4 },
+      { count: 3 },
     ])
   })
   it("rolls every pruning operation back if timezone refresh fails and records failure", async () => {
@@ -225,5 +236,213 @@ describe("daily maintenance with frozen PostgreSQL behavior", () => {
     } finally {
       await inspector.stop({ close: true })
     }
+  })
+  describe("retention", () => {
+    const interval = (days: number, offsetMinutes: number) =>
+      `now()-interval '${days} days'${offsetMinutes < 0 ? "-" : "+"}interval '${Math.abs(offsetMinutes)} minutes'`
+    // 5 minutes outside / inside a window, mirroring the legacy fixtures.
+    const outside = (days: number) => interval(days, -5)
+    const inside = (days: number) => interval(days, 5)
+
+    async function event(title: string) {
+      const rows = await db.query<{ id: string }>(
+        "INSERT INTO public.events(title,start_datetime,status) VALUES($1,now(),'published') RETURNING id",
+        [title]
+      )
+      return rows[0]!.id
+    }
+    async function reviewQueue(eventId: string, status: string, finishedAt: string) {
+      const rows = await db.query<{ id: string }>(
+        `INSERT INTO public.event_llm_review_queue(event_id,status,finished_at) VALUES($1,$2,${finishedAt}) RETURNING id`,
+        [eventId, status]
+      )
+      return rows[0]!.id
+    }
+    async function reviewTrace(eventId: string, queueId: string | null, createdAt: string) {
+      await db.query(
+        `INSERT INTO public.event_llm_review_traces(event_id,queue_id,prompt_version,status,created_at) VALUES($1,$2,'v1','succeeded',${createdAt})`,
+        [eventId, queueId]
+      )
+    }
+    const count = async (table: string) =>
+      (await db.query<{ count: number }>(`SELECT count(*)::int AS count FROM ${table}`))[0]!.count
+
+    it("deletes rows just outside each window and keeps rows just inside", async () => {
+      const id = await event("Retention event")
+      await db.query(
+        `INSERT INTO public.event_ai_traces(event_id,input_title,created_at) VALUES($1,'old',${outside(14)}),($1,'kept',${inside(14)})`,
+        [id]
+      )
+      await db.query(
+        `INSERT INTO public.source_extraction_traces(extraction_mode,extractor,status,created_at) VALUES('deterministic','deterministic','success',${outside(30)}),('deterministic','deterministic','success',${inside(30)})`
+      )
+      await reviewTrace(id, null, outside(14))
+      await reviewTrace(id, null, inside(14))
+      const expired = await event("Expired queue")
+      const fresh = await event("Fresh queue")
+      const expiredQueue = await reviewQueue(expired, "succeeded", outside(14))
+      await reviewQueue(fresh, "succeeded", inside(14))
+      await reviewTrace(expired, expiredQueue, inside(1))
+      await db.query(
+        `INSERT INTO public.event_tag_queue(event_id,status,finished_at) VALUES($1,'succeeded',${outside(14)}),($1,'succeeded',${inside(14)})`,
+        [id]
+      )
+      await db.query(
+        `INSERT INTO private.cron_run_log_entries(run_key,label,provider,level,message,created_at) VALUES(gen_random_uuid(),'l','p','info','old',${outside(30)}),(gen_random_uuid(),'l','p','info','kept',${inside(30)})`
+      )
+      await db.query(
+        `INSERT INTO private.railway_cron_runs(label,status,ran_at) VALUES('l','succeeded',${outside(30)}),('l','succeeded',${inside(30)})`
+      )
+
+      const { summary } = (
+        await db.query<{ summary: Record<string, number> }>(
+          "SELECT private.run_retention(100) AS summary"
+        )
+      )[0]!
+
+      expect(summary).toMatchObject({
+        event_ai_traces_pruned: 1,
+        event_llm_review_traces_pruned: 2,
+        event_llm_review_queue_pruned: 1,
+        event_tag_queue_succeeded_pruned: 1,
+        source_extraction_traces_pruned: 1,
+        cron_run_log_entries_pruned: 1,
+        railway_cron_runs_pruned: 1,
+      })
+      expect(summary.database_size_bytes).toBeGreaterThan(0)
+      expect(await db.query("SELECT input_title FROM public.event_ai_traces")).toEqual([
+        { input_title: "kept" },
+      ])
+      expect(await db.query("SELECT message FROM private.cron_run_log_entries")).toEqual([
+        { message: "kept" },
+      ])
+      expect(await count("public.source_extraction_traces")).toBe(1)
+      expect(await count("public.event_llm_review_traces")).toBe(1)
+      expect(await db.query("SELECT event_id FROM public.event_llm_review_queue")).toEqual([
+        { event_id: fresh },
+      ])
+      expect(await count("public.event_tag_queue")).toBe(1)
+      expect(await count("private.railway_cron_runs")).toBe(1)
+    })
+
+    it("never deletes non-terminal queue rows at any age and leaves legacy tag rules to the legacy function", async () => {
+      const queued: string[] = []
+      for (const status of ["pending", "processing", "retrying"]) {
+        const id = await event(`Active ${status}`)
+        queued.push(await reviewQueue(id, status, outside(100)))
+        await db.query(
+          `UPDATE public.event_llm_review_queue SET created_at=${outside(100)} WHERE id=$1`,
+          [queued.at(-1)]
+        )
+      }
+      for (const status of ["pending", "processing"]) {
+        const id = await event(`Tag ${status}`)
+        await db.query(
+          `INSERT INTO public.event_tag_queue(event_id,status,finished_at) VALUES($1,$2,${outside(100)})`,
+          [id, status]
+        )
+      }
+      const id = await event("Tag terminal")
+      await db.query(
+        `INSERT INTO public.event_tag_queue(event_id,status,finished_at) VALUES($1,'dead',${outside(14)}),($1,'failed',${outside(14)})`,
+        [id]
+      )
+      await reviewTrace(await event("Old trace of active"), queued[0]!, outside(14))
+      await db.query("SELECT private.run_retention(100)")
+      expect(
+        await db.query("SELECT status::text FROM public.event_llm_review_queue ORDER BY id")
+      ).toEqual([{ status: "pending" }, { status: "processing" }, { status: "retrying" }])
+      expect(
+        await db.query("SELECT status::text FROM public.event_tag_queue ORDER BY status")
+      ).toEqual([
+        { status: "dead" },
+        { status: "failed" },
+        { status: "pending" },
+        { status: "processing" },
+      ])
+      expect(await count("public.event_llm_review_traces")).toBe(0)
+    })
+
+    it("deletes at most one batch per table per call and keeps queue rows until their traces are gone", async () => {
+      const id = await event("Batch event")
+      await db.query(
+        `INSERT INTO public.event_ai_traces(event_id,input_title,created_at) SELECT $1,'old',${outside(14)} FROM generate_series(1,5)`,
+        [id]
+      )
+      const queueId = await reviewQueue(id, "succeeded", outside(14))
+      for (let n = 0; n < 3; n++) await reviewTrace(id, queueId, inside(1))
+      const call = async () =>
+        (
+          await db.query<{ summary: Record<string, number> }>(
+            "SELECT private.run_retention(2) AS summary"
+          )
+        )[0]!.summary
+      expect(await call()).toMatchObject({
+        event_ai_traces_pruned: 2,
+        event_llm_review_traces_pruned: 2,
+        event_llm_review_queue_pruned: 0,
+      })
+      expect(await call()).toMatchObject({
+        event_ai_traces_pruned: 2,
+        event_llm_review_traces_pruned: 1,
+        event_llm_review_queue_pruned: 1,
+      })
+      expect(await call()).toMatchObject({ event_ai_traces_pruned: 1 })
+      expect(await count("public.event_ai_traces")).toBe(0)
+      expect(await count("public.event_llm_review_queue")).toBe(0)
+    })
+
+    it("rejects a non-positive batch size", async () => {
+      await expect(db.query("SELECT private.run_retention(0)")).rejects.toThrow(/batch size/)
+    })
+
+    it("reports per-table totals and the database size in the maintenance summary, repeating until drained", async () => {
+      await apiOwns()
+      const id = await event("Worker event")
+      await db.query(
+        `INSERT INTO public.event_ai_traces(event_id,input_title,created_at) SELECT $1,'old',${outside(14)} FROM generate_series(1,5001)`,
+        [id]
+      )
+      await worker.handleJob({ task: "daily-maintenance" })
+      const history = await db.query<{ body: string }>(
+        "SELECT body FROM private.railway_cron_runs WHERE label='cron-db-maintenance'"
+      )
+      const { retention } = JSON.parse(history[0]!.body)
+      expect(retention).toMatchObject({
+        event_ai_traces_pruned: 5001,
+        event_tag_queue_succeeded_pruned: 0,
+        passes: 2,
+      })
+      expect(retention.database_size_bytes).toBeGreaterThan(0)
+      expect(await count("public.event_ai_traces")).toBe(0)
+    })
+
+    it("skips retention without failing when the migration is not applied", async () => {
+      await apiOwns()
+      await db.query(retentionRollback)
+      try {
+        await worker.handleJob({ task: "daily-maintenance" })
+        const history = await db.query<{ body: string }>(
+          "SELECT body FROM private.railway_cron_runs WHERE label='cron-db-maintenance'"
+        )
+        expect(JSON.parse(history[0]!.body).retention).toMatch(/not installed/)
+      } finally {
+        await db.query(retentionForward)
+      }
+    })
+
+    it("removes the retention step when the migration is rolled back", async () => {
+      const present = () =>
+        db.query<{ present: boolean }>(
+          "SELECT to_regprocedure('private.run_retention(integer)') IS NOT NULL AS present"
+        )
+      expect(await present()).toEqual([{ present: true }])
+      await db.query(retentionRollback)
+      try {
+        expect(await present()).toEqual([{ present: false }])
+      } finally {
+        await db.query(retentionForward)
+      }
+    })
   })
 })

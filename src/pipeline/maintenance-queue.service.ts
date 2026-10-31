@@ -1,4 +1,5 @@
 import { Injectable, Logger, Optional, type OnModuleInit } from "@nestjs/common"
+import type { PoolClient } from "pg"
 import { DbService } from "../db/db.service.js"
 import { JobsService } from "../jobs/jobs.service.js"
 import { CronGateService } from "./cron-gate.service.js"
@@ -6,6 +7,11 @@ import { FAMILIES, isLegacyReplacementSchedule } from "./families.js"
 import { isFamilyEnabled } from "./flags.js"
 
 export const DAILY_MAINTENANCE_LOCK_KEY = 1_180_030_052
+export const RETENTION_BATCH_SIZE = 5000
+export const RETENTION_MAX_PASSES = 200
+export const DATABASE_SIZE_WARNING_BYTES = 400 * 1024 * 1024
+
+type RetentionPass = Record<string, number>
 
 @Injectable()
 export class MaintenanceQueueService implements OnModuleInit {
@@ -64,8 +70,44 @@ export class MaintenanceQueueService implements OnModuleInit {
         const summary = result.rows[0]?.summary
         if (summary === null || summary === undefined)
           throw new Error("daily maintenance returned no summary")
-        return JSON.stringify(summary)
+        const retention = await this.runRetention(client)
+        return JSON.stringify({ ...(summary as object), retention })
       })
     )
+  }
+  /**
+   * Each call to private.run_retention deletes at most one batch per table, so every
+   * statement stays short; repeat until a pass leaves nothing at the batch limit.
+   */
+  private async runRetention(client: PoolClient) {
+    const installed = await client.query<{ present: boolean }>(
+      "SELECT to_regprocedure('private.run_retention(integer)') IS NOT NULL AS present"
+    )
+    if (installed.rows[0]?.present !== true) return "skipped: private.run_retention not installed"
+    const totals: RetentionPass = {}
+    let databaseSizeBytes = 0
+    let passes = 0
+    for (let more = true; more && passes < RETENTION_MAX_PASSES;) {
+      const result = await client.query<{ pass: RetentionPass }>(
+        "SELECT private.run_retention($1) AS pass",
+        [RETENTION_BATCH_SIZE]
+      )
+      const pass = result.rows[0]?.pass
+      if (!pass) throw new Error("retention returned no summary")
+      passes++
+      more = false
+      for (const [key, value] of Object.entries(pass)) {
+        if (key === "database_size_bytes") databaseSizeBytes = value
+        else {
+          totals[key] = (totals[key] ?? 0) + value
+          if (value >= RETENTION_BATCH_SIZE) more = true
+        }
+      }
+    }
+    if (databaseSizeBytes > DATABASE_SIZE_WARNING_BYTES)
+      this.logger.warn(
+        `database is ${Math.round(databaseSizeBytes / 1024 / 1024)} MB after retention, above the ${DATABASE_SIZE_WARNING_BYTES / 1024 / 1024} MB warning threshold`
+      )
+    return { ...totals, database_size_bytes: databaseSizeBytes, passes }
   }
 }
