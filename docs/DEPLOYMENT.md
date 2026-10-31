@@ -119,8 +119,15 @@ Approved gateway models (selectable per feature under **AI settings**):
 Prices are the gateway's base tier. Requests longer than about 272,000 tokens
 (GPT-6 Luna) or 200,000 tokens (Grok) cost more. Every gateway chat call sends the system and
 user prompts, the feature's temperature and JSON response format with no
-schema, and no reasoning or provider options, so reasoning effort is each
-provider's default. GPT-6 Luna's gateway metadata lists `temperature`,
+schema, a pinned reasoning effort and no provider options. Tagging runs with
+reasoning `none` on the two GPT-6 Luna models and `low` on every other model.
+Event review, parent tips and source extraction run `low`. GPT-6 Luna ignored
+the temperature at its default effort and at `low` (the gateway returns an
+"unsupported" warning) and gave no warning at `none`, so on Luna only
+tagging's temperature is known to take effect.
+`spacexai/grok-4.20-non-reasoning` ignores the effort with the same kind of
+warning.
+GPT-6 Luna's gateway metadata lists `temperature`,
 `response_format`, `structured_outputs` and `reasoning` (effort `none`
 through `max`) as supported. Every prompt says "JSON", which OpenAI's JSON
 mode requires. Embeddings stay on `openai/text-embedding-3-small`.
