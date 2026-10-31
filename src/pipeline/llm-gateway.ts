@@ -32,6 +32,18 @@ export const APPROVED_GATEWAY_MODELS: ReadonlySet<string> = new Set([
   "spacexai/grok-4.7",
 ])
 
+/** Grok models whose gateway metadata lists no "none" reasoning effort. */
+const REASONING_ALWAYS_ON: ReadonlySet<string> = new Set(["spacexai/grok-4.3", "spacexai/grok-4.7"])
+
+/**
+ * Every chat feature returns a short JSON answer, so reasoning beyond "low"
+ * buys latency and tokens, not accuracy. Tagging picks from a fixed list and
+ * runs with reasoning off where the model allows it.
+ */
+export function gatewayReasoning(feature: AiCallFeature, model: string): "none" | "low" {
+  return feature === "tagging" && !REASONING_ALWAYS_ON.has(model) ? "none" : "low"
+}
+
 export function resolveGatewayModel(model: string | null | undefined): string {
   return model && APPROVED_GATEWAY_MODELS.has(model) ? model : DEFAULT_GATEWAY_MODEL
 }
@@ -115,6 +127,7 @@ export async function generateGatewayText(
           system: options.system,
           prompt: options.prompt,
           temperature: options.temperature,
+          reasoning: gatewayReasoning(options.feature, options.model),
           output: Output.json(),
           maxRetries: 0,
           abortSignal: combineSignals(options.signal, options.timeoutMs),
