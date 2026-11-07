@@ -41,13 +41,19 @@ $old$,
 $new$
   );
   IF changed = definition THEN
-    RAISE EXCEPTION 'reprocess rollback could not restore bulk update targets';
+    RAISE EXCEPTION 'reprocess rollback could not restore step 1';
   END IF;
   definition := changed;
 
   changed := replace(
     definition,
-    $old$      llm_review_status = CASE
+    $old$      ai_tag_status = CASE
+        WHEN t.reprocess AND e.ai_tag_status = 'success'
+          AND v_processing_mode <> 'llm_review'::public.event_processing_mode
+          THEN NULL
+        ELSE e.ai_tag_status
+      END,
+      llm_review_status = CASE
         WHEN NOT t.reprocess THEN e.llm_review_status
         WHEN v_processing_mode = 'llm_review'::public.event_processing_mode
           THEN 'pending'::public.llm_event_review_status
@@ -80,7 +86,33 @@ $old$,
 $new$
   );
   IF changed = definition THEN
-    RAISE EXCEPTION 'reprocess rollback could not restore the review state reset';
+    RAISE EXCEPTION 'reprocess rollback could not restore step 2';
+  END IF;
+  definition := changed;
+
+  changed := replace(
+    definition,
+    $old$      venue_name     = CASE WHEN 'venue_name'     = ANY(e.admin_locked_fields) THEN e.venue_name     WHEN t.reprocess THEN t.venue_name ELSE COALESCE(t.venue_name, e.venue_name) END,
+$old$,
+    $new$      venue_name     = CASE WHEN 'venue_name'     = ANY(e.admin_locked_fields) THEN e.venue_name     ELSE t.venue_name     END,
+$new$
+  );
+  IF changed = definition THEN
+    RAISE EXCEPTION 'reprocess rollback could not restore step 3';
+  END IF;
+  definition := changed;
+
+  changed := replace(
+    definition,
+    $old$      price          = CASE WHEN 'price'          = ANY(e.admin_locked_fields) THEN e.price          WHEN t.reprocess THEN t.price ELSE COALESCE(t.price, e.price) END,
+      is_free        = CASE WHEN 'is_free'        = ANY(e.admin_locked_fields) THEN e.is_free        WHEN t.reprocess THEN t.is_free ELSE t.is_free OR (COALESCE(e.is_free, false) AND t.price IS NULL) END,
+$old$,
+    $new$      price          = CASE WHEN 'price'          = ANY(e.admin_locked_fields) THEN e.price          ELSE t.price          END,
+      is_free        = CASE WHEN 'is_free'        = ANY(e.admin_locked_fields) THEN e.is_free        ELSE t.is_free        END,
+$new$
+  );
+  IF changed = definition THEN
+    RAISE EXCEPTION 'reprocess rollback could not restore step 4';
   END IF;
   definition := changed;
 
@@ -92,7 +124,7 @@ $old$,
 $new$
   );
   IF changed = definition THEN
-    RAISE EXCEPTION 'reprocess rollback could not restore the enqueue set';
+    RAISE EXCEPTION 'reprocess rollback could not restore step 5';
   END IF;
 
   EXECUTE changed;

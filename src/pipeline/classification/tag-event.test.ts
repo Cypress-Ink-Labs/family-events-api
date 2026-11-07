@@ -430,6 +430,23 @@ describe("processTagEvent", () => {
     expect(db.traces.length).toBe(0)
   })
 
+  it("saves the result against the exact title and description the classifier saw", async () => {
+    const db = new FakeTagEventDb()
+    db.events.set("evt-obs", eventRow("evt-obs", "Park day", { description: "Outdoor fun" }))
+    const save = vi.spyOn(db, "updateEventAfterTagging")
+    const deps = buildDeps(db, { classify: () => Promise.resolve(classifyResult()) })
+
+    await processTagEvent(
+      { event_id: "evt-obs", title: " Park day\n", description: "Outdoor fun" },
+      deps
+    )
+
+    expect(save).toHaveBeenCalledWith("evt-obs", expect.any(Object), {
+      title: " Park day\n",
+      description: "Outdoor fun",
+    })
+  })
+
   it("includes prompt_version in trace insert", async () => {
     const db = new FakeTagEventDb()
     db.tags = [{ id: "tag-outdoor", slug: "outdoor", name: "Outdoor" }]

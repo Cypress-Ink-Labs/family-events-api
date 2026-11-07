@@ -112,6 +112,12 @@ export interface TagEventInput {
   title: string
   description: string
   currentEvent: CurrentEvent | null
+  observed?: ObservedEventContent
+}
+
+export interface ObservedEventContent {
+  title: string
+  description: string
 }
 
 export interface ClassificationOutput {
@@ -355,6 +361,9 @@ async function loadTagEventInput(db: TagEventDb, body: unknown): Promise<TagEven
     throw new TagEventRequestError("title is required")
   }
 
+  const rawTitle = typeof payload.title === "string" ? payload.title : ""
+  const rawDescription = typeof payload.description === "string" ? payload.description : ""
+
   return {
     eventId,
     sourceRunId,
@@ -363,6 +372,10 @@ async function loadTagEventInput(db: TagEventDb, body: unknown): Promise<TagEven
     title,
     description,
     currentEvent,
+    observed: {
+      title: rawTitle.trim() ? rawTitle : (currentEvent?.title ?? ""),
+      description: rawDescription || (currentEvent?.description ?? ""),
+    },
   }
 }
 
@@ -602,7 +615,11 @@ export interface TagEventDb {
   /** cities row lookup by id (name, state, latitude, longitude). */
   getCityLocation(cityId: string): Promise<CityLocationRow | null>
   /** events update by id (ai_confidence, ai_tag_*, age_min/max, and any conditionally-filled fields). */
-  updateEventAfterTagging(eventId: string, payload: Record<string, unknown>): Promise<void>
+  updateEventAfterTagging(
+    eventId: string,
+    payload: Record<string, unknown>,
+    observed?: ObservedEventContent
+  ): Promise<void>
 }
 
 async function persistTagTrace(
@@ -807,7 +824,7 @@ async function persistTagTraceAndTags(
     topConfidence,
     geocode
   )
-  await db.updateEventAfterTagging(eventId, updatePayload)
+  await db.updateEventAfterTagging(eventId, updatePayload, input.observed)
 }
 
 function logTagEventClassified(input: {

@@ -323,6 +323,26 @@ describe("processReviewQueueBatch", () => {
     expect(db.traces).toEqual([{ status: "skipped", eventId: "event-1" }])
   })
 
+  it("does not apply a decision made on content that changed while the LLM was running", async () => {
+    const db = new FakeReviewQueueDb()
+    db.claimedRows = [row(1)]
+    db.events.set("event-1", event("event-1"))
+    const apply = vi.spyOn(db, "applyEventDecision")
+
+    const summary = await runBatch(db, {
+      reviewEvent: async () => {
+        db.events.set("event-1", event("event-1", { description: "Rewritten by a re-scrape" }))
+        return decision()
+      },
+    })
+
+    expect(apply).not.toHaveBeenCalled()
+    expect(summary.succeeded).toBe(1)
+    expect(summary.approved).toBe(0)
+    expect(db.updates.get(1)?.status).toBe("succeeded")
+    expect(db.traces).toEqual([{ status: "skipped", eventId: "event-1" }])
+  })
+
   it("auto-rejects without calling the LLM when the source-auto-reject feature flag is enabled", async () => {
     const db = new FakeReviewQueueDb()
     db.claimedRows = [row(1, { source_id: "source-1" })]

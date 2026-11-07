@@ -358,6 +358,90 @@ describe("bulk_import_scrape_events (real SQL)", () => {
       expect(events).toEqual([{ llm_review_status: "pending" }])
     })
 
+    it("keeps the venue, price and free flag tagging filled in when a re-scrape omits them", async () => {
+      const sourceId = await seedSource({ auto_approve: false })
+      await importOnce(sourceId, { venueName: null, price: null, isFree: false })
+      await db.query(
+        `UPDATE public.events
+         SET ai_tag_status = 'success', venue_name = 'Main Library', price = 5, is_free = true`
+      )
+      await finishQueues()
+
+      await importOnce(sourceId, { venueName: null, price: null, isFree: false })
+
+      const events = await db.query<{ venue_name: string; price: string; is_free: boolean }>(
+        "SELECT venue_name, price::text, is_free FROM public.events"
+      )
+      expect(events).toEqual([{ venue_name: "Main Library", price: "5", is_free: true }])
+    })
+
+    it("still applies a price or venue the re-scrape does supply", async () => {
+      const sourceId = await seedSource({ auto_approve: false })
+      await importOnce(sourceId, { venueName: null, price: null, isFree: false })
+      await db.query(
+        `UPDATE public.events
+         SET ai_tag_status = 'success', venue_name = 'Main Library', price = 5, is_free = true`
+      )
+      await finishQueues()
+
+      await importOnce(sourceId, { venueName: "Civic Center", price: 12, isFree: false })
+
+      const events = await db.query<{ venue_name: string; price: string; is_free: boolean }>(
+        "SELECT venue_name, price::text, is_free FROM public.events"
+      )
+      expect(events).toEqual([{ venue_name: "Civic Center", price: "12", is_free: false }])
+    })
+
+    it("clears the stored tagging success when the title or description changes", async () => {
+      const sourceId = await seedSource({ auto_approve: false })
+      await importOnce(sourceId)
+      await db.query("UPDATE public.events SET ai_tag_status = 'success'")
+      await finishQueues()
+
+      await importOnce(sourceId, { description: "Books, songs and puppets." })
+
+      const events = await db.query<{ ai_tag_status: string | null }>(
+        "SELECT ai_tag_status FROM public.events"
+      )
+      expect(events).toEqual([{ ai_tag_status: null }])
+    })
+
+    it("keeps retrying a changed event whose retag died before saving a result", async () => {
+      const sourceId = await seedSource({ auto_approve: false })
+      await importOnce(sourceId)
+      await db.query("UPDATE public.events SET ai_tag_status = 'success'")
+      await finishQueues()
+
+      await importOnce(sourceId, { description: "Books, songs and puppets." })
+      await db.query(
+        "UPDATE public.event_tag_queue SET status = 'dead', finished_at = now() WHERE status = 'pending'"
+      )
+      const before = await queueCounts()
+
+      const unchangedRerun = await importOnce(sourceId, {
+        description: "Books, songs and puppets.",
+      })
+
+      expect(unchangedRerun.enqueued).toBe(1)
+      expect((await queueCounts()).tag).toBe(before.tag + 1)
+    })
+
+    it("keeps the stored tagging success when only a locked field changed", async () => {
+      const sourceId = await seedSource({ auto_approve: false })
+      await importOnce(sourceId)
+      await db.query(
+        "UPDATE public.events SET ai_tag_status = 'success', admin_locked_fields = ARRAY['description']"
+      )
+      await finishQueues()
+
+      await importOnce(sourceId, { description: "Scraper wording changed." })
+
+      const events = await db.query<{ ai_tag_status: string | null }>(
+        "SELECT ai_tag_status FROM public.events"
+      )
+      expect(events).toEqual([{ ai_tag_status: "success" }])
+    })
+
     it("ignores a change to a field an admin locked", async () => {
       const sourceId = await seedSource({ auto_approve: false })
       await importOnce(sourceId)

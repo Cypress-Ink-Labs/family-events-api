@@ -186,7 +186,7 @@ BEGIN
       start_datetime = CASE WHEN 'start_datetime' = ANY(e.admin_locked_fields) THEN e.start_datetime ELSE t.start_datetime END,
       end_datetime   = CASE WHEN 'end_datetime'   = ANY(e.admin_locked_fields) THEN e.end_datetime   ELSE t.end_datetime   END,
       timezone       = CASE WHEN 'timezone'       = ANY(e.admin_locked_fields) THEN e.timezone       ELSE t.timezone       END,
-      venue_name     = CASE WHEN 'venue_name'     = ANY(e.admin_locked_fields) THEN e.venue_name     ELSE t.venue_name     END,
+      venue_name     = CASE WHEN 'venue_name'     = ANY(e.admin_locked_fields) THEN e.venue_name     WHEN t.reprocess THEN t.venue_name ELSE COALESCE(t.venue_name, e.venue_name) END,
       address        = CASE WHEN 'address'        = ANY(e.admin_locked_fields) THEN e.address        ELSE t.address        END,
       city_id        = CASE WHEN 'city_id'        = ANY(e.admin_locked_fields) THEN e.city_id        ELSE t.city_id        END,
       source_url     = CASE WHEN 'source_url'     = ANY(e.admin_locked_fields) THEN e.source_url     ELSE t.source_url     END,
@@ -194,9 +194,15 @@ BEGIN
       source_id      = CASE WHEN 'source_id'      = ANY(e.admin_locked_fields) THEN e.source_id      ELSE p_source_id      END,
       source_details_fetched_at = CASE WHEN t.has_source_details_fetched_at THEN t.source_details_fetched_at ELSE e.source_details_fetched_at END,
       images         = CASE WHEN 'images'         = ANY(e.admin_locked_fields) THEN e.images         ELSE t.images         END,
-      price          = CASE WHEN 'price'          = ANY(e.admin_locked_fields) THEN e.price          ELSE t.price          END,
-      is_free        = CASE WHEN 'is_free'        = ANY(e.admin_locked_fields) THEN e.is_free        ELSE t.is_free        END,
+      price          = CASE WHEN 'price'          = ANY(e.admin_locked_fields) THEN e.price          WHEN t.reprocess THEN t.price ELSE COALESCE(t.price, e.price) END,
+      is_free        = CASE WHEN 'is_free'        = ANY(e.admin_locked_fields) THEN e.is_free        WHEN t.reprocess THEN t.is_free ELSE t.is_free OR (COALESCE(e.is_free, false) AND t.price IS NULL) END,
       is_outdoor     = CASE WHEN 'is_outdoor'     = ANY(e.admin_locked_fields) THEN e.is_outdoor     ELSE t.is_outdoor     END,
+      ai_tag_status = CASE
+        WHEN t.reprocess AND e.ai_tag_status = 'success'
+          AND v_processing_mode <> 'llm_review'::public.event_processing_mode
+          THEN NULL
+        ELSE e.ai_tag_status
+      END,
       llm_review_status = CASE
         WHEN NOT t.reprocess THEN e.llm_review_status
         WHEN v_processing_mode = 'llm_review'::public.event_processing_mode

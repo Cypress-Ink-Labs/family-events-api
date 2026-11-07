@@ -412,6 +412,20 @@ async function processReviewQueueRow(
       { config: dependencies.config },
       await fetchReviewMemory(db, event.id)
     )
+    const current = await db.loadReviewEvent(startedRow.event_id)
+    if (
+      !current ||
+      JSON.stringify(buildReviewInput(current)) !== JSON.stringify(buildReviewInput(event))
+    ) {
+      return handleNonReviewableEvent(
+        db,
+        dependencies,
+        startedRow,
+        event,
+        "Event content changed while it was being reviewed."
+      )
+    }
+
     const applied = await db.applyEventDecision({ event, queueRow: startedRow, review })
     if (!applied) {
       return handleNonReviewableEvent(
