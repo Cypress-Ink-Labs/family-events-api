@@ -3,7 +3,10 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest"
 import { IngestionRepository } from "../../src/pipeline/ingestion/ingestion.repository.js"
 import { CronGateService } from "../../src/pipeline/cron-gate.service.js"
 import type { JobsService } from "../../src/jobs/jobs.service.js"
-import { importParsedSourceEvents } from "../../src/pipeline/ingestion/process-source.js"
+import {
+  importParsedSourceEvents,
+  type BulkImportResult,
+} from "../../src/pipeline/ingestion/process-source.js"
 import type { ParsedEvent } from "../../src/pipeline/ingestion/types.js"
 import type { EventSourceRow } from "../../src/pipeline/ingestion/types.js"
 import type { DbService } from "../../src/db/db.service.js"
@@ -209,6 +212,165 @@ describe("bulk_import_scrape_events (real SQL)", () => {
     )
     // title is locked (admin wins); description follows the scraper.
     expect(events).toEqual([{ title: "Family Story Time", description: "Updated description." }])
+  })
+
+  describe("re-scrape of an event the pipeline already processed", () => {
+    async function finishQueues(): Promise<void> {
+      await db.query(
+        "UPDATE public.event_tag_queue SET status = 'succeeded', finished_at = now() WHERE status <> 'succeeded'"
+      )
+      await db.query(
+        "UPDATE public.event_llm_review_queue SET status = 'succeeded', finished_at = now() WHERE status <> 'succeeded'"
+      )
+    }
+
+    async function queueCounts(): Promise<{ tag: number; review: number }> {
+      const rows = await db.query<{ tag: number; review: number }>(
+        `SELECT (SELECT count(*) FROM public.event_tag_queue)::int AS tag,
+                (SELECT count(*) FROM public.event_llm_review_queue)::int AS review`
+      )
+      return rows[0]!
+    }
+
+    async function importOnce(
+      sourceId: string,
+      overrides: Partial<ParsedEvent> = {}
+    ): Promise<BulkImportResult> {
+      const runId = await seedRun(sourceId)
+      const result = await repository.bulkImportScrapeEvents(runId, sourceId, [
+        payloadFor(sourceId, buildParsed(overrides)),
+      ])
+      if (!result) throw new Error("bulk import returned no result")
+      return result
+    }
+
+    it("does not re-enqueue tagging for an unchanged, successfully tagged event", async () => {
+      const sourceId = await seedSource({ auto_approve: false })
+      await importOnce(sourceId)
+      await db.query("UPDATE public.events SET ai_tag_status = 'success'")
+      await finishQueues()
+
+      const rerun = await importOnce(sourceId)
+
+      expect(rerun).toEqual({ imported: 0, updated: 1, skipped: 0, enqueued: 0 })
+      expect(await queueCounts()).toEqual({ tag: 1, review: 0 })
+    })
+
+    it("re-enqueues tagging when the title or description changed", async () => {
+      const sourceId = await seedSource({ auto_approve: false })
+      await importOnce(sourceId)
+      await db.query("UPDATE public.events SET ai_tag_status = 'success'")
+      await finishQueues()
+
+      expect(await importOnce(sourceId, { description: "Books, songs and puppets." })).toEqual({
+        imported: 0,
+        updated: 1,
+        skipped: 0,
+        enqueued: 1,
+      })
+      expect(await queueCounts()).toEqual({ tag: 2, review: 0 })
+    })
+
+    it("keeps retrying tagging while the last result was a fallback or never recorded", async () => {
+      const sourceId = await seedSource({ auto_approve: false })
+      await importOnce(sourceId)
+
+      for (const status of ["fallback", "error", null]) {
+        await db.query("UPDATE public.events SET ai_tag_status = $1", [status])
+        await finishQueues()
+        const before = await queueCounts()
+
+        const rerun = await importOnce(sourceId)
+
+        expect(rerun.enqueued, `ai_tag_status=${status}`).toBe(1)
+        expect((await queueCounts()).tag).toBe(before.tag + 1)
+      }
+    })
+
+    it("leaves a decided llm_review event alone when nothing changed", async () => {
+      const sourceId = await seedSource({ processing_mode: "llm_review" })
+      await importOnce(sourceId)
+      await db.query(
+        `UPDATE public.events
+         SET status = 'published', llm_review_status = 'succeeded', llm_review_decision = 'approve'`
+      )
+      await finishQueues()
+
+      const rerun = await importOnce(sourceId)
+
+      expect(rerun).toEqual({ imported: 0, updated: 1, skipped: 0, enqueued: 0 })
+      expect(await queueCounts()).toEqual({ tag: 0, review: 1 })
+      const events = await db.query<{ llm_review_status: string; llm_review_decision: string }>(
+        "SELECT llm_review_status::text, llm_review_decision::text FROM public.events"
+      )
+      expect(events).toEqual([{ llm_review_status: "succeeded", llm_review_decision: "approve" }])
+    })
+
+    it("does not queue a review for a published llm_review event whose content changed", async () => {
+      const sourceId = await seedSource({ processing_mode: "llm_review" })
+      await importOnce(sourceId)
+      await db.query(
+        `UPDATE public.events
+         SET status = 'published', llm_review_status = 'succeeded', llm_review_decision = 'approve'`
+      )
+      await finishQueues()
+
+      const rerun = await importOnce(sourceId, { description: "Changed after approval." })
+
+      expect(rerun.enqueued).toBe(0)
+      expect(await queueCounts()).toEqual({ tag: 0, review: 1 })
+    })
+
+    it("re-reviews a draft llm_review event when its content changed", async () => {
+      const sourceId = await seedSource({ processing_mode: "llm_review" })
+      await importOnce(sourceId)
+      await db.query(
+        "UPDATE public.events SET llm_review_status = 'succeeded', llm_review_decision = 'needs_admin_review'"
+      )
+      await finishQueues()
+
+      const rerun = await importOnce(sourceId, { address: "200 Elm St" })
+
+      expect(rerun.enqueued).toBe(1)
+      expect(await queueCounts()).toEqual({ tag: 0, review: 2 })
+      const events = await db.query<{
+        llm_review_status: string
+        llm_review_decision: string | null
+      }>("SELECT llm_review_status::text, llm_review_decision::text FROM public.events")
+      expect(events).toEqual([{ llm_review_status: "pending", llm_review_decision: null }])
+    })
+
+    it("keeps retrying a draft llm_review event whose review failed", async () => {
+      const sourceId = await seedSource({ processing_mode: "llm_review" })
+      await importOnce(sourceId)
+      await db.query(
+        "UPDATE public.events SET llm_review_status = 'failed', llm_review_decision = 'needs_admin_review'"
+      )
+      await finishQueues()
+
+      const rerun = await importOnce(sourceId)
+
+      expect(rerun.enqueued).toBe(1)
+      expect(await queueCounts()).toEqual({ tag: 0, review: 2 })
+      const events = await db.query<{ llm_review_status: string }>(
+        "SELECT llm_review_status::text FROM public.events"
+      )
+      expect(events).toEqual([{ llm_review_status: "pending" }])
+    })
+
+    it("ignores a change to a field an admin locked", async () => {
+      const sourceId = await seedSource({ auto_approve: false })
+      await importOnce(sourceId)
+      await db.query(
+        "UPDATE public.events SET ai_tag_status = 'success', admin_locked_fields = ARRAY['description']"
+      )
+      await finishQueues()
+
+      const rerun = await importOnce(sourceId, { description: "Scraper wording changed." })
+
+      expect(rerun.enqueued).toBe(0)
+      expect(await queueCounts()).toEqual({ tag: 1, review: 0 })
+    })
   })
 
   it("raises P0002 for an unknown source", async () => {

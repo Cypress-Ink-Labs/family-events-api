@@ -1,6 +1,7 @@
 -- Extracted VERBATIM from family-events-backend migrations for integration tests (U28):
 -- - private def: family-events-backend baseline plus API-owned
---   20260902004000_preserve_omitted_source_details_fetched_at.sql
+--   20260902004000_preserve_omitted_source_details_fetched_at.sql and
+--   20261107001000_skip_unchanged_scrape_reprocessing.sql
 -- - public wrapper: 20260601002000_event_ingestion_admin_foundation.sql
 -- GRANT/REVOKE statements stripped: the bare test database has no anon/
 -- authenticated/service_role roles.
@@ -146,7 +147,29 @@ BEGIN
 
   DROP TABLE IF EXISTS _bulk_update_targets;
   CREATE TEMP TABLE _bulk_update_targets ON COMMIT DROP AS
-  SELECT b.*, e.id AS event_id, e.admin_locked_fields
+  SELECT b.*, e.id AS event_id, e.admin_locked_fields,
+    CASE
+      WHEN v_processing_mode = 'llm_review'::public.event_processing_mode THEN
+        e.status = 'draft'::public.event_status
+        AND (
+          e.llm_review_status IN (
+            'pending'::public.llm_event_review_status,
+            'failed'::public.llm_event_review_status
+          )
+          OR ('title' <> ALL(COALESCE(e.admin_locked_fields, '{}'::text[])) AND b.title IS DISTINCT FROM e.title)
+          OR ('description' <> ALL(COALESCE(e.admin_locked_fields, '{}'::text[])) AND b.description IS DISTINCT FROM e.description)
+          OR ('start_datetime' <> ALL(COALESCE(e.admin_locked_fields, '{}'::text[])) AND b.start_datetime IS DISTINCT FROM e.start_datetime)
+          OR ('end_datetime' <> ALL(COALESCE(e.admin_locked_fields, '{}'::text[])) AND b.end_datetime IS DISTINCT FROM e.end_datetime)
+          OR ('timezone' <> ALL(COALESCE(e.admin_locked_fields, '{}'::text[])) AND b.timezone IS DISTINCT FROM e.timezone)
+          OR ('venue_name' <> ALL(COALESCE(e.admin_locked_fields, '{}'::text[])) AND b.venue_name IS NOT NULL AND b.venue_name IS DISTINCT FROM e.venue_name)
+          OR ('address' <> ALL(COALESCE(e.admin_locked_fields, '{}'::text[])) AND b.address IS DISTINCT FROM e.address)
+          OR ('source_name' <> ALL(COALESCE(e.admin_locked_fields, '{}'::text[])) AND b.source_name IS DISTINCT FROM e.source_name)
+        )
+      ELSE
+        e.ai_tag_status IS DISTINCT FROM 'success'
+        OR ('title' <> ALL(COALESCE(e.admin_locked_fields, '{}'::text[])) AND b.title IS DISTINCT FROM e.title)
+        OR ('description' <> ALL(COALESCE(e.admin_locked_fields, '{}'::text[])) AND b.description IS DISTINCT FROM e.description)
+    END AS reprocess
   FROM _bulk_input b
   JOIN public.events e
     ON e.source_id = p_source_id
@@ -175,19 +198,20 @@ BEGIN
       is_free        = CASE WHEN 'is_free'        = ANY(e.admin_locked_fields) THEN e.is_free        ELSE t.is_free        END,
       is_outdoor     = CASE WHEN 'is_outdoor'     = ANY(e.admin_locked_fields) THEN e.is_outdoor     ELSE t.is_outdoor     END,
       llm_review_status = CASE
+        WHEN NOT t.reprocess THEN e.llm_review_status
         WHEN v_processing_mode = 'llm_review'::public.event_processing_mode
           THEN 'pending'::public.llm_event_review_status
         ELSE 'not_required'::public.llm_event_review_status
       END,
-      llm_review_decision = NULL,
-      llm_review_confidence = NULL,
-      llm_review_reason = NULL,
-      llm_review_flags = '{}'::text[],
-      llm_review_provider = NULL,
-      llm_review_model = NULL,
-      llm_review_prompt_version = NULL,
-      llm_reviewed_at = NULL,
-      llm_review_error = NULL,
+      llm_review_decision = CASE WHEN t.reprocess THEN NULL ELSE e.llm_review_decision END,
+      llm_review_confidence = CASE WHEN t.reprocess THEN NULL ELSE e.llm_review_confidence END,
+      llm_review_reason = CASE WHEN t.reprocess THEN NULL ELSE e.llm_review_reason END,
+      llm_review_flags = CASE WHEN t.reprocess THEN '{}'::text[] ELSE e.llm_review_flags END,
+      llm_review_provider = CASE WHEN t.reprocess THEN NULL ELSE e.llm_review_provider END,
+      llm_review_model = CASE WHEN t.reprocess THEN NULL ELSE e.llm_review_model END,
+      llm_review_prompt_version = CASE WHEN t.reprocess THEN NULL ELSE e.llm_review_prompt_version END,
+      llm_reviewed_at = CASE WHEN t.reprocess THEN NULL ELSE e.llm_reviewed_at END,
+      llm_review_error = CASE WHEN t.reprocess THEN NULL ELSE e.llm_review_error END,
       updated_at     = now()
     FROM _bulk_update_targets t
     WHERE e.id = t.event_id
@@ -198,7 +222,7 @@ BEGIN
   WITH all_imported AS (
     SELECT id FROM _bulk_inserted
     UNION ALL
-    SELECT event_id AS id FROM _bulk_update_targets
+    SELECT event_id AS id FROM _bulk_update_targets WHERE reprocess
   ),
   enq AS (
     INSERT INTO public.event_llm_review_queue (event_id, source_id, source_run_id, trigger_type)
