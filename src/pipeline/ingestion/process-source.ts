@@ -518,19 +518,6 @@ async function runBulkImport(
   const imported = bulkResult?.imported ?? 0
   const updated = bulkResult?.updated ?? 0
   const skipped = bulkResult?.skipped ?? 0
-  const enqueued = bulkResult?.enqueued ?? 0
-  // The RPC queues only new or reprocessable events, under ON CONFLICT DO
-  // NOTHING. imported+updated > enqueued is expected: unchanged events are not
-  // queued and some rows were already pending from a prior run.
-  if (imported + updated > 0 && enqueued < imported + updated) {
-    logEdgeEvent("log", "tag-queue enqueue partial (existing rows)", {
-      function: "scrape-source",
-      run_id: runId,
-      imported,
-      updated,
-      enqueued,
-    })
-  }
   return { imported: imported + updated, skipped, setupError: null }
 }
 
