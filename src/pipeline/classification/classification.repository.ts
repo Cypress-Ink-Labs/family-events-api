@@ -198,7 +198,11 @@ SET ai_confidence = $2,
     latitude = COALESCE($11::numeric, latitude),
     longitude = COALESCE($12::numeric, longitude)
 WHERE id = $1::uuid
-  AND ($13::text IS NULL OR (title = $13::text AND COALESCE(description, '') = $14::text))
+  AND ($13::text IS NULL OR (
+    title = $13::text
+    AND COALESCE(description, '') = $14::text
+    AND city_id IS NOT DISTINCT FROM $15::uuid
+  ))
 RETURNING id
 `
 
@@ -400,6 +404,7 @@ export class ClassificationRepository implements MemoryContextDb, TagEventDb, Ta
       payload.longitude ?? null,
       observed?.title ?? null,
       observed?.description ?? "",
+      observed?.cityId ?? null,
     ])
     if (observed && updated.length === 0) {
       throw new Error(`event ${eventId} changed while tagging; result discarded`)

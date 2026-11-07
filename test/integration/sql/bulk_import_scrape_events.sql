@@ -156,6 +156,10 @@ BEGIN
             'pending'::public.llm_event_review_status,
             'failed'::public.llm_event_review_status
           )
+          OR (
+            e.llm_review_status = 'not_required'::public.llm_event_review_status
+            AND e.llm_reviewed_at IS NULL
+          )
           OR ('title' <> ALL(COALESCE(e.admin_locked_fields, '{}'::text[])) AND b.title IS DISTINCT FROM e.title)
           OR ('description' <> ALL(COALESCE(e.admin_locked_fields, '{}'::text[])) AND b.description IS DISTINCT FROM e.description)
           OR ('start_datetime' <> ALL(COALESCE(e.admin_locked_fields, '{}'::text[])) AND b.start_datetime IS DISTINCT FROM e.start_datetime)
@@ -169,6 +173,7 @@ BEGIN
         e.ai_tag_status IS DISTINCT FROM 'success'
         OR ('title' <> ALL(COALESCE(e.admin_locked_fields, '{}'::text[])) AND b.title IS DISTINCT FROM e.title)
         OR ('description' <> ALL(COALESCE(e.admin_locked_fields, '{}'::text[])) AND b.description IS DISTINCT FROM e.description)
+        OR ('city_id' <> ALL(COALESCE(e.admin_locked_fields, '{}'::text[])) AND b.city_id IS DISTINCT FROM e.city_id)
     END AS reprocess
   FROM _bulk_input b
   JOIN public.events e

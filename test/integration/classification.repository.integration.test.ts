@@ -511,6 +511,7 @@ describe("TagEventDb.updateEventAfterTagging input guard", () => {
     await repo.updateEventAfterTagging(eventId, payload, {
       title: "Story Time",
       description: "Books",
+      cityId: null,
     })
 
     const [row] = await db.query<{ ai_tag_status: string }>(
@@ -528,7 +529,11 @@ describe("TagEventDb.updateEventAfterTagging input guard", () => {
     )
 
     await expect(
-      repo.updateEventAfterTagging(eventId, payload, { title: "Story Time", description: "Books" })
+      repo.updateEventAfterTagging(eventId, payload, {
+        title: "Story Time",
+        description: "Books",
+        cityId: null,
+      })
     ).rejects.toThrow(/changed while tagging/)
 
     const [row] = await db.query<{ ai_tag_status: string | null }>(
@@ -538,10 +543,36 @@ describe("TagEventDb.updateEventAfterTagging input guard", () => {
     expect(row!.ai_tag_status).toBeNull()
   })
 
+  it("refuses to record a result when the city changed after it was read", async () => {
+    const cityId = randomUUID()
+    await db.query(
+      `INSERT INTO public.cities (id, name, slug, timezone, latitude, longitude)
+       VALUES ($1::uuid, 'Lafayette', 'lafayette-guard', 'America/Chicago', 30.2241, -92.0198)`,
+      [cityId]
+    )
+    const eventId = await seedEvent({ title: "Story Time", description: "Books" })
+    await db.query("UPDATE public.events SET city_id = $2::uuid WHERE id = $1::uuid", [
+      eventId,
+      cityId,
+    ])
+
+    await expect(
+      repo.updateEventAfterTagging(eventId, payload, {
+        title: "Story Time",
+        description: "Books",
+        cityId: null,
+      })
+    ).rejects.toThrow(/changed while tagging/)
+  })
+
   it("treats a missing description as empty", async () => {
     const eventId = await seedEvent({ title: "Story Time", description: null })
 
-    await repo.updateEventAfterTagging(eventId, payload, { title: "Story Time", description: "" })
+    await repo.updateEventAfterTagging(eventId, payload, {
+      title: "Story Time",
+      description: "",
+      cityId: null,
+    })
 
     const [row] = await db.query<{ ai_tag_status: string }>(
       "SELECT ai_tag_status FROM public.events WHERE id = $1::uuid",

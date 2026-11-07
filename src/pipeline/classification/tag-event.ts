@@ -118,6 +118,7 @@ export interface TagEventInput {
 export interface ObservedEventContent {
   title: string
   description: string
+  cityId: string | null
 }
 
 export interface ClassificationOutput {
@@ -375,6 +376,7 @@ async function loadTagEventInput(db: TagEventDb, body: unknown): Promise<TagEven
     observed: {
       title: rawTitle.trim() ? rawTitle : (currentEvent?.title ?? ""),
       description: rawDescription || (currentEvent?.description ?? ""),
+      cityId: currentEvent?.city_id ?? null,
     },
   }
 }
