@@ -1,7 +1,10 @@
 -- Queue a matched event for AI only when the content its AI step reads
--- changed or its last AI result was a failure or fallback. An unchanged event
--- keeps its review state and the venue, price and free flag tagging filled in;
--- a changed title, description or city clears its stored tagging success.
+-- changed, its last AI result is not a success (no tagging result, a failure
+-- or fallback, or a draft review still pending or failed), or it is a draft
+-- in an llm_review source that was never reviewed. An unchanged event keeps
+-- its review state and the venue, price and free flag tagging filled in; a
+-- changed title, description or city clears the stored tagging success of an
+-- event outside llm_review.
 DO $migration$
 DECLARE
   definition text;
