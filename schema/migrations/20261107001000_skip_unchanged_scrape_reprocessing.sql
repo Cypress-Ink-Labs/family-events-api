@@ -1,5 +1,7 @@
 -- Queue a matched event for AI only when the content its AI step reads
--- changed or its last AI result was a failure or fallback.
+-- changed or its last AI result was a failure or fallback. An unchanged event
+-- keeps its review state and the venue, price and free flag tagging filled in;
+-- a changed title or description clears its stored tagging success.
 DO $migration$
 DECLARE
   definition text;
