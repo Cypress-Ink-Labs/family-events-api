@@ -17,6 +17,7 @@ import type {
   AvailableTag,
   CityLocationRow,
   CurrentEvent,
+  ObservedEventContent,
   TagAssignmentUpsert,
   TagEventDb,
   TagFeatureConfigRow,
@@ -197,6 +198,12 @@ SET ai_confidence = $2,
     latitude = COALESCE($11::numeric, latitude),
     longitude = COALESCE($12::numeric, longitude)
 WHERE id = $1::uuid
+  AND ($13::text IS NULL OR (
+    title = $13::text
+    AND COALESCE(description, '') = $14::text
+    AND city_id IS NOT DISTINCT FROM $15::uuid
+  ))
+RETURNING id
 `
 
 // Queue RPCs (public wrappers over the private SECURITY DEFINER functions —
@@ -374,11 +381,15 @@ export class ClassificationRepository implements MemoryContextDb, TagEventDb, Ta
     return rows[0] ?? null
   }
 
-  async updateEventAfterTagging(eventId: string, payload: Record<string, unknown>): Promise<void> {
+  async updateEventAfterTagging(
+    eventId: string,
+    payload: Record<string, unknown>,
+    observed?: ObservedEventContent
+  ): Promise<void> {
     // See UPDATE_EVENT_AFTER_TAGGING_SQL: absent keys mean "leave untouched",
     // present keys always carry their final value, so raw pass-through + ?? null
     // reproduces the legacy update-payload semantics exactly.
-    await this.db.query(UPDATE_EVENT_AFTER_TAGGING_SQL, [
+    const updated = await this.db.query(UPDATE_EVENT_AFTER_TAGGING_SQL, [
       eventId,
       payload.ai_confidence,
       payload.ai_tag_provider,
@@ -391,7 +402,13 @@ export class ClassificationRepository implements MemoryContextDb, TagEventDb, Ta
       payload.venue_name ?? null,
       payload.latitude ?? null,
       payload.longitude ?? null,
+      observed?.title ?? null,
+      observed?.description ?? "",
+      observed?.cityId ?? null,
     ])
+    if (observed && updated.length === 0) {
+      throw new Error(`event ${eventId} changed while tagging; result discarded`)
+    }
   }
 
   // ── TagQueueDb ─────────────────────────────────────────────────────────────

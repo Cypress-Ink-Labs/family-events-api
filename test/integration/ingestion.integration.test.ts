@@ -3,7 +3,10 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest"
 import { IngestionRepository } from "../../src/pipeline/ingestion/ingestion.repository.js"
 import { CronGateService } from "../../src/pipeline/cron-gate.service.js"
 import type { JobsService } from "../../src/jobs/jobs.service.js"
-import { importParsedSourceEvents } from "../../src/pipeline/ingestion/process-source.js"
+import {
+  importParsedSourceEvents,
+  type BulkImportResult,
+} from "../../src/pipeline/ingestion/process-source.js"
 import type { ParsedEvent } from "../../src/pipeline/ingestion/types.js"
 import type { EventSourceRow } from "../../src/pipeline/ingestion/types.js"
 import type { DbService } from "../../src/db/db.service.js"
@@ -209,6 +212,373 @@ describe("bulk_import_scrape_events (real SQL)", () => {
     )
     // title is locked (admin wins); description follows the scraper.
     expect(events).toEqual([{ title: "Family Story Time", description: "Updated description." }])
+  })
+
+  describe("re-scrape of an event the pipeline already processed", () => {
+    async function finishQueues(): Promise<void> {
+      await db.query(
+        "UPDATE public.event_tag_queue SET status = 'succeeded', finished_at = now() WHERE status <> 'succeeded'"
+      )
+      await db.query(
+        "UPDATE public.event_llm_review_queue SET status = 'succeeded', finished_at = now() WHERE status <> 'succeeded'"
+      )
+    }
+
+    async function queueCounts(): Promise<{ tag: number; review: number }> {
+      const rows = await db.query<{ tag: number; review: number }>(
+        `SELECT (SELECT count(*) FROM public.event_tag_queue)::int AS tag,
+                (SELECT count(*) FROM public.event_llm_review_queue)::int AS review`
+      )
+      return rows[0]!
+    }
+
+    async function importOnce(
+      sourceId: string,
+      overrides: Partial<ParsedEvent> = {},
+      payloadOverrides: Record<string, unknown> = {}
+    ): Promise<BulkImportResult> {
+      const runId = await seedRun(sourceId)
+      const result = await repository.bulkImportScrapeEvents(runId, sourceId, [
+        { ...payloadFor(sourceId, buildParsed(overrides)), ...payloadOverrides },
+      ])
+      if (!result) throw new Error("bulk import returned no result")
+      return result
+    }
+
+    it("does not re-enqueue tagging for an unchanged, successfully tagged event", async () => {
+      const sourceId = await seedSource({ auto_approve: false })
+      await importOnce(sourceId)
+      await db.query("UPDATE public.events SET ai_tag_status = 'success'")
+      await finishQueues()
+
+      const rerun = await importOnce(sourceId)
+
+      expect(rerun).toEqual({ imported: 0, updated: 1, skipped: 0, enqueued: 0 })
+      expect(await queueCounts()).toEqual({ tag: 1, review: 0 })
+    })
+
+    it("re-enqueues tagging when the title or description changed", async () => {
+      const sourceId = await seedSource({ auto_approve: false })
+      await importOnce(sourceId)
+      await db.query("UPDATE public.events SET ai_tag_status = 'success'")
+      await finishQueues()
+
+      expect(await importOnce(sourceId, { description: "Books, songs and puppets." })).toEqual({
+        imported: 0,
+        updated: 1,
+        skipped: 0,
+        enqueued: 1,
+      })
+      expect(await queueCounts()).toEqual({ tag: 2, review: 0 })
+    })
+
+    it("keeps retrying tagging while the last result was a fallback or never recorded", async () => {
+      const sourceId = await seedSource({ auto_approve: false })
+      await importOnce(sourceId)
+
+      for (const status of ["fallback", "error", null]) {
+        await db.query("UPDATE public.events SET ai_tag_status = $1", [status])
+        await finishQueues()
+        const before = await queueCounts()
+
+        const rerun = await importOnce(sourceId)
+
+        expect(rerun.enqueued, `ai_tag_status=${status}`).toBe(1)
+        expect((await queueCounts()).tag).toBe(before.tag + 1)
+      }
+    })
+
+    it("leaves a decided llm_review event alone when nothing changed", async () => {
+      const sourceId = await seedSource({ processing_mode: "llm_review" })
+      await importOnce(sourceId)
+      await db.query(
+        `UPDATE public.events
+         SET status = 'published', llm_review_status = 'succeeded', llm_review_decision = 'approve'`
+      )
+      await finishQueues()
+
+      const rerun = await importOnce(sourceId)
+
+      expect(rerun).toEqual({ imported: 0, updated: 1, skipped: 0, enqueued: 0 })
+      expect(await queueCounts()).toEqual({ tag: 0, review: 1 })
+      const events = await db.query<{ llm_review_status: string; llm_review_decision: string }>(
+        "SELECT llm_review_status::text, llm_review_decision::text FROM public.events"
+      )
+      expect(events).toEqual([{ llm_review_status: "succeeded", llm_review_decision: "approve" }])
+    })
+
+    it("does not queue a review for a published llm_review event whose content changed", async () => {
+      const sourceId = await seedSource({ processing_mode: "llm_review" })
+      await importOnce(sourceId)
+      await db.query(
+        `UPDATE public.events
+         SET status = 'published', llm_review_status = 'succeeded', llm_review_decision = 'approve'`
+      )
+      await finishQueues()
+
+      const rerun = await importOnce(sourceId, { description: "Changed after approval." })
+
+      expect(rerun.enqueued).toBe(0)
+      expect(await queueCounts()).toEqual({ tag: 0, review: 1 })
+    })
+
+    it("re-reviews a draft llm_review event when its content changed", async () => {
+      const sourceId = await seedSource({ processing_mode: "llm_review" })
+      await importOnce(sourceId)
+      await db.query(
+        "UPDATE public.events SET llm_review_status = 'succeeded', llm_review_decision = 'needs_admin_review'"
+      )
+      await finishQueues()
+
+      const rerun = await importOnce(sourceId, { address: "200 Elm St" })
+
+      expect(rerun.enqueued).toBe(1)
+      expect(await queueCounts()).toEqual({ tag: 0, review: 2 })
+      const events = await db.query<{
+        llm_review_status: string
+        llm_review_decision: string | null
+      }>("SELECT llm_review_status::text, llm_review_decision::text FROM public.events")
+      expect(events).toEqual([{ llm_review_status: "pending", llm_review_decision: null }])
+    })
+
+    it("keeps retrying a draft llm_review event whose review failed", async () => {
+      const sourceId = await seedSource({ processing_mode: "llm_review" })
+      await importOnce(sourceId)
+      await db.query(
+        "UPDATE public.events SET llm_review_status = 'failed', llm_review_decision = 'needs_admin_review'"
+      )
+      await finishQueues()
+
+      const rerun = await importOnce(sourceId)
+
+      expect(rerun.enqueued).toBe(1)
+      expect(await queueCounts()).toEqual({ tag: 0, review: 2 })
+      const events = await db.query<{ llm_review_status: string }>(
+        "SELECT llm_review_status::text FROM public.events"
+      )
+      expect(events).toEqual([{ llm_review_status: "pending" }])
+    })
+
+    it("keeps the venue, price and free flag tagging filled in when a re-scrape omits them", async () => {
+      const sourceId = await seedSource({ auto_approve: false })
+      await importOnce(sourceId, { venueName: null, price: null, isFree: false })
+      await db.query(
+        `UPDATE public.events
+         SET ai_tag_status = 'success', venue_name = 'Main Library', price = 5, is_free = true`
+      )
+      await finishQueues()
+
+      await importOnce(sourceId, { venueName: null, price: null, isFree: false })
+
+      const events = await db.query<{ venue_name: string; price: string; is_free: boolean }>(
+        "SELECT venue_name, price::text, is_free FROM public.events"
+      )
+      expect(events).toEqual([{ venue_name: "Main Library", price: "5", is_free: true }])
+    })
+
+    it("still applies a price or venue the re-scrape does supply", async () => {
+      const sourceId = await seedSource({ auto_approve: false })
+      await importOnce(sourceId, { venueName: null, price: null, isFree: false })
+      await db.query(
+        `UPDATE public.events
+         SET ai_tag_status = 'success', venue_name = 'Main Library', price = 5, is_free = true`
+      )
+      await finishQueues()
+
+      await importOnce(sourceId, { venueName: "Civic Center", price: 12, isFree: false })
+
+      const events = await db.query<{ venue_name: string; price: string; is_free: boolean }>(
+        "SELECT venue_name, price::text, is_free FROM public.events"
+      )
+      expect(events).toEqual([{ venue_name: "Civic Center", price: "12", is_free: false }])
+    })
+
+    it("clears the stored tagging success when the title or description changes", async () => {
+      const sourceId = await seedSource({ auto_approve: false })
+      await importOnce(sourceId)
+      await db.query("UPDATE public.events SET ai_tag_status = 'success'")
+      await finishQueues()
+
+      await importOnce(sourceId, { description: "Books, songs and puppets." })
+
+      const events = await db.query<{ ai_tag_status: string | null }>(
+        "SELECT ai_tag_status FROM public.events"
+      )
+      expect(events).toEqual([{ ai_tag_status: null }])
+    })
+
+    it("keeps retrying a changed event whose retag died before saving a result", async () => {
+      const sourceId = await seedSource({ auto_approve: false })
+      await importOnce(sourceId)
+      await db.query("UPDATE public.events SET ai_tag_status = 'success'")
+      await finishQueues()
+
+      await importOnce(sourceId, { description: "Books, songs and puppets." })
+      await db.query(
+        "UPDATE public.event_tag_queue SET status = 'dead', finished_at = now() WHERE status = 'pending'"
+      )
+      const before = await queueCounts()
+
+      const unchangedRerun = await importOnce(sourceId, {
+        description: "Books, songs and puppets.",
+      })
+
+      expect(unchangedRerun.enqueued).toBe(1)
+      expect((await queueCounts()).tag).toBe(before.tag + 1)
+    })
+
+    it("keeps the stored tagging success when only a locked field changed", async () => {
+      const sourceId = await seedSource({ auto_approve: false })
+      await importOnce(sourceId)
+      await db.query(
+        "UPDATE public.events SET ai_tag_status = 'success', admin_locked_fields = ARRAY['description']"
+      )
+      await finishQueues()
+
+      await importOnce(sourceId, { description: "Scraper wording changed." })
+
+      const events = await db.query<{ ai_tag_status: string | null }>(
+        "SELECT ai_tag_status FROM public.events"
+      )
+      expect(events).toEqual([{ ai_tag_status: "success" }])
+    })
+
+    it("re-enqueues tagging when only the title changed", async () => {
+      const sourceId = await seedSource({ auto_approve: false })
+      await importOnce(sourceId)
+      await db.query("UPDATE public.events SET ai_tag_status = 'success'")
+      await finishQueues()
+
+      const rerun = await importOnce(sourceId, { title: "Family Story Time (Saturdays)" })
+
+      expect(rerun.enqueued).toBe(1)
+      expect(await queueCounts()).toEqual({ tag: 2, review: 0 })
+    })
+
+    describe("when the event's city changes", () => {
+      const OTHER_CITY_ID = "22222222-2222-4222-8222-222222222222"
+
+      beforeEach(async () => {
+        await db.query(
+          `INSERT INTO public.cities (id, name, slug, timezone, latitude, longitude)
+           VALUES ($1::uuid, 'Baton Rouge', 'baton-rouge', 'America/Chicago', 30.4515, -91.1871)`,
+          [OTHER_CITY_ID]
+        )
+      })
+
+      it("re-enqueues tagging, because the city selects the examples the classifier sees", async () => {
+        const sourceId = await seedSource({ auto_approve: false })
+        await importOnce(sourceId)
+        await db.query("UPDATE public.events SET ai_tag_status = 'success'")
+        await finishQueues()
+
+        const rerun = await importOnce(sourceId, {}, { city_id: OTHER_CITY_ID })
+
+        expect(rerun.enqueued).toBe(1)
+        const events = await db.query<{ ai_tag_status: string | null }>(
+          "SELECT ai_tag_status FROM public.events"
+        )
+        expect(events).toEqual([{ ai_tag_status: null }])
+      })
+
+      it("ignores the change when an admin locked the city", async () => {
+        const sourceId = await seedSource({ auto_approve: false })
+        await importOnce(sourceId)
+        await db.query(
+          "UPDATE public.events SET ai_tag_status = 'success', admin_locked_fields = ARRAY['city_id']"
+        )
+        await finishQueues()
+
+        const rerun = await importOnce(sourceId, {}, { city_id: OTHER_CITY_ID })
+
+        expect(rerun.enqueued).toBe(0)
+      })
+    })
+
+    it("leaves a decided draft alone when nothing changed", async () => {
+      const sourceId = await seedSource({ processing_mode: "llm_review" })
+      await importOnce(sourceId)
+      await db.query(
+        `UPDATE public.events
+         SET llm_review_status = 'succeeded', llm_review_decision = 'needs_admin_review',
+             llm_review_confidence = 0.4, llm_review_reason = 'Unclear listing',
+             llm_review_flags = ARRAY['low_confidence'], llm_reviewed_at = now()`
+      )
+      await finishQueues()
+
+      const rerun = await importOnce(sourceId)
+
+      expect(rerun).toEqual({ imported: 0, updated: 1, skipped: 0, enqueued: 0 })
+      expect(await queueCounts()).toEqual({ tag: 0, review: 1 })
+      const events = await db.query<{
+        status: string
+        llm_review_status: string
+        llm_review_decision: string
+        llm_review_confidence: string
+        llm_review_reason: string
+        llm_review_flags: string[]
+      }>(
+        `SELECT status::text, llm_review_status::text, llm_review_decision::text,
+                llm_review_confidence::text, llm_review_reason, llm_review_flags
+         FROM public.events`
+      )
+      expect(events).toEqual([
+        {
+          status: "draft",
+          llm_review_status: "succeeded",
+          llm_review_decision: "needs_admin_review",
+          llm_review_confidence: "0.400",
+          llm_review_reason: "Unclear listing",
+          llm_review_flags: ["low_confidence"],
+        },
+      ])
+    })
+
+    it("queues a draft that was never reviewed after its source switched to llm_review", async () => {
+      const sourceId = await seedSource({ auto_approve: false })
+      await importOnce(sourceId)
+      await finishQueues()
+      await db.query("UPDATE public.event_sources SET processing_mode = 'llm_review'")
+
+      const rerun = await importOnce(sourceId)
+
+      expect(rerun.enqueued).toBe(1)
+      expect(await queueCounts()).toEqual({ tag: 1, review: 1 })
+      const events = await db.query<{ llm_review_status: string }>(
+        "SELECT llm_review_status::text FROM public.events"
+      )
+      expect(events).toEqual([{ llm_review_status: "pending" }])
+    })
+
+    it("does not re-queue a draft whose review was skipped because review is disabled", async () => {
+      const sourceId = await seedSource({ processing_mode: "llm_review" })
+      await importOnce(sourceId)
+      await db.query(
+        `UPDATE public.events
+         SET llm_review_status = 'not_required', llm_review_decision = 'needs_admin_review',
+             llm_reviewed_at = now()`
+      )
+      await finishQueues()
+
+      const rerun = await importOnce(sourceId)
+
+      expect(rerun.enqueued).toBe(0)
+      expect(await queueCounts()).toEqual({ tag: 0, review: 1 })
+    })
+
+    it("ignores a change to a field an admin locked", async () => {
+      const sourceId = await seedSource({ auto_approve: false })
+      await importOnce(sourceId)
+      await db.query(
+        "UPDATE public.events SET ai_tag_status = 'success', admin_locked_fields = ARRAY['description']"
+      )
+      await finishQueues()
+
+      const rerun = await importOnce(sourceId, { description: "Scraper wording changed." })
+
+      expect(rerun.enqueued).toBe(0)
+      expect(await queueCounts()).toEqual({ tag: 1, review: 0 })
+    })
   })
 
   it("raises P0002 for an unknown source", async () => {
