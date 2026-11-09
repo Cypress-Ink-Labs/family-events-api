@@ -13,6 +13,12 @@ export const envSchema = z.object({
   DATABASE_URL: z.string().min(1),
   /** Schema pg-boss manages for its own tables. Matches the U12 worker's schema. */
   PGBOSS_SCHEMA: z.string().default("pgboss"),
+  /**
+   * Supabase's session-mode pooler allows 15 clients in total, and two
+   * deployments overlap during a deploy: keep 2 * (DB_POOL_MAX + PGBOSS_POOL_MAX) <= 15.
+   */
+  DB_POOL_MAX: z.coerce.number().int().positive().default(4),
+  PGBOSS_POOL_MAX: z.coerce.number().int().positive().default(3),
   /** Clerk secret key. Required outside tests; endpoints behind ClerkAuthGuard fail closed without it. */
   CLERK_SECRET_KEY: z.string().optional(),
   CLERK_WEBHOOK_SIGNING_SECRET: optionalNonEmptyString,

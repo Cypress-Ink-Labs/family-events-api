@@ -274,6 +274,7 @@ export class JobsService implements OnApplicationBootstrap, OnApplicationShutdow
     const boss = new PgBoss({
       connectionString: this.config.get("DATABASE_URL", { infer: true }),
       schema: this.config.get("PGBOSS_SCHEMA", { infer: true }),
+      max: this.config.get("PGBOSS_POOL_MAX", { infer: true }),
     })
     boss.on("error", (error) => this.logger.error(`pg-boss error: ${error.message}`))
     await boss.start()
