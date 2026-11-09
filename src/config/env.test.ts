@@ -12,6 +12,19 @@ describe("validateEnv", () => {
     expect(env.PGBOSS_SCHEMA).toBe("pgboss")
   })
 
+  it("defaults both pool caps so two deployments fit the session pooler's 15 clients", () => {
+    const env = validateEnv(base)
+    expect(2 * (env.DB_POOL_MAX + env.PGBOSS_POOL_MAX)).toBeLessThanOrEqual(15)
+  })
+
+  it("parses pool caps from strings and rejects zero", () => {
+    expect(validateEnv({ ...base, DB_POOL_MAX: "8", PGBOSS_POOL_MAX: "3" })).toMatchObject({
+      DB_POOL_MAX: 8,
+      PGBOSS_POOL_MAX: 3,
+    })
+    expect(() => validateEnv({ ...base, DB_POOL_MAX: "0" })).toThrow(/DB_POOL_MAX/)
+  })
+
   it("rejects a missing DATABASE_URL with a readable message", () => {
     expect(() => validateEnv({})).toThrow(/DATABASE_URL/)
   })

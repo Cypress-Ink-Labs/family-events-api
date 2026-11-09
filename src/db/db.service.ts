@@ -18,7 +18,7 @@ export class DbService implements OnModuleDestroy {
   constructor(config: ConfigService<Env, true>) {
     this.pool = new Pool({
       connectionString: config.get("DATABASE_URL", { infer: true }),
-      max: 10,
+      max: config.get("DB_POOL_MAX", { infer: true }),
     })
     this.pool.on("error", (error) => {
       this.logger.error(`idle client error: ${error.message}`)
